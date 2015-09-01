@@ -1,0 +1,21 @@
+boto
+fauxfactory>=2.0.7
+ovirt-engine-sdk-python
+psphere
+python-cinderclient
+python-keystoneclient
+python-novaclient
+python-heatclient
+pywinrm
+requests
+suds
+tzlocal
+wait_for
+
+###
+# Libraries with compiled components, and their related devel packages
+###
+
+# lxml super SGML parser, needs libxml2-devel and libxslt-devel
+lxml
+
