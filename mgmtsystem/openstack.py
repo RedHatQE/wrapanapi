@@ -18,8 +18,8 @@ from requests.exceptions import Timeout
 import tzlocal
 from wait_for import wait_for
 
-from mgmtsystem.base import MgmtSystemAPIBase, VMInfo
-from mgmtsystem.exceptions import (
+from base import MgmtSystemAPIBase, VMInfo
+from exceptions import (
     NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP, ActionTimedOutError
 )
 

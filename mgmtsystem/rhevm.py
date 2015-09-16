@@ -9,10 +9,8 @@ from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
 from ovirtsdk.xml import params
 from wait_for import wait_for, TimedOutError
 
-from mgmtsystem.base import MgmtSystemAPIBase, VMInfo
-from mgmtsystem.exceptions import (
-    VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
-)
+from base import MgmtSystemAPIBase, VMInfo
+from exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
 class RHEVMSystem(MgmtSystemAPIBase):

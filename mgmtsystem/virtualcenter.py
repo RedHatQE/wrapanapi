@@ -23,9 +23,8 @@ from psphere.errors import ObjectNotFoundError
 from suds import WebFault
 from wait_for import wait_for, TimedOutError
 
-from mgmtsystem.base import MgmtSystemAPIBase, VMInfo
-from mgmtsystem.exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended,
-    VMNotFoundViaIP, HostNotRemoved)
+from base import MgmtSystemAPIBase, VMInfo
+from exceptions import VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP, HostNotRemoved
 
 
 class _PsphereClient(Client):

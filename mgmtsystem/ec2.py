@@ -7,8 +7,8 @@ from boto.cloudformation import CloudFormationConnection
 import tzlocal
 from wait_for import wait_for
 
-from mgmt_system.base import MgmtSystemAPIBase
-from mgmt_system.exceptions import (
+from base import MgmtSystemAPIBase
+from exceptions import (
     ActionTimedOutError, ActionNotSupported,
     MultipleInstancesError, VMInstanceNotFound,
     MultipleImagesError, ImageNotFoundError

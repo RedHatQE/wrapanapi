@@ -12,7 +12,7 @@ from textwrap import dedent
 from lxml import etree
 from wait_for import wait_for
 
-from mgmtsystem.base import MgmtSystemAPIBase
+from base import MgmtSystemAPIBase
 
 
 class SCVMMSystem(MgmtSystemAPIBase):
