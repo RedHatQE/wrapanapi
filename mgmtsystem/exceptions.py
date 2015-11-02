@@ -71,3 +71,7 @@ class VMNotFoundViaIP(Exception):
 
 class HostNotRemoved(Exception):
     """Raised when :py:mod:`utils.mgmt_system` fails to remove host from cluster"""
+
+
+class VMError(Exception):
+    """Raised when a VM goes to the ERROR state."""
