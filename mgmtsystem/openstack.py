@@ -20,7 +20,8 @@ from wait_for import wait_for
 
 from base import MgmtSystemAPIBase, VMInfo
 from exceptions import (
-    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP, ActionTimedOutError
+    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP, ActionTimedOutError,
+    VMError
 )
 
 
@@ -248,7 +249,18 @@ class OpenstackSystem(MgmtSystemAPIBase):
         pass
 
     def vm_status(self, vm_name):
-        return self._find_instance_by_name(vm_name).status
+        """Retrieve Instance status.
+
+        Raises:
+            :py:class:`mgmtsystem.exceptions.VMError
+        """
+        inst = self._find_instance_by_name(vm_name)
+        if inst.status != "ERROR":
+            return inst.status
+        if not hasattr(inst, "fault"):
+            raise VMError("Instance {} in error state!".format(vm_name))
+        raise VMError("Instance {} error {}: {} | {}".format(
+            vm_name, inst.fault["code"], inst.fault["message"], inst.fault["created"]))
 
     def create_volume(self, size_gb, **kwargs):
         volume = self.capi.volumes.create(size_gb, **kwargs).id
