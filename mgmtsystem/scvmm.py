@@ -120,7 +120,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def list_template(self):
         data = self.run_script(
-            "Get-Template -VMMServer $scvmm_server | convertto-xml -as String")
+            "Get-SCVMTemplate -VMMServer $scvmm_server | convertto-xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
