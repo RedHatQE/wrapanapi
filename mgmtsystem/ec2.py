@@ -74,9 +74,9 @@ class EC2System(MgmtSystemAPIBase):
         """Returns a list from instance IDs currently active on EC2 (not terminated)"""
         instances = None
         if include_terminated:
-            instances = [inst for inst in self._get_all_instances() if inst.state != 'terminated']
-        else:
             instances = [inst for inst in self._get_all_instances()]
+        else:
+            instances = [inst for inst in self._get_all_instances() if inst.state != 'terminated']
         return [i.tags.get('Name', i.id) for i in instances]
 
     def list_template(self):
