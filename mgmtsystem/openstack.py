@@ -39,12 +39,12 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
         return HTTPClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
-            self.logger.error('nova request timed out after {} retries'.format(retry_count))
+            self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
             raise
         else:
             # feed back into the replaced method that supports retry_count
             retry_count += 1
-            self.logger.info('nova request timed out; retry {}'.format(retry_count))
+            self._cfme_logger.info('nova request timed out; retry {}'.format(retry_count))
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
@@ -101,6 +101,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
             # replacing the method directly on the HTTPClient class)
             # so we can still call out to HTTPClient's original request
             # method in the timeout handler method
+            self._api.client._cfme_logger = self.logger
             self._api.client.request = _request_timeout_handler.__get__(self._api.client,
                 HTTPClient)
         return self._api
