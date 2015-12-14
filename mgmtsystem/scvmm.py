@@ -26,6 +26,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
     STATE_PAUSED = "Paused"
     STATES_STEADY = {STATE_RUNNING, STATE_PAUSED}
     STATES_STEADY.update(STATES_STOPPED)
+    STATES_FAILED = {'Creation Failed'}
 
     _stats_available = {
         'num_vm': lambda self: len(self.list_vm()),
@@ -103,10 +104,11 @@ class SCVMMSystem(MgmtSystemAPIBase):
         raise NotImplementedError('create_vm not implemented.')
 
     def delete_vm(self, vm_name):
-        if not self.is_vm_stopped(vm_name):
+        if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
             # Paused VM can be stopped too, so no special treatment here
             self.stop_vm(vm_name)
             self.wait_vm_stopped(vm_name)
+        # Now the VM is either stopped or in failed state which should be ok to delete
         self._do_vm(vm_name, "Remove")
 
     def restart_vm(self, vm_name):
