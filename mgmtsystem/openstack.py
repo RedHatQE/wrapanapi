@@ -11,7 +11,7 @@ from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
 from heatclient import client as heat_client
 from keystoneclient.v2_0 import client as oskclient
-from novaclient.v1_1 import client as osclient
+from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import HTTPClient
 from requests.exceptions import Timeout
@@ -20,8 +20,8 @@ from wait_for import wait_for
 
 from base import MgmtSystemAPIBase, VMInfo
 from exceptions import (
-    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP, ActionTimedOutError,
-    VMError
+    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
+    ActionTimedOutError, VMError
 )
 
 
@@ -89,7 +89,8 @@ class OpenstackSystem(MgmtSystemAPIBase):
     @property
     def api(self):
         if not self._api:
-            self._api = osclient.Client(self.username,
+            self._api = osclient.Client('2',
+                                        self.username,
                                         self.password,
                                         self.tenant,
                                         self.auth_url,
