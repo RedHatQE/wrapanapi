@@ -189,7 +189,7 @@ class EC2System(MgmtSystemAPIBase):
         instance_id = self._get_instance_id_by_name(instance_id)
         try:
             self.api.stop_instances([instance_id])
-            self._block_until(instance_id, self.states['stopped'])
+            self._block_until(instance_id, self.states['stopped'], timeout=360)
             return True
         except ActionTimedOutError:
             return False
