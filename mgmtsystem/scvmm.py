@@ -12,7 +12,7 @@ from textwrap import dedent
 from lxml import etree
 from wait_for import wait_for
 
-from base import MgmtSystemAPIBase
+from base import MgmtSystemAPIBase, VMInfo
 
 
 class SCVMMSystem(MgmtSystemAPIBase):
@@ -103,26 +103,89 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def create_vm(self, vm_name):
         raise NotImplementedError('create_vm not implemented.')
 
-    def delete_vm(self, vm_name):
+    def rename_vm(self, vm_name, vm_new_name):
         if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
-            # Paused VM can be stopped too, so no special treatment here
             self.stop_vm(vm_name)
             self.wait_vm_stopped(vm_name)
-        # Now the VM is either stopped or in failed state which should be ok to delete
-        self._do_vm(vm_name, "Remove")
+        script = """
+        Get-SCVirtualMachine -Name "{vm_name}" | Set-SCVirtualMachine -Name "{vm_new_name}"
+        """.format(vm_name=vm_name, vm_new_name=vm_new_name)
+        self.logger.info(" Renaming SCVMM VM `{}` to  `{}`"
+            .format(vm_name, vm_new_name))
+        self.run_script(script)
+
+    def delete_vm(self, vm_name, host):
+        if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
+            self.stop_vm(vm_name)
+            self.wait_vm_stopped(vm_name)
+        script = """
+        $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
+        Remove-SCVirtualMachine -VM $VM
+        """.format(vm_name=vm_name, host=host)
+        self.logger.info(" Deleting SCVMM VM `{}`"
+            .format(vm_name))
+        self.run_script(script)
+
+    def delete_template(self, template):
+        script = """
+        $Template = Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server
+        Remove-SCVMTemplate -VMTemplate $Template -Force
+        """.format(template)
+        self.logger.info(" Removing SCVMM VM `{}`"
+            .format(template))
+        self.run_script(script)
 
     def restart_vm(self, vm_name):
         self._do_vm(vm_name, "Reset")
 
     def list_vm(self, **kwargs):
         data = self.run_script(
-            "Get-SCVirtualMachine -All -VMMServer $scvmm_server | "
-            "where { $_.MarkedAsTemplate -eq $FALSE } | convertto-xml -as String")
+            "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
+            "Select name | ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+
+    def all_vms(self, **kwargs):
+        vm_list = []
+        data = self.run_script("""
+            $outputCollection = @()
+            $VMs = Get-SCVirtualMachine -All -VMMServer $scvmm_server |
+            Select VMId, Name, StatusString
+            $NetAdapter = Get-SCVirtualNetworkAdapter -VMMServer $scvmm_server -All |
+            Select ID, Name, IPv4Addresses
+            #Associate objects
+            $VMs | ForEach-Object{
+                $vm_object = $_
+                $ip_object = $NetAdapter | Where-Object {$_.Name -eq $vm_object.Name}
+
+                #Make a combined object
+                $outObj = "" | Select VMId, Name, Status, IPv4
+                $outObj.VMId = if($vm_object.VMId){$vm_object.VMId} else {"None"}
+                $outObj.Name = $vm_object.Name
+                $outObj.Status = $vm_object.StatusString
+                $outObj.IPv4 = if($ip_object.IPv4Addresses){$ip_object.IPv4Addresses} else {"None"}
+                #Add the object to the collection
+
+                $outputCollection += $outObj
+            }
+            $outputCollection | ConvertTo-Xml -as String
+            """)
+        vms = etree.parse(StringIO(data)).getroot()
+        for vm in vms:
+            VMId = vm.xpath("./Property[@Name='VMId']/text()")[0],
+            Name = vm.xpath("./Property[@Name='Name']/text()")[0],
+            Status = vm.xpath("./Property[@Name='Status']/text()")[0],
+            IPv4 = vm.xpath("./Property[@Name='IPv4']/text()")[0]
+            vm_data = (
+                None if VMId == 'None' else VMId[0],
+                Name[0],
+                Status[0],
+                None if IPv4 == 'None' else IPv4)
+            vm_list.append(VMInfo(*vm_data))
+        return vm_list
 
     def list_template(self):
         data = self.run_script(
-            "Get-SCVMTemplate -VMMServer $scvmm_server | convertto-xml -as String")
+            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
@@ -130,14 +193,14 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def list_network(self):
         data = self.run_script(
-            "Get-SCLogicalNetwork -VMMServer $scvmm_server | convertto-xml -as String")
+            "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='Name']/text()")
 
     def vm_creation_time(self, vm_name):
         xml = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\""
-            " -VMMServer $scvmm_server | convertto-xml -as String".format(vm_name))
+            " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
         date_time = etree.parse(StringIO(xml)).getroot().xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
         return datetime.strptime(date_time, "%m/%d/%Y %I:%M:%S %p")
@@ -150,7 +213,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def vm_status(self, vm_name):
         data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | convertto-xml -as String"
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
         return etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StatusString']/text()")[0]
@@ -174,30 +237,52 @@ class SCVMMSystem(MgmtSystemAPIBase):
         wait_for(
             lambda: self.is_vm_suspended(vm_name),
             message="SCVMM VM {} suspended.".format(vm_name),
+
             num_sec=num_sec)
 
-    def clone_vm(self, source_name, vm_name):
-        """It wants exact host and placement (c:/asdf/ghjk) :("""
-        raise NotImplementedError('clone_vm not implemented.')
+    def clone_vm(self, vm_source, vm_host, path, vm_name):
+        script = """
+        $vm_new = Get-SCVirtualMachine -Name "{vm_source}" -VMMServer $scvmm_server
+        $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
+        New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}" -StartVM
+        """.format(vm_name=vm_name, vm_source=vm_source, vm_host=vm_host, path=path)
+        self.logger.info(" Deploying SCVMM VM `{}` from Clone of `{}`"
+            .format(vm_name, vm_source))
+        self.run_script(script)
 
     def does_vm_exist(self, vm_name):
         result = self.run_script("Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
             .format(vm_name)).strip()
         return len(result) > 0
 
-    def deploy_template(self, template, vm_name=None, host_group=None, **bogus):
+    def does_template_exist(self, template):
+        result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
+            .format(template)).strip()
+        return len(result) > 0
+
+    def deploy_template(self, template, vm_host, host_group, vm_name=None):
         script = """
         $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
-        $vmhostgroup = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
-        $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vmhostgroup
+        $vm_host_group = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
+        $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_host_group
         Update-SCVMConfiguration -VMConfiguration $vmc
-        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc #-VMMServer $scvmm_server
-        """.format(template=template, vm_name=vm_name, host_group=host_group)
+        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
+        """.format(template=template, vm_name=vm_name, vm_host=vm_host, host_group=host_group)
         self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
             .format(vm_name, template, host_group))
         self.run_script(script)
         self.start_vm(vm_name)
         return vm_name
+
+    def mark_as_template(self, vm_name, library, library_share):
+        # Converts an existing VM into a template.  VM no longer exists afterwards.
+        script = """
+        $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
+        New-SCVMTemplate -Name \"{vm_name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
+         """.format(vm_name=vm_name, ls=library, lp=library_share)
+        self.logger.info(" Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
+            .format(vm_name=vm_name))
+        self.run_script(script)
 
     @contextmanager
     def with_vm(self, *args, **kwargs):
@@ -209,11 +294,9 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def current_ip_address(self, vm_name):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server |"
-            "Get-SCVirtualNetworkAdapter | "
-            "convertto-xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath(
-            "./Object/Property[@Name='IPv4Addresses']/text()")
-        # TODO: Scavenge informations how these are formatted, I see no if-s in SCVMM
+            "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
+            "ft -HideTableHeaders".format(vm_name))
+        return data.translate(None, '{}')
 
     def get_ip_address(self, vm_name, **kwargs):
         return self.current_ip_address(vm_name)
@@ -236,7 +319,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def data(self, vm_name):
         """Returns detailed informations about SCVMM VM"""
         data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | convertto-xml -as String"
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
         return self.SCVMMDataHolderDict(etree.parse(StringIO(data)).getroot().xpath("./Object")[0])
 
