@@ -206,7 +206,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
         raise NotImplementedError('create_vm not implemented.')
 
     def delete_vm(self, instance_name):
-        self.logger.info(" Deleting OpenStack instance %s" % instance_name)
+        self.logger.info(" Deleting OpenStack instance {}".format(instance_name))
         instance = self._find_instance_by_name(instance_name)
         ip_addr = self.current_ip_address(instance_name)
         floating_ip = None
@@ -214,11 +214,19 @@ class OpenstackSystem(MgmtSystemAPIBase):
             floating_ips = self.api.floating_ips.findall(ip=ip_addr)
             if floating_ips:
                 floating_ip = floating_ips[0]
+                self.logger.info('Detaching floating IP {} from {}'.format(ip_addr, instance_name))
+                instance.remove_floating_ip(floating_ip)
+                wait_for(
+                    lambda: self.current_ip_address(instance_name) is None, delay=1, timeout='1m')
+                self.logger.info('Deleting floating IP {}'.format(ip_addr))
+                floating_ip.delete()
+                wait_for(
+                    lambda: len(self.api.floating_ips.findall(ip=ip_addr)) == 0,
+                    delay=1, timeout='1m')
+        self.logger.info(" Deleting OpenStack instance {} in progress now.".format(instance_name))
         instance.delete()
-        if floating_ip is not None:
-            self.logger.info("Deleting floating IP {}".format(floating_ip.ip))
-            floating_ip.delete()
-        return self.does_vm_exist(instance_name)
+        wait_for(lambda: not self.does_vm_exist(instance_name), timeout='3m', delay=5)
+        return True
 
     def restart_vm(self, instance_name):
         self.logger.info(" Restarting OpenStack instance %s" % instance_name)
