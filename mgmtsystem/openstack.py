@@ -16,6 +16,7 @@ from novaclient import exceptions as os_exceptions
 from novaclient.client import HTTPClient
 from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
+import time
 import tzlocal
 from wait_for import wait_for
 
@@ -468,16 +469,17 @@ class OpenstackSystem(MgmtSystemAPIBase):
 
         return kwargs['vm_name']
 
-    def assign_floating_ip(self, instance_or_name, floating_ip_pool):
+    def assign_floating_ip(self, instance_or_name, floating_ip_pool, safety_timer=5):
         """Assigns a floating IP to an instance.
 
         Args:
             instance_or_name: Name of the instance or instance object itself.
             floating_ip_pool: Name of the floating IP pool to take from.
+            safety_timer: A timeout after assigning the FIP that is used to detect whether another
+                external influence did not steal our FIP. Default is 5.
 
         Returns:
-            True if the assignment happened, False if it was not necessary. Raises an exception
-            in case of error.
+            The public FIP. Raises an exception in case of error.
         """
         if isinstance(instance_or_name, Server):
             # Object passed
@@ -488,38 +490,48 @@ class OpenstackSystem(MgmtSystemAPIBase):
             instance_name = instance_or_name
             instance = self._find_instance_by_name(instance_name)
 
-        if self.current_ip_address(instance_name) is not None:
-            return False
+        current_ip = self.current_ip_address(instance_name)
+        if current_ip is not None:
+            return current_ip
 
-        free_ips = self.free_fips(floating_ip_pool)
-        # We maintain 1 floating IP as a protection against race condition
-        # I know it is bad practice, but I did not figure out how to prevent the race
-        # condition by openstack saying "Hey, this IP is already assigned somewhere"
-        if len(free_ips) > 1:
-            # There are 2 and more ips, so we will take the first one (eldest)
-            ip = free_ips[0]
-            self.logger.info("Reusing {} from pool {}".format(ip.ip, floating_ip_pool))
-        else:
-            # There is one or none, so create one.
-            try:
-                ip = self.api.floating_ips.create(floating_ip_pool)
-            except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
-                self.logger.error("Probably no more FIP slots available: {}".format(str(e)))
-                free_ips = self.free_fips(floating_ip_pool)
-                # So, try picking one from the list (there still might be one)
-                if free_ips:
-                    # There is something free. Slight risk of race condition
-                    ip = free_ips[0]
-                    self.logger.info(
-                        "Reused {} from pool {} because no more free spaces for new ips"
-                        .format(ip.ip, floating_ip_pool))
-                else:
-                    # Nothing can be done
-                    raise NoMoreFloatingIPs("Provider {} ran out of FIPs".format(self.auth_url))
-            self.logger.info("Created {} in pool {}".format(ip.ip, floating_ip_pool))
-        instance.add_floating_ip(ip)
+        # Why while? Well, this code can cause one peculiarity. Race condition can "steal" a FIP
+        # so this will loop until it really get the address. A small timeout is added to ensure
+        # the instance really got that address and other process did not steal it.
+        # TODO: Introduce neutron client and its create+assign?
+        while self.current_ip_address(instance_name) is None:
+            free_ips = self.free_fips(floating_ip_pool)
+            # We maintain 1 floating IP as a protection against race condition
+            # I know it is bad practice, but I did not figure out how to prevent the race
+            # condition by openstack saying "Hey, this IP is already assigned somewhere"
+            if len(free_ips) > 1:
+                # There are 2 and more ips, so we will take the first one (eldest)
+                ip = free_ips[0]
+                self.logger.info("Reusing {} from pool {}".format(ip.ip, floating_ip_pool))
+            else:
+                # There is one or none, so create one.
+                try:
+                    ip = self.api.floating_ips.create(floating_ip_pool)
+                except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
+                    self.logger.error("Probably no more FIP slots available: {}".format(str(e)))
+                    free_ips = self.free_fips(floating_ip_pool)
+                    # So, try picking one from the list (there still might be one)
+                    if free_ips:
+                        # There is something free. Slight risk of race condition
+                        ip = free_ips[0]
+                        self.logger.info(
+                            "Reused {} from pool {} because no more free spaces for new ips"
+                            .format(ip.ip, floating_ip_pool))
+                    else:
+                        # Nothing can be done
+                        raise NoMoreFloatingIPs("Provider {} ran out of FIPs".format(self.auth_url))
+                self.logger.info("Created {} in pool {}".format(ip.ip, floating_ip_pool))
+            instance.add_floating_ip(ip)
+
+            # Now the grace period in which a FIP theft could happen
+            time.sleep(safety_timer)
+
         self.logger.info("Instance {} got a floating IP {}".format(instance_name, ip.ip))
-        return True
+        return self.current_ip_address(instance_name)
 
     def delete_floating_ip(self, instance_or_name):
         """Disassociates the floating IP (if present) from VM and deletes it.
