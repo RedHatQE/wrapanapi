@@ -14,6 +14,7 @@ from keystoneclient.v2_0 import client as oskclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import HTTPClient
+from novaclient.v2.floating_ips import FloatingIP
 from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
 import time
@@ -207,10 +208,13 @@ class OpenstackSystem(MgmtSystemAPIBase):
     def create_vm(self):
         raise NotImplementedError('create_vm not implemented.')
 
-    def delete_vm(self, instance_name):
+    def delete_vm(self, instance_name, delete_fip=True):
         self.logger.info(" Deleting OpenStack instance {}".format(instance_name))
         instance = self._find_instance_by_name(instance_name)
-        self.delete_floating_ip(instance)
+        if delete_fip:
+            self.unassign_and_delete_floating_ip(instance)
+        else:
+            self.unassign_floating_ip(instance)
         self.logger.info(" Deleting OpenStack instance {} in progress now.".format(instance_name))
         instance.delete()
         wait_for(lambda: not self.does_vm_exist(instance_name), timeout='3m', delay=5)
@@ -481,16 +485,9 @@ class OpenstackSystem(MgmtSystemAPIBase):
         Returns:
             The public FIP. Raises an exception in case of error.
         """
-        if isinstance(instance_or_name, Server):
-            # Object passed
-            instance_name = instance_or_name.name
-            instance = instance_or_name
-        else:
-            # String passed
-            instance_name = instance_or_name
-            instance = self._find_instance_by_name(instance_name)
+        instance = self._instance_or_name(instance_or_name)
 
-        current_ip = self.current_ip_address(instance_name)
+        current_ip = self.current_ip_address(instance.name)
         if current_ip is not None:
             return current_ip
 
@@ -498,7 +495,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
         # so this will loop until it really get the address. A small timeout is added to ensure
         # the instance really got that address and other process did not steal it.
         # TODO: Introduce neutron client and its create+assign?
-        while self.current_ip_address(instance_name) is None:
+        while self.current_ip_address(instance.name) is None:
             free_ips = self.free_fips(floating_ip_pool)
             # We maintain 1 floating IP as a protection against race condition
             # I know it is bad practice, but I did not figure out how to prevent the race
@@ -530,44 +527,70 @@ class OpenstackSystem(MgmtSystemAPIBase):
             # Now the grace period in which a FIP theft could happen
             time.sleep(safety_timer)
 
-        self.logger.info("Instance {} got a floating IP {}".format(instance_name, ip.ip))
-        return self.current_ip_address(instance_name)
+        self.logger.info("Instance {} got a floating IP {}".format(instance.name, ip.ip))
+        return self.current_ip_address(instance.name)
 
-    def delete_floating_ip(self, instance_or_name):
+    def unassign_floating_ip(self, instance_or_name):
+        """Disassociates the floating IP (if present) from VM.
+
+        Args:
+            instance_or_name: Name of the instance or instance object itself.
+
+        Returns:
+            None if no FIP was dissociated. Otherwise it will return the Floating IP object.
+        """
+        instance = self._instance_or_name(instance_or_name)
+        ip_addr = self.current_ip_address(instance.name)
+        if ip_addr is None:
+            return None
+        floating_ips = self.api.floating_ips.findall(ip=ip_addr)
+        if not floating_ips:
+            return None
+        floating_ip = floating_ips[0]
+        self.logger.info(
+            'Detaching floating IP {}/{} from {}'.format(
+                floating_ip.id, floating_ip.ip, instance.name))
+        instance.remove_floating_ip(floating_ip)
+        wait_for(
+            lambda: self.current_ip_address(instance.name) is None, delay=1, timeout='1m')
+        return floating_ip
+
+    def delete_floating_ip(self, floating_ip):
+        """Deletes an existing FIP.
+
+        Args:
+            floating_ip: FloatingIP object or an IP address of the FIP.
+
+        Returns:
+            True if it deleted a FIP, False if it did not delete it, most probably because it
+            does not exist.
+        """
+        if floating_ip is None:
+            # To be able to chain with unassign_floating_ip, which can return None
+            return False
+        if not isinstance(floating_ip, FloatingIP):
+            floating_ip = self.api.floating_ips.findall(ip=floating_ip)
+            if not floating_ip:
+                return False
+            floating_ip = floating_ip[0]
+        self.logger.info('Deleting floating IP {}/{}'.format(floating_ip.id, floating_ip.ip))
+        floating_ip.delete()
+        wait_for(
+            lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
+            delay=1, timeout='1m')
+        return True
+
+    def unassign_and_delete_floating_ip(self, instance_or_name):
         """Disassociates the floating IP (if present) from VM and deletes it.
 
         Args:
             instance_or_name: Name of the instance or instance object itself.
 
         Returns:
-            True if the deletion happened, otherwise False.
+            True if it deleted a FIP, False if it did not delete it, most probably because it
+            does not exist.
         """
-        if isinstance(instance_or_name, Server):
-            # Object passed
-            instance_name = instance_or_name.name
-            instance = instance_or_name
-        else:
-            # String passed
-            instance_name = instance_or_name
-            instance = self._find_instance_by_name(instance_name)
-        ip_addr = self.current_ip_address(instance_name)
-        if ip_addr is None:
-            return False
-        floating_ips = self.api.floating_ips.findall(ip=ip_addr)
-        if floating_ips:
-            floating_ip = floating_ips[0]
-            self.logger.info('Detaching floating IP {} from {}'.format(ip_addr, instance_name))
-            instance.remove_floating_ip(floating_ip)
-            wait_for(
-                lambda: self.current_ip_address(instance_name) is None, delay=1, timeout='1m')
-            self.logger.info('Deleting floating IP {}'.format(ip_addr))
-            floating_ip.delete()
-            wait_for(
-                lambda: len(self.api.floating_ips.findall(ip=ip_addr)) == 0,
-                delay=1, timeout='1m')
-            return True
-        else:
-            return False
+        return self.delete_floating_ip(self.unassign_floating_ip(instance_or_name))
 
     def _get_instance_networks(self, name):
         instance = self._find_instance_by_name(name)
@@ -674,6 +697,15 @@ class OpenstackSystem(MgmtSystemAPIBase):
                 return instance
         else:
             raise VMInstanceNotFound(name)
+
+    def _instance_or_name(self, instance_or_name):
+        """Works similarly to _find_instance_by_name but allows passing the constructed object."""
+        if isinstance(instance_or_name, Server):
+            # Object passed
+            return instance_or_name
+        else:
+            # String passed
+            return self._find_instance_by_name(instance_or_name)
 
     def _find_template_by_name(self, name):
         templates = self._get_all_templates()
