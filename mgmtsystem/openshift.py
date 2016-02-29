@@ -27,6 +27,12 @@ Route = namedtuple('Route', ['name', 'project_name'])
 
 
 class Openshift(Kubernetes):
+
+    _stats_available = Kubernetes._stats_available.copy()
+    _stats_available.update({
+        'num_route': lambda self: len(self.list_route())
+    })
+
     def __init__(self,
             hostname, protocol="https", port=8443, k_entry="api/v1", o_entry="oapi/v1", **kwargs):
         self.hostname = hostname
@@ -64,6 +70,8 @@ class Openshift(Kubernetes):
         entities = []
         entities_j = self.o_api.get('imagestream')[1]['items']
         for entity_j in entities_j:
+            if 'dockerImageRepository' not in entity_j['status']:
+                continue
             reg_raw = entity_j['status']['dockerImageRepository'].split('/')[0]
             host, port = reg_raw.split(':') if ':' in reg_raw else (reg_raw, '')
             entity = ImageRegistry(host, port)
