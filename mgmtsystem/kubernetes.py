@@ -39,6 +39,19 @@ Service = namedtuple('Service', ['name', 'project_name', 'portal_ip', 'session_a
 
 
 class Kubernetes(ContainerMgmtSystemAPIBase):
+
+    _stats_available = {
+        'num_container': lambda self: len(self.list_container()),
+        'num_pod': lambda self: len(self.list_container_group()),
+        'num_service': lambda self: len(self.list_service()),
+        'num_replication_controller':
+            lambda self: len(self.list_replication_controller()),
+        'num_image': lambda self: len(self.list_image()),
+        'num_node': lambda self: len(self.list_node()),
+        'num_image_registry': lambda self: len(self.list_image_registry()),
+        'num_project': lambda self: len(self.list_project()),
+    }
+
     def __init__(self, hostname, protocol="https", port=6443, entry='api/v1', **kwargs):
         self.hostname = hostname
         self.username = kwargs.get('username', '')
@@ -46,6 +59,9 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         self.token = kwargs.get('token', '')
         self.auth = self.token if self.token else (self.username, self.password)
         self.api = ContainerClient(hostname, self.auth, protocol, port, entry)
+
+    def disconnect(self):
+        pass
 
     def _parse_image_info(self, image_str):
         """Splits full image name into registry, name and tag
@@ -117,7 +133,7 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
-            imgs_j = entity_j['status']['containerStatuses']
+            imgs_j = entity_j['status'].get('containerStatuses', [])
             for img_j in imgs_j:
                 _, name, tag = self._parse_image_info(img_j['image'])
                 img = Image(name, tag, img_j['imageID'])
@@ -143,9 +159,9 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
-            imgs_j = entity_j['status']['containerStatuses']
+            imgs_j = entity_j['status'].get('containerStatuses', [])
             for img_j in imgs_j:
-                registry, _, __ = self._parse_image_info(img_j['image'])
+                registry, _, _ = self._parse_image_info(img_j['image'])
                 if not registry:
                     continue
                 host, port = registry.split(':') if ':' in registry else (registry, '')
@@ -162,3 +178,4 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
             meta = entity_j['metadata']
             entity = Project(meta['name'])
             entities.append(entity)
+        return entities
