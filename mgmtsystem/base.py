@@ -76,7 +76,7 @@ class MgmtSystemAPIBase(object):
         raise NotImplementedError('wait_vm_stopped not implemented.')
 
     @abstractmethod
-    def create_vm(self, vm_name):
+    def create_vm(self, vm_name, *args, **kwargs):
         """Creates a vm.
 
         Args:
@@ -86,7 +86,7 @@ class MgmtSystemAPIBase(object):
         raise NotImplementedError('create_vm not implemented.')
 
     @abstractmethod
-    def delete_vm(self, vm_name):
+    def delete_vm(self, vm_name, *args, **kwargs):
         """Deletes a vm.
 
         Args:
