@@ -1,5 +1,6 @@
 boto
 fauxfactory>=2.0.7
+google-api-python-client
 ovirt-engine-sdk-python
 psphere
 python-cinderclient
