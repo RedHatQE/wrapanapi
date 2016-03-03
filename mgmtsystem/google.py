@@ -29,7 +29,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
     }
 
     def __init__(self, project=None, zone=None, scope=None,
-            file_path=None, json=None, client_email=None):
+                 file_path=None, json=None, client_email=None, **kwargs):
         """
             Params:
                 project: name of the project, so called project_id
@@ -39,6 +39,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
                 json: True or False, if False, we expect p12 file
                 client_email: Require for p12 file
         """
+        super(GoogleCloudSystem, self).__init__(kwargs)
         self._project = project
         self._zone = zone
         if scope is None:
@@ -226,14 +227,14 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
             message="Start {}".format(instance_name))
         return True
 
-    def clone_vm(self):
+    def clone_vm(self, source_name, vm_name):
         raise NotImplementedError('clone_vm not implemented.')
 
     # Get external IP (ephemeral)
     def current_ip_address(self, vm_name):
         return self.vm_status(vm_name)['natIP']
 
-    def deploy_template(self):
+    def deploy_template(self, template, *args, **kwargs):
         raise NotImplementedError('deploy_template not implemented.')
 
     def disconnect(self):
@@ -274,10 +275,10 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
     def list_template(self):
         raise NotImplementedError('list_template not implemented.')
 
-    def remove_host_from_cluster(self):
+    def remove_host_from_cluster(self, hostname):
         raise NotImplementedError('remove_host_from_cluster not implemented.')
 
-    def suspend_vm(self):
+    def suspend_vm(self, vm_name):
         raise NotImplementedError('suspend_vm not implemented.')
 
     def vm_status(self, vm_name):
@@ -293,7 +294,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         self.logger.info("Waiting for instance {} to change status to TERMINATED".format(vm_name))
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
-    def wait_vm_suspended(self):
+    def wait_vm_suspended(self, vm_name, num_sec):
         raise NotImplementedError('wait_vm_suspended not implemented.')
 
     def all_vms(self):
