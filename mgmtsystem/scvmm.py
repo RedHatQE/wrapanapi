@@ -260,7 +260,8 @@ class SCVMMSystem(MgmtSystemAPIBase):
             .format(template)).strip()
         return len(result) > 0
 
-    def deploy_template(self, template, vm_host, host_group, vm_name=None):
+    def deploy_template(self, template, vm_host, host_group, vm_name=None, **kwargs):
+        timeout = kwargs.pop('timeout', 900)
         script = """
         $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
         $vm_host_group = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
@@ -272,6 +273,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
             .format(vm_name, template, host_group))
         self.run_script(script)
         self.start_vm(vm_name)
+        self.wait_vm_running(kwargs['vm_name'], num_sec=timeout)
         return vm_name
 
     def mark_as_template(self, vm_name, library, library_share):
