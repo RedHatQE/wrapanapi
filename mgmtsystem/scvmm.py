@@ -272,9 +272,14 @@ class SCVMMSystem(MgmtSystemAPIBase):
         self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
             .format(vm_name, template, host_group))
         self.run_script(script)
+        self.enable_virtual_services(vm_name)
         self.start_vm(vm_name)
         self.wait_vm_running(vm_name, num_sec=timeout)
         return vm_name
+
+    def enable_virtual_services(self, vm_name):
+        self.run_script(
+            "Set-SCVirtualMachine -InstallVirtualizationGuestServices 1 -VM '{}' ".format(vm_name))
 
     def mark_as_template(self, vm_name, library, library_share):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
