@@ -278,8 +278,14 @@ class SCVMMSystem(MgmtSystemAPIBase):
         return vm_name
 
     def enable_virtual_services(self, vm_name):
-        self.run_script(
-            "Set-SCVirtualMachine -InstallVirtualizationGuestServices 1 -VM '{}' ".format(vm_name))
+        script = """
+        $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
+        $secpswd = ConvertTo-SecureString "{password}" -AsPlainText -Force
+        $mycreds = New-Object System.Management.Automation.PSCredential ("LOCAL\\{user}", $secpswd)
+        Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {
+             Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }
+         """.format(user=self.user, password=self.password, vm_name=vm_name)
+        self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
