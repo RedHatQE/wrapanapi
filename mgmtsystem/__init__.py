@@ -11,3 +11,4 @@ from virtualcenter import VMWareSystem  # NOQA
 from google import GoogleCloudSystem  # NOQA
 from kubernetes import Kubernetes  # NOQA
 from openshift import Openshift  # NOQA
+from hawkular import Hawkular  # NOQA

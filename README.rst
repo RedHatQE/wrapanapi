@@ -29,6 +29,7 @@ mgmtsystem is a simple virtualization client with support (in varying degrees) f
 * Microsoft Azure
 * Google Compute Engine
 * Kubernetes
+* Hawkular
 
 It can be used to control virtualization clients and offersoperations such as
 

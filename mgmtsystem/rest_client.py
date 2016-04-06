@@ -57,6 +57,10 @@ class ContainerClient(object):
         r = self.raw_get(path)
         return (r.status_code, r.json() if r.ok else None)
 
+    def get_json(self, path):
+        r = self.raw_get(path)
+        return (r.json() if r.ok else None)
+
     def raw_get(self, path):
         return requests.get(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify)
