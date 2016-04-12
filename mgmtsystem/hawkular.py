@@ -24,6 +24,7 @@ hawkular:
 Feed = namedtuple('Feed', ['id', 'name', 'path'])
 ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Server = namedtuple('Server', ['id', 'name', 'path'])
+ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 
 
 class Hawkular(object):
@@ -89,3 +90,13 @@ class Hawkular(object):
             entity = Server(entity_j['id'], entity_j['name'], entity_j['path'])
             entities.append(entity)
         return entities
+
+    def get_server_status(self, feed_id, resource_id):
+        """Returns the data info about resource by provided feed ID and resource ID.
+        This information is wrapped into ServerStatus."""
+        entity_j = self.api.get_json('feeds/{}/resources/{}/data'
+                                     .format(feed_id, resource_id))['value']
+        entity = ServerStatus(entity_j['Bound Address'], entity_j['Version'],
+                              entity_j['Server State'], entity_j['Product Name'],
+                              entity_j['Hostname'])
+        return entity
