@@ -28,16 +28,24 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         'stopping': ('STOPPING'),
     }
 
-    def __init__(self, project=None, zone=None, scope=None,
-                 file_path=None, json=None, client_email=None, **kwargs):
+    def __init__(self, project=None, zone=None, scope=None, creds=None,
+                 file_path=None, file_type=None, client_email=None, **kwargs):
         """
-            Params:
+            The last three argumets are optional and required only if you want
+            to use json or p12 files.
+            By default, we expecting that creds arg contains service account data.
+
+            Args:
                 project: name of the project, so called project_id
                 zone: zone of cloud
                 scope: compute engine, container engine, sqlservice end etc
+                creds: service_account_content
+
                 file_path: path to json or p12 file
-                json: True or False, if False, we expect p12 file
+                file_type: p12 or json
                 client_email: Require for p12 file
+
+            Returns: A :py:class:`GoogleCloudSystem` object.
         """
         super(GoogleCloudSystem, self).__init__(kwargs)
         self._project = project
@@ -45,10 +53,12 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         if scope is None:
             scope = self.default_scope
 
-        if json:
+        if creds:
+            credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds, scopes=scope)
+        elif file_type == 'json':
             credentials = ServiceAccountCredentials.from_json_keyfile_name(
                 file_path, scopes=scope)
-        else:
+        elif file_type == 'p12':
             credentials = ServiceAccountCredentials.from_p12_keyfile(
                 client_email, file_path, scopes=scope)
         http_auth = credentials.authorize(Http())
@@ -108,7 +118,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
 
         return False
 
-    def create_vm(self, instance_name='test-instance', source_disk_image=None, machine_type=None,
+    def create_vm(self, instance_name='test_instance', source_disk_image=None, machine_type=None,
             startup_script_data=None, timeout=180):
         if self.does_vm_exist(instance_name):
             self.logger.info("The {} instance is already exists, skipping".format(instance_name))
@@ -299,14 +309,13 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
 
     def all_vms(self):
         result = []
-        for vm in self._get_all_instances()['items']:
-            if (vm['id'] and vm['name'] and vm['status'] and
-                    vm['networkInterfaces'][0]['accessConfigs'][0]['natIP']):
+        for vm in self._get_all_instances().get('items', []):
+            if (vm['id'] and vm['name'] and vm['status'] and vm.get('networkInterfaces')):
 
                 result.append(VMInfo(
                     vm['id'],
                     vm['name'],
                     vm['status'],
-                    vm['networkInterfaces'][0]['accessConfigs'][0]['natIP'],
+                    vm.get('networkInterfaces')[0].get('networkIP'),
                 ))
         return result
