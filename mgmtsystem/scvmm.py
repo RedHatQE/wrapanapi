@@ -114,16 +114,15 @@ class SCVMMSystem(MgmtSystemAPIBase):
             .format(vm_name, vm_new_name))
         self.run_script(script)
 
-    def delete_vm(self, vm_name, host):
+    def delete_vm(self, vm_name):
         if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
             self.stop_vm(vm_name)
             self.wait_vm_stopped(vm_name)
         script = """
         $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-        Remove-SCVirtualMachine -VM $VM
-        """.format(vm_name=vm_name, host=host)
-        self.logger.info(" Deleting SCVMM VM `{}`"
-            .format(vm_name))
+        Remove-SCVirtualMachine -VM $VM -Force
+        """.format(vm_name=vm_name)
+        self.logger.info(" Deleting SCVMM VM `{}`".format(vm_name))
         self.run_script(script)
 
     def delete_template(self, template):
@@ -131,8 +130,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         $Template = Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server
         Remove-SCVMTemplate -VMTemplate $Template -Force
         """.format(template)
-        self.logger.info(" Removing SCVMM VM `{}`"
-            .format(template))
+        self.logger.info(" Removing SCVMM VM `{}`".format(template))
         self.run_script(script)
 
     def restart_vm(self, vm_name):
