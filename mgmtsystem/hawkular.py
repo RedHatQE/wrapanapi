@@ -1,3 +1,4 @@
+from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 
@@ -24,10 +25,11 @@ hawkular:
 Feed = namedtuple('Feed', ['id', 'name', 'path'])
 ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Server = namedtuple('Server', ['id', 'name', 'path'])
+Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
 ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 
 
-class Hawkular(object):
+class Hawkular(MgmtSystemAPIBase):
     """Hawkular management system
 
     Hawkular REST API method calls.
@@ -43,13 +45,92 @@ class Hawkular(object):
 
     """
 
+    _stats_available = {
+        'num_server': lambda self: sum(len(self.list_server(f.id)) for f in self.list_feed()),
+        'num_deployment': lambda self: sum(len(self.list_server_deployment(f.id))
+                                           for f in self.list_feed()),
+    }
+
     def __init__(self,
             hostname, protocol="http", port=8080, entry="hawkular/inventory", **kwargs):
+        super(Hawkular, self).__init__(kwargs)
         self.hostname = hostname
         self.username = kwargs.get('username', '')
         self.password = kwargs.get('password', '')
         self.auth = self.username, self.password
         self.api = ContainerClient(hostname, self.auth, protocol, port, entry)
+
+    def info(self):
+        raise NotImplementedError('info not implemented.')
+
+    def clone_vm(self, source_name, vm_name):
+        raise NotImplementedError('clone_vm not implemented.')
+
+    def create_vm(self, vm_name):
+        raise NotImplementedError('create_vm not implemented.')
+
+    def current_ip_address(self, vm_name):
+        raise NotImplementedError('current_ip_address not implemented.')
+
+    def delete_vm(self, vm_name):
+        raise NotImplementedError('delete_vm not implemented.')
+
+    def deploy_template(self, template, *args, **kwargs):
+        raise NotImplementedError('deploy_template not implemented.')
+
+    def disconnect(self):
+        raise NotImplementedError('disconnect not implemented.')
+
+    def does_vm_exist(self, name):
+        raise NotImplementedError('does_vm_exist not implemented.')
+
+    def get_ip_address(self, vm_name):
+        raise NotImplementedError('get_ip_address not implemented.')
+
+    def is_vm_running(self, vm_name):
+        raise NotImplementedError('is_vm_running not implemented.')
+
+    def is_vm_stopped(self, vm_name):
+        raise NotImplementedError('is_vm_stopped not implemented.')
+
+    def is_vm_suspended(self, vm_name):
+        raise NotImplementedError('is_vm_suspended not implemented.')
+
+    def list_flavor(self):
+        raise NotImplementedError('list_flavor not implemented.')
+
+    def list_template(self):
+        raise NotImplementedError('list_template not implemented.')
+
+    def list_vm(self, **kwargs):
+        raise NotImplementedError('list_vm not implemented.')
+
+    def remove_host_from_cluster(self, hostname):
+        raise NotImplementedError('remove_host_from_cluster not implemented.')
+
+    def restart_vm(self, vm_name):
+        raise NotImplementedError('restart_vm not implemented.')
+
+    def start_vm(self, vm_name):
+        raise NotImplementedError('start_vm not implemented.')
+
+    def stop_vm(self, vm_name):
+        raise NotImplementedError('stop_vm not implemented.')
+
+    def suspend_vm(self, vm_name):
+        raise NotImplementedError('restart_vm not implemented.')
+
+    def vm_status(self, vm_name):
+        raise NotImplementedError('vm_status not implemented.')
+
+    def wait_vm_running(self, vm_name, num_sec):
+        raise NotImplementedError('wait_vm_running not implemented.')
+
+    def wait_vm_stopped(self, vm_name, num_sec):
+        raise NotImplementedError('wait_vm_stopped not implemented.')
+
+    def wait_vm_suspended(self, vm_name, num_sec):
+        raise NotImplementedError('wait_vm_suspended not implemented.')
 
     def list_server_deployment(self, feed_id, type_id='Deployment'):
         """Returns list of deployments on servers by provided feed ID and resource type ID"""
@@ -57,7 +138,7 @@ class Hawkular(object):
         entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
                                        .format(feed_id, type_id))
         for entity_j in entities_j:
-            entity = Server(entity_j['id'], entity_j['name'], entity_j['path'])
+            entity = Deployment(entity_j['id'], entity_j['name'], entity_j['path'])
             entities.append(entity)
         return entities
 
