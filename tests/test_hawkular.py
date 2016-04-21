@@ -17,8 +17,8 @@ def test_list_feed(provider):
     feeds = provider.list_feed()
     assert len(feeds) > 0, "No feeds are listed"
     for feed in feeds:
-        assert feed.id is not None
-        assert feed.path is not None
+        assert feed.id
+        assert feed.path
 
 
 def test_list_resource_type(provider):
@@ -30,9 +30,9 @@ def test_list_resource_type(provider):
         if len(res_types) > 0:
             found = True
         for res_type in res_types:
-            assert res_type.id is not None
-            assert res_type.name is not None
-            assert res_type.path is not None
+            assert res_type.id
+            assert res_type.name
+            assert res_type.path
     assert found, "No any resource type is listed for any of feeds"
 
 
@@ -45,9 +45,9 @@ def test_list_server(provider):
         if len(servers) > 0:
             found = True
         for server in servers:
-            assert server.id is not None
-            assert server.name is not None
-            assert server.path is not None
+            assert server.id
+            assert server.name
+            assert server.path
     assert found, "No any server is listed for any of feeds"
 
 
@@ -60,9 +60,9 @@ def test_list_server_deployment(provider):
         if len(deployments) > 0:
             found = True
         for deployment in deployments:
-            assert deployment.id is not None
-            assert deployment.name is not None
-            assert deployment.path is not None
+            assert deployment.id
+            assert deployment.name
+            assert deployment.path
     assert found, "No any deployment is listed for any of feeds"
 
 
@@ -72,13 +72,13 @@ def test_get_server_status(provider):
     feeds = provider.list_feed()
     for feed in feeds:
         status = provider.get_server_status(feed.id, 'Local~~')
-        if status is not None:
+        if status:
             found = True
-        assert status.address is not None
-        assert status.version is not None
-        assert status.state is not None
-        assert status.product is not None
-        assert status.host is not None
+            assert status.address
+            assert status.version
+            assert status.state
+            assert status.product
+            assert status.host
     assert found, "No Status is listed for any of servers"
 
 
