@@ -79,7 +79,7 @@ class Hawkular(MgmtSystemAPIBase):
         raise NotImplementedError('deploy_template not implemented.')
 
     def disconnect(self):
-        raise NotImplementedError('disconnect not implemented.')
+        pass
 
     def does_vm_exist(self, name):
         raise NotImplementedError('does_vm_exist not implemented.')
@@ -137,29 +137,32 @@ class Hawkular(MgmtSystemAPIBase):
         entities = []
         entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
                                        .format(feed_id, type_id))
-        for entity_j in entities_j:
-            entity = Deployment(entity_j['id'], entity_j['name'], entity_j['path'])
-            entities.append(entity)
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Deployment(entity_j['id'], entity_j['name'], entity_j['path'])
+                entities.append(entity)
         return entities
 
     def list_feed(self):
         """Returns list of feeds"""
         entities = []
         entities_j = self.api.get_json('feeds')
-        for entity_j in entities_j:
-            entity = Feed(entity_j['id'],
-                          entity_j['name'] if entity_j.__contains__('name') else None,
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Feed(entity_j['id'],
+                          entity_j['name'] if 'name' in entity_j else None,
                           entity_j['path'])
-            entities.append(entity)
+                entities.append(entity)
         return entities
 
     def list_resource_type(self, feed_id):
         """Returns list of resource types by provided feed ID"""
         entities = []
         entities_j = self.api.get_json('feeds/{}/resourceTypes'.format(feed_id))
-        for entity_j in entities_j:
-            entity = ResourceType(entity_j['id'], entity_j['name'], entity_j['path'])
-            entities.append(entity)
+        if entities_j:
+            for entity_j in entities_j:
+                entity = ResourceType(entity_j['id'], entity_j['name'], entity_j['path'])
+                entities.append(entity)
         return entities
 
     def list_server(self, feed_id, type_id='WildFly Server'):
@@ -167,17 +170,22 @@ class Hawkular(MgmtSystemAPIBase):
         entities = []
         entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
                                        .format(feed_id, type_id))
-        for entity_j in entities_j:
-            entity = Server(entity_j['id'], entity_j['name'], entity_j['path'])
-            entities.append(entity)
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Server(entity_j['id'], entity_j['name'], entity_j['path'])
+                entities.append(entity)
         return entities
 
     def get_server_status(self, feed_id, resource_id):
         """Returns the data info about resource by provided feed ID and resource ID.
         This information is wrapped into ServerStatus."""
         entity_j = self.api.get_json('feeds/{}/resources/{}/data'
-                                     .format(feed_id, resource_id))['value']
-        entity = ServerStatus(entity_j['Bound Address'], entity_j['Version'],
-                              entity_j['Server State'], entity_j['Product Name'],
-                              entity_j['Hostname'])
-        return entity
+                                     .format(feed_id, resource_id))
+        if entity_j:
+            value_j = entity_j['value']
+            if value_j:
+                entity = ServerStatus(value_j['Bound Address'], value_j['Version'],
+                                      value_j['Server State'], value_j['Product Name'],
+                                      value_j['Hostname'])
+                return entity
+        return None
