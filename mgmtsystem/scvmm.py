@@ -294,7 +294,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         self.run_script(script)
 
     def update_scvmm_virtualmachine(self, vm_name):
-        # This forces SCVMM to update a VM that was changed directly in Hyper-V
+        # This forces SCVMM to update a VM that was changed directly in Hyper-V using Invoke-Command
         script = """
         $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
         Read-SCVirtualMachine -VM $vm
