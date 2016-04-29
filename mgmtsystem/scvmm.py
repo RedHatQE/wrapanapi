@@ -4,6 +4,7 @@
 Used to communicate with providers without using CFME facilities
 """
 import winrm
+import re
 from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
@@ -299,6 +300,8 @@ class SCVMMSystem(MgmtSystemAPIBase):
         $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
         Read-SCVirtualMachine -VM $vm
          """.format(vm_name=vm_name)
+        self.logger.info("Updating SCVMM VM \"{vm_name}\" using Read-SCVirtualMachine"
+            .format(vm_name=vm_name))
         self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
@@ -326,6 +329,10 @@ class SCVMMSystem(MgmtSystemAPIBase):
         return data.translate(None, '{}')
 
     def get_ip_address(self, vm_name, **kwargs):
+        # Forcing an update to account for any delayed status changes
+        self.update_scvmm_virtualmachine(vm_name)
+        if not re.findall(r'[0-9]+(?:.[0-9]+){3}', self.current_ip_address(vm_name)):
+            return None
         return self.current_ip_address(vm_name)
 
     def remove_host_from_cluster(self, hostname):
