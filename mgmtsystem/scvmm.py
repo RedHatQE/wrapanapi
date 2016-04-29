@@ -278,16 +278,27 @@ class SCVMMSystem(MgmtSystemAPIBase):
         self.enable_virtual_services(vm_name)
         self.start_vm(vm_name)
         self.wait_vm_running(vm_name, num_sec=timeout)
+        self.update_scvmm_virtualmachine(vm_name)
         return vm_name
 
     def enable_virtual_services(self, vm_name):
+        # Make sure you double bracket any Invoke_Command calls.
         script = """
         $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
         $secpswd = ConvertTo-SecureString "{password}" -AsPlainText -Force
-        $mycreds = New-Object System.Management.Automation.PSCredential ("LOCAL\\{user}", $secpswd)
-        Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {
-             Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }
+        $mycreds = New-Object System.Management.Automation.PSCredential("LOCAL\\{user}", $secpswd)
+        Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {{
+             Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }}
+        Read-SCVirtualMachine -VM $vm
          """.format(user=self.user, password=self.password, vm_name=vm_name)
+        self.run_script(script)
+
+    def update_scvmm_virtualmachine(self, vm_name):
+        # This forces SCVMM to update a VM that was changed directly in Hyper-V using Invoke-Command
+        script = """
+        $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
+        Read-SCVirtualMachine -VM $vm
+         """.format(vm_name=vm_name)
         self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
@@ -296,7 +307,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
         New-SCVMTemplate -Name \"{vm_name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
          """.format(vm_name=vm_name, ls=library, lp=library_share)
-        self.logger.info(" Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
+        self.logger.info("Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
             .format(vm_name=vm_name))
         self.run_script(script)
 
