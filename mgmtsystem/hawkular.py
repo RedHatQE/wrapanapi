@@ -2,6 +2,8 @@ from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 
+import sys
+
 """
 Related yaml structures:
 
@@ -27,6 +29,8 @@ ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Server = namedtuple('Server', ['id', 'name', 'path'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
 ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
+Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
+                             'category', 'text'])
 
 
 class Hawkular(MgmtSystemAPIBase):
@@ -52,13 +56,14 @@ class Hawkular(MgmtSystemAPIBase):
     }
 
     def __init__(self,
-            hostname, protocol="http", port=8080, entry="hawkular/inventory", **kwargs):
+            hostname, protocol="http", port=8080, **kwargs):
         super(Hawkular, self).__init__(kwargs)
         self.hostname = hostname
         self.username = kwargs.get('username', '')
         self.password = kwargs.get('password', '')
         self.auth = self.username, self.password
-        self.api = ContainerClient(hostname, self.auth, protocol, port, entry)
+        self.api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/inventory")
+        self.alerts_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/alerts")
 
     def info(self):
         raise NotImplementedError('info not implemented.')
@@ -189,3 +194,18 @@ class Hawkular(MgmtSystemAPIBase):
                                       value_j['Hostname'])
                 return entity
         return None
+
+    def list_event(self, start_time=0, end_time=sys.maxsize):
+        """Returns the list of events filtered by provided start time and end time.
+        Or lists all events if no argument provided.
+        This information is wrapped into Event."""
+        entities = []
+        entities_j = self.alerts_api.get_json('events?startTime={}&endTime={}'
+                                     .format(start_time, end_time))
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Event(entity_j['id'], entity_j['eventType'], entity_j['ctime'],
+                               entity_j['dataSource'], entity_j['dataId'],
+                               entity_j['category'], entity_j['text'])
+                entities.append(entity)
+        return entities

@@ -100,3 +100,22 @@ def test_num_deployment(provider):
         deployments_count += len(provider.list_server_deployment(feed.id))
     num_deployment = provider._stats_available['num_deployment'](provider)
     assert num_deployment == deployments_count, "Number of deployments is wrong"
+
+
+def test_list_event_empty(provider):
+    """ Checks that events are filtered and empty list is returned """
+    assert len(provider.list_event(0, 0)) == 0, "Unexpected events are returned"
+
+
+def test_list_event(provider):
+    """ Checks whether is any event listed """
+    events = provider.list_event()
+    assert len(events) > 0, "No events are listed"
+    event = events[0]
+    assert event.id
+    assert event.eventType
+    assert event.ctime
+    assert event.dataSource
+    assert event.dataId
+    assert event.category
+    assert event.text
