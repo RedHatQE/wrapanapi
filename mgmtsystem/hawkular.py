@@ -49,32 +49,23 @@ class Path(object):
         self.path = {}
         self.path.update({'raw': path})
         if self.path['raw']:
+            _pname_mapping = {
+                '/t;':  'tenant',
+                '/e;':  'environment',
+                '/rt;': 'resource_type',
+                '/mt;': 'metric_type',
+                '/f;':  'feed',
+                '/ot;': 'operation_type',
+                '/mp;': 'metadata_pack',
+                '/r;':  'resource',
+                '/d;':  'data',
+                '/rl;': 'relationship',
+            }
             raw_paths = re.split(r'(/\w+;)', self.path['raw'])
             if len(raw_paths) % 2 == 1:
                 del raw_paths[0]
             for p_index in range(0, len(raw_paths), 2):
-                if raw_paths[p_index] == '/t;':
-                    self.path.update({'tenant': raw_paths[p_index+1]})
-                elif raw_paths[p_index] == '/e;':
-                    self.path.update({'environment': raw_paths[p_index+1]})
-                elif raw_paths[p_index] == '/rt;':
-                    self.path.update({'resource_type': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/mt;':
-                    self.path.update({'metric_type': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/f;':
-                    self.path.update({'feed': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/ot;':
-                    self.path.update({'operation_type': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/mp;':
-                    self.path.update({'metadata_pack': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/r;':
-                    self.path.update({'resource': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/m;':
-                    self.path.update({'metric': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/d;':
-                    self.path.update({'data': raw_paths[p_index + 1]})
-                elif raw_paths[p_index] == '/r;':
-                    self.path.update({'relationship': raw_paths[p_index + 1]})
+                self.path.update({_pname_mapping[raw_paths[p_index]]: raw_paths[p_index+1]})
 
     def __getattr__(self, name):
         return self.path[name] if name in self.path else None
@@ -218,12 +209,12 @@ class Hawkular(MgmtSystemAPIBase):
             resources = []
             feeds = self.list_feed()
             for feed in feeds:
-                resources = resources + self.__list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
+                resources = resources + self._list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
             return resources
         else:
-            return self.__list_resource(type_id=kwargs['type_id'], feed_id=feed_id)
+            return self._list_resource(type_id=kwargs['type_id'], feed_id=feed_id)
 
-    def __list_resource(self, **kwargs):
+    def _list_resource(self, **kwargs):
         """Returns list of resources by provided `type_id` and `feed_id`"""
         if not kwargs or 'feed_id' not in kwargs or 'type_id' not in kwargs:
             raise KeyError('Variable "feed_id" and "type_id" are mandatory field!')
