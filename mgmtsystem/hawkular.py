@@ -2,6 +2,7 @@ from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 
+import re
 import sys
 
 """
@@ -26,12 +27,60 @@ hawkular:
 
 Feed = namedtuple('Feed', ['id', 'name', 'path'])
 ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
-Server = namedtuple('Server', ['id', 'name', 'path'])
+Resource = namedtuple('Resource', ['id', 'name', 'path'])
+ResourceData = namedtuple('ResourceData', ['name', 'path', 'value'])
+Server = namedtuple('Server', ['id', 'name', 'path', 'data'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
-ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
                              'category', 'text'])
 
+
+class Path(object):
+    """Path class
+
+    Path is class to split canonical path to friendly values.
+
+    Args:
+        path:   The canonical path. Example: /t;28026b36-8fe4-4332-84c8-524e173a68bf\
+        /f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;Local~~
+
+    """
+    def __init__(self, path):
+        self.path = {}
+        self.path.update({'raw': path})
+        if self.path['raw']:
+            raw_paths = re.split(r'(/\w+;)', self.path['raw'])
+            if len(raw_paths) % 2 == 1:
+                del raw_paths[0]
+            for p_index in range(0, len(raw_paths), 2):
+                if raw_paths[p_index] == '/t;':
+                    self.path.update({'tenant': raw_paths[p_index+1]})
+                elif raw_paths[p_index] == '/e;':
+                    self.path.update({'environment': raw_paths[p_index+1]})
+                elif raw_paths[p_index] == '/rt;':
+                    self.path.update({'resource_type': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/mt;':
+                    self.path.update({'metric_type': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/f;':
+                    self.path.update({'feed': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/ot;':
+                    self.path.update({'operation_type': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/mp;':
+                    self.path.update({'metadata_pack': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/r;':
+                    self.path.update({'resource': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/m;':
+                    self.path.update({'metric': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/d;':
+                    self.path.update({'data': raw_paths[p_index + 1]})
+                elif raw_paths[p_index] == '/r;':
+                    self.path.update({'relationship': raw_paths[p_index + 1]})
+
+    def __getattr__(self, name):
+        return self.path[name] if name in self.path else None
+
+    def __repr__(self):
+        return self.path['raw'] if 'raw' in self.path else None
 
 class Hawkular(MgmtSystemAPIBase):
     """Hawkular management system
@@ -62,7 +111,7 @@ class Hawkular(MgmtSystemAPIBase):
         self.username = kwargs.get('username', '')
         self.password = kwargs.get('password', '')
         self.auth = self.username, self.password
-        self.api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/inventory")
+        self.inv_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/inventory")
         self.alerts_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/alerts")
 
     def info(self):
@@ -137,63 +186,88 @@ class Hawkular(MgmtSystemAPIBase):
     def wait_vm_suspended(self, vm_name, num_sec):
         raise NotImplementedError('wait_vm_suspended not implemented.')
 
-    def list_server_deployment(self, feed_id, type_id='Deployment'):
-        """Returns list of deployments on servers by provided feed ID and resource type ID"""
+    def list_server_deployment(self, **kwargs):
+        """Returns list of server deployments. Possible filters: `feed_id`"""
+        resources = self.list_resource(type_id='Deployment',
+                                       feed_id=kwargs['feed_id'] if 'feed_id' in kwargs else None)
+        deployments = []
+        if resources:
+            for resource in resources:
+                deployments.append(Deployment(resource.id, resource.name, resource.path))
+        return deployments
+
+    def list_server(self, **kwargs):
+        """Returns list of middleware servers. Possible filters: `feed_id`"""
+        resources = self.list_resource(type_id='WildFly Server',
+                                       feed_id=kwargs['feed_id'] if 'feed_id' in kwargs else None)
+        servers = []
+        if resources:
+            for resource in resources:
+                resource_data = self.resource_data(feed_id=resource.path.feed, resource_id=resource.id)
+                server_data = {'data_name': resource_data.name}
+                server_data.update(resource_data.value)
+                servers.append(Server(resource.id, resource.name, resource.path, server_data))
+        return servers
+
+    def list_resource(self, **kwargs):
+        """Returns list of resources by provided `type_id`. Possible filters: `feed_id`"""
+        if not kwargs or 'type_id' not in kwargs:
+            raise KeyError('Variable "type_id" is a mandatory field!')
+        feed_id = kwargs['feed_id'] if 'feed_id' in kwargs else None
+        if not feed_id:
+            resources = []
+            feeds = self.list_feed()
+            for feed in feeds:
+                resources = resources + self.__list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
+            return resources
+        else:
+            return self.__list_resource(type_id=kwargs['type_id'], feed_id=feed_id)
+
+    def __list_resource(self, **kwargs):
+        """Returns list of resources by provided `type_id` and `feed_id`"""
+        if not kwargs or 'feed_id' not in kwargs or 'type_id' not in kwargs:
+            raise KeyError('Variable "feed_id" and "type_id" are mandatory field!')
         entities = []
-        entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
-                                       .format(feed_id, type_id))
+        entities_j = self.inv_api.get_json('feeds/{}/resourceTypes/{}/resources'
+                                       .format(kwargs['feed_id'], kwargs['type_id']))
         if entities_j:
             for entity_j in entities_j:
-                entity = Deployment(entity_j['id'], entity_j['name'], entity_j['path'])
-                entities.append(entity)
+                entities.append(Resource(entity_j['id'], entity_j['name'], Path(entity_j['path'])))
         return entities
+
+    def resource_data(self, **kwargs):
+        """Returns the data/configuration information about resource by provided `feed_id` and `resource_id`."""
+        if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
+            raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
+        entity_j = self.inv_api.get_json('feeds/{}/resources/{}/data'
+                                     .format(kwargs['feed_id'], kwargs['resource_id']))
+        if entity_j:
+            return ResourceData(entity_j['name'], Path(entity_j['path']), entity_j['value'])
+        return None
 
     def list_feed(self):
         """Returns list of feeds"""
         entities = []
-        entities_j = self.api.get_json('feeds')
+        entities_j = self.inv_api.get_json('feeds')
         if entities_j:
             for entity_j in entities_j:
                 entity = Feed(entity_j['id'],
-                          entity_j['name'] if 'name' in entity_j else None,
-                          entity_j['path'])
+                              entity_j['name'] if 'name' in entity_j else None,
+                              Path(entity_j['path']))
                 entities.append(entity)
         return entities
 
-    def list_resource_type(self, feed_id):
-        """Returns list of resource types by provided feed ID"""
+    def list_resource_type(self, **kwargs):
+        """Returns list of resource types by provided `feed_id`"""
+        if not kwargs or 'feed_id' not in kwargs:
+            raise KeyError('Variable "feed_id" is a mandatory field!')
         entities = []
-        entities_j = self.api.get_json('feeds/{}/resourceTypes'.format(feed_id))
+        entities_j = self.inv_api.get_json('feeds/{}/resourceTypes'.format(kwargs['feed_id']))
         if entities_j:
             for entity_j in entities_j:
                 entity = ResourceType(entity_j['id'], entity_j['name'], entity_j['path'])
                 entities.append(entity)
         return entities
-
-    def list_server(self, feed_id, type_id='WildFly Server'):
-        """Returns list of middleware servers by provided feed ID and resource type ID"""
-        entities = []
-        entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
-                                       .format(feed_id, type_id))
-        if entities_j:
-            for entity_j in entities_j:
-                entity = Server(entity_j['id'], entity_j['name'], entity_j['path'])
-                entities.append(entity)
-        return entities
-
-    def get_server_status(self, feed_id, resource_id):
-        """Returns the data info about resource by provided feed ID and resource ID.
-        This information is wrapped into ServerStatus."""
-        entity_j = self.api.get_json('feeds/{}/resources/{}/data'
-                                     .format(feed_id, resource_id))
-        if entity_j:
-            value_j = entity_j['value']
-            if value_j:
-                entity = ServerStatus(value_j['Bound Address'], value_j['Version'],
-                                      value_j['Server State'], value_j['Product Name'],
-                                      value_j['Hostname'])
-                return entity
-        return None
 
     def list_event(self, start_time=0, end_time=sys.maxsize):
         """Returns the list of events filtered by provided start time and end time.
