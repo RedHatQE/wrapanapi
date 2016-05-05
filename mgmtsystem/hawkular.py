@@ -50,22 +50,22 @@ class Path(object):
         self.path.update({'raw': path})
         if self.path['raw']:
             _pname_mapping = {
-                '/t;':  'tenant',
-                '/e;':  'environment',
+                '/t;': 'tenant',
+                '/e;': 'environment',
                 '/rt;': 'resource_type',
                 '/mt;': 'metric_type',
-                '/f;':  'feed',
+                '/f;': 'feed',
                 '/ot;': 'operation_type',
                 '/mp;': 'metadata_pack',
-                '/r;':  'resource',
-                '/d;':  'data',
+                '/r;': 'resource',
+                '/d;': 'data',
                 '/rl;': 'relationship',
             }
             raw_paths = re.split(r'(/\w+;)', self.path['raw'])
             if len(raw_paths) % 2 == 1:
                 del raw_paths[0]
             for p_index in range(0, len(raw_paths), 2):
-                self.path.update({_pname_mapping[raw_paths[p_index]]: raw_paths[p_index+1]})
+                self.path.update({_pname_mapping[raw_paths[p_index]]: raw_paths[p_index + 1]})
 
     def __getattr__(self, name):
         return self.path[name] if name in self.path else None
@@ -194,7 +194,8 @@ class Hawkular(MgmtSystemAPIBase):
         servers = []
         if resources:
             for resource in resources:
-                resource_data = self.resource_data(feed_id=resource.path.feed, resource_id=resource.id)
+                resource_data = self.resource_data(
+                    feed_id=resource.path.feed, resource_id=resource.id)
                 server_data = {'data_name': resource_data.name}
                 server_data.update(resource_data.value)
                 servers.append(Server(resource.id, resource.name, resource.path, server_data))
@@ -209,7 +210,8 @@ class Hawkular(MgmtSystemAPIBase):
             resources = []
             feeds = self.list_feed()
             for feed in feeds:
-                resources = resources + self._list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
+                resources = resources \
+                            + self._list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
             return resources
         else:
             return self._list_resource(type_id=kwargs['type_id'], feed_id=feed_id)
@@ -227,7 +229,8 @@ class Hawkular(MgmtSystemAPIBase):
         return entities
 
     def resource_data(self, **kwargs):
-        """Returns the data/configuration information about resource by provided `feed_id` and `resource_id`."""
+        """Returns the data/configuration information about resource by provided\
+         `feed_id` and `resource_id`."""
         if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
             raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
         entity_j = self.inv_api.get_json('feeds/{}/resources/{}/data'
