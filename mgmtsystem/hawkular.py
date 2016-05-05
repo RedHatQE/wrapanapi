@@ -34,11 +34,34 @@ Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
                              'category', 'text'])
 
+PATH_NAME_MAPPING = {
+    '/t;': 'tenant',
+    '/e;': 'environment',
+    '/rt;': 'resource_type',
+    '/mt;': 'metric_type',
+    '/f;': 'feed',
+    '/ot;': 'operation_type',
+    '/mp;': 'metadata_pack',
+    '/r;': 'resource',
+    '/d;': 'data',
+    '/rl;': 'relationship',
+}
+
 
 class Path(object):
     """Path class
 
-    Path is class to split canonical path to friendly values.
+    Path is class to split canonical path to friendly values.\
+    If the path has more than one entry for a resource result will be in list
+    Example:
+        obj_p = Path('/t;28026b36-8fe4-4332-84c8-524e173a68bf\
+        /f;88db6b41-09fd-4993-8507-4a98f25c3a6b\
+        /r;Local~~/r;Local~%2Fdeployment%3Dhawkular-command-gateway-war.war')
+        obj_p.path returns raw path
+        obj_p.tenant returns tenant as `28026b36-8fe4-4332-84c8-524e173a68bf`
+        obj_p.feed returns feed as `88db6b41-09fd-4993-8507-4a98f25c3a6b`
+        obj_p.resource returns as \
+        `[u'Local~~', u'Local~%2Fdeployment%3Dhawkular-command-gateway-war.war']`
 
     Args:
         path:   The canonical path. Example: /t;28026b36-8fe4-4332-84c8-524e173a68bf\
@@ -46,32 +69,32 @@ class Path(object):
 
     """
     def __init__(self, path):
-        self.path = {}
-        self.path.update({'raw': path})
-        if self.path['raw']:
-            _pname_mapping = {
-                '/t;': 'tenant',
-                '/e;': 'environment',
-                '/rt;': 'resource_type',
-                '/mt;': 'metric_type',
-                '/f;': 'feed',
-                '/ot;': 'operation_type',
-                '/mp;': 'metadata_pack',
-                '/r;': 'resource',
-                '/d;': 'data',
-                '/rl;': 'relationship',
-            }
-            raw_paths = re.split(r'(/\w+;)', self.path['raw'])
+        self.paths = {'raw': path}
+        if self.raw:
+            raw_paths = re.split(r'(/\w+;)', self.raw)
             if len(raw_paths) % 2 == 1:
                 del raw_paths[0]
             for p_index in range(0, len(raw_paths), 2):
-                self.path.update({_pname_mapping[raw_paths[p_index]]: raw_paths[p_index + 1]})
-
-    def __getattr__(self, name):
-        return self.path[name] if name in self.path else None
+                if PATH_NAME_MAPPING[raw_paths[p_index]] in self.paths:
+                    if isinstance(self.paths[PATH_NAME_MAPPING[raw_paths[p_index]]], list):
+                        self.paths[PATH_NAME_MAPPING[raw_paths[p_index]]] \
+                            .append(raw_paths[p_index + 1])
+                    else:
+                        v_list = [
+                            self.paths[PATH_NAME_MAPPING[raw_paths[p_index]]],
+                            raw_paths[p_index + 1]
+                        ]
+                        self.paths.update({PATH_NAME_MAPPING[raw_paths[p_index]]: v_list})
+                else:
+                    self.paths.update(
+                        {PATH_NAME_MAPPING[raw_paths[p_index]]: raw_paths[p_index + 1]})
 
     def __repr__(self):
-        return self.path['raw'] if 'raw' in self.path else None
+        return self.paths['raw'] if 'raw' in self.paths else None
+
+    def __getattr__(self, name):
+        return self.paths[name] if name in self.paths else None
+
 
 class Hawkular(MgmtSystemAPIBase):
     """Hawkular management system
@@ -90,9 +113,8 @@ class Hawkular(MgmtSystemAPIBase):
     """
 
     _stats_available = {
-        'num_server': lambda self: sum(len(self.list_server(f.id)) for f in self.list_feed()),
-        'num_deployment': lambda self: sum(len(self.list_server_deployment(f.id))
-                                           for f in self.list_feed()),
+        'num_server': lambda self: len(self.list_server()),
+        'num_deployment': lambda self: len(self.list_server_deployment()),
     }
 
     def __init__(self,
