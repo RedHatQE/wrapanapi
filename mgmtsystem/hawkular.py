@@ -232,8 +232,8 @@ class Hawkular(MgmtSystemAPIBase):
             resources = []
             feeds = self.list_feed()
             for feed in feeds:
-                resources = resources \
-                            + self._list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
+                resources = \
+                    resources + self._list_resource(type_id=kwargs['type_id'], feed_id=feed.id)
             return resources
         else:
             return self._list_resource(type_id=kwargs['type_id'], feed_id=feed_id)
