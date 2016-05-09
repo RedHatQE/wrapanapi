@@ -1,13 +1,32 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Hawkular client."""
+import json
+from urlparse import urlparse
+
 import os
 import pytest
-
 from mgmtsystem import hawkular
+from mock import patch
 
 
-@pytest.fixture(scope="function")
+def fake_urlopen(c_client, url):
+    """
+    A stub urlopen() implementation that load json responses from
+    the filesystem.
+    """
+    # Map path from url to a file
+    parsed_url = urlparse("{}/{}".format(c_client.api_entry, url))
+    resource_file = os.path.normpath("tests/resources/{}.json".format(parsed_url.path))
+    # Must return a file-like object
+    return json.load(open(resource_file))
+
+
+@pytest.yield_fixture(scope="function")
 def provider():
+    """
+    A stub urlopen() implementation that load json responses from
+    the filesystem.
+    """
     hwk = hawkular.Hawkular(
         hostname=os.getenv('HAWKULAR_HOSTNAME', 'localhost'),
         protocol=os.getenv('HAWKULAR_PROTOCOL', 'http'),
@@ -15,7 +34,12 @@ def provider():
         username=os.getenv('HAWKULAR_USERNAME', 'jdoe'),
         password=os.getenv('HAWKULAR_PASSWORD', 'password')
     )
-    return hwk
+    if not os.getenv('HAWKULAR_HOSTNAME'):
+        hwk.patcher = patch('mgmtsystem.rest_client.ContainerClient.get_json', fake_urlopen)
+        hwk.patcher.start()
+    yield hwk
+    if not os.getenv('HAWKULAR_HOSTNAME'):
+        hwk.patcher.stop()
 
 
 def test_list_feed(provider):
@@ -70,18 +94,14 @@ def test_list_server_deployment(provider):
 def test_resource_data(provider):
     """ Checks whether resource data is provided and has attributes """
     found = False
-    feeds = provider.list_feed()
-    for feed in feeds:
-        resource_types = provider.list_resource_type(feed_id=feed.id)
-        for r_type in resource_types:
-            resources = provider.list_resource(feed_id=feed.id, type_id=r_type.id)
-            for resource in resources:
-                r_data = provider.resource_data(feed_id=feed.id, resource_id=resource.id)
-                if r_data:
-                    found = True
-                    assert r_data.name
-                    assert r_data.path
-                    assert r_data.value
+    servers = provider.list_server()
+    for server in servers:
+        r_data = provider.resource_data(feed_id=server.path.feed, resource_id=server.id)
+        if r_data:
+            found = True
+            assert r_data.name
+            assert r_data.path
+            assert r_data.value
     assert found, "No resource data is listed for any of servers"
 
 
@@ -118,11 +138,6 @@ def test_num_deployment(provider):
         deployments_count += len(provider.list_server_deployment(feed_id=feed.id))
     num_deployment = provider._stats_available['num_deployment'](provider)
     assert num_deployment == deployments_count, "Number of deployments is wrong"
-
-
-def test_list_event_empty(provider):
-    """ Checks that events are filtered and empty list is returned """
-    assert len(provider.list_event(0, 0)) == 0, "Unexpected events are returned"
 
 
 def test_list_event(provider):

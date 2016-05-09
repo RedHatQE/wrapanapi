@@ -1,0 +1,13 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;Operating%20System",
+            "name": "Operating System",
+            "id": "Operating System"
+        },
+        "name": "88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem"
+    }
+]
+

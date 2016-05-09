@@ -1,0 +1,10 @@
+{
+    "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;cb42d24f-7692-473b-aef4-21094e9d3b1c/r;WilfyServerOne~~/d;configuration",
+    "value": {
+        "Version": "10.0.0.Final",
+        "Server State": "running",
+        "Product Name": "WildFly Full",
+        "Hostname": "skondkar-hawkular.bc.jonqe.lab.eng.bos.redhat.com"
+    },
+    "name": "configuration"
+}

@@ -1,0 +1,52 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem%2FFILE_STORE%3Dtmpfs",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;File%20Store",
+            "name": "File Store",
+            "id": "File Store"
+        },
+        "name": "File Store [tmpfs]",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/FILE_STORE=tmpfs"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem%2FFILE_STORE%3D%2Fdev%2Fvda1",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;File%20Store",
+            "name": "File Store",
+            "id": "File Store"
+        },
+        "name": "File Store [/dev/vda1]",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/FILE_STORE=/dev/vda1"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem%2FFILE_STORE%3Dhugetlbfs",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;File%20Store",
+            "name": "File Store",
+            "id": "File Store"
+        },
+        "name": "File Store [hugetlbfs]",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/FILE_STORE=hugetlbfs"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem%2FFILE_STORE%3D~",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;File%20Store",
+            "name": "File Store",
+            "id": "File Store"
+        },
+        "name": "File Store [/]",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/FILE_STORE=~"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/r;platform~%2FOPERATING_SYSTEM%3D88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem%2FFILE_STORE%3Dmqueue",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;88db6b41-09fd-4993-8507-4a98f25c3a6b/rt;File%20Store",
+            "name": "File Store",
+            "id": "File Store"
+        },
+        "name": "File Store [mqueue]",
+        "id": "platform~/OPERATING_SYSTEM=88db6b41-09fd-4993-8507-4a98f25c3a6b_OperatingSystem/FILE_STORE=mqueue"
+    }
+]

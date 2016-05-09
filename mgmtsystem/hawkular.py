@@ -1,9 +1,12 @@
 from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
+from urlparse import urlparse
 
+import json
 import re
 import sys
+import os
 
 """
 Related yaml structures:
@@ -224,9 +227,7 @@ class Hawkular(MgmtSystemAPIBase):
         return servers
 
     def list_resource(self, **kwargs):
-        """Returns list of resources by provided `type_id`. Possible filters: `feed_id`"""
-        if not kwargs or 'type_id' not in kwargs:
-            raise KeyError('Variable "type_id" is a mandatory field!')
+        """Returns list of resources. Possible filters: `feed_id`, `type_id`"""
         feed_id = kwargs['feed_id'] if 'feed_id' in kwargs else None
         if not feed_id:
             resources = []
@@ -240,11 +241,14 @@ class Hawkular(MgmtSystemAPIBase):
 
     def _list_resource(self, **kwargs):
         """Returns list of resources by provided `type_id` and `feed_id`"""
-        if not kwargs or 'feed_id' not in kwargs or 'type_id' not in kwargs:
-            raise KeyError('Variable "feed_id" and "type_id" are mandatory field!')
+        if not kwargs or 'feed_id' not in kwargs:
+            raise KeyError('Variable "feed_id" is a mandatory field!')
         entities = []
-        entities_j = self.inv_api.get_json('feeds/{}/resourceTypes/{}/resources'
-                                       .format(kwargs['feed_id'], kwargs['type_id']))
+        if kwargs['type_id']:
+            entities_j = self.inv_api.get_json('feeds/{}/resourceTypes/{}/resources'
+                                               .format(kwargs['feed_id'], kwargs['type_id']))
+        else:
+            entities_j = self.inv_api.get_json('feeds/{}/resources'.format(kwargs['feed_id']))
         if entities_j:
             for entity_j in entities_j:
                 entities.append(Resource(entity_j['id'], entity_j['name'], Path(entity_j['path'])))
