@@ -1,12 +1,9 @@
 from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
-from urlparse import urlparse
 
-import json
 import re
 import sys
-import os
 
 """
 Related yaml structures:
