@@ -63,7 +63,24 @@ def test_list_server_deployment(provider):
             assert deployment.id
             assert deployment.name
             assert deployment.path
-    assert found, "No any deployment is listed for any of feeds"
+    assert (found | provider._stats_available['num_deployment'](provider) > 0,
+            "No any deployment is listed for any of feeds, but they exists")
+
+
+def test_list_server_datasource(provider):
+    """ Checks whether any datasource is listed and has attributes """
+    found = False
+    feeds = provider.list_feed()
+    for feed in feeds:
+        datasources = provider.list_server_datasource(feed.id)
+        if len(datasources) > 0:
+            found = True
+        for datasource in datasources:
+            assert datasource.id
+            assert datasource.name
+            assert datasource.path
+    assert (found | provider._stats_available['num_datasource'](provider) > 0,
+            "No any datasource is listed for any of feeds, but they exists")
 
 
 def test_get_server_status(provider):
@@ -100,6 +117,16 @@ def test_num_deployment(provider):
         deployments_count += len(provider.list_server_deployment(feed.id))
     num_deployment = provider._stats_available['num_deployment'](provider)
     assert num_deployment == deployments_count, "Number of deployments is wrong"
+
+
+def test_num_datasource(provider):
+    """ Checks whether number of datasources is returned correct """
+    datasources_count = 0
+    feeds = provider.list_feed()
+    for feed in feeds:
+        datasources_count += len(provider.list_server_datasource(feed.id))
+    num_datasource = provider._stats_available['num_datasource'](provider)
+    assert num_datasource == datasources_count, "Number of datasources is wrong"
 
 
 def test_list_event_empty(provider):
