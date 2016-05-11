@@ -1,0 +1,12 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/r;WildfyServerTwo~~/r;WildfyServerTwo~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleDS",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Datasource",
+            "name": "Datasource",
+            "id": "Datasource"
+        },
+        "name": "ExampleDS",
+        "id": "WildfyServerTwo~/subsystem=datasources/data-source=ExampleDS"
+    }
+]

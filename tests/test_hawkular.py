@@ -53,7 +53,6 @@ def test_list_feed(provider):
 
 def test_list_resource_type(provider):
     """ Checks whether any resource type is listed and has attributes """
-    found = False
     feeds = provider.list_feed()
     for feed in feeds:
         res_types = provider.list_resource_type(feed_id=feed.id)
@@ -66,7 +65,6 @@ def test_list_resource_type(provider):
 
 def test_list_server(provider):
     """ Checks whether any server is listed and has attributes"""
-    found = False
     servers = provider.list_server()
     for server in servers:
         assert server.id
@@ -82,7 +80,6 @@ def test_list_server(provider):
 
 def test_list_server_deployment(provider):
     """ Checks whether any deployment is listed and has attributes """
-    found = False
     deployments = provider.list_server_deployment()
     for deployment in deployments:
         assert deployment.id
@@ -103,6 +100,20 @@ def test_resource_data(provider):
             assert r_data.path
             assert r_data.value
     assert found, "No resource data is listed for any of servers"
+
+
+def test_list_server_datasource(provider):
+    """ Checks whether any datasource is listed and has attributes """
+    found = False
+    datasources = provider.list_server_datasource()
+    if len(datasources) > 0:
+        found = True
+    for datasource in datasources:
+        assert datasource.id
+        assert datasource.name
+        assert datasource.path
+    assert (found | provider._stats_available['num_datasource'](provider) > 0,
+            "No any datasource is listed for any of feeds, but they exists")
 
 
 def test_path(provider):
@@ -138,6 +149,16 @@ def test_num_deployment(provider):
         deployments_count += len(provider.list_server_deployment(feed_id=feed.id))
     num_deployment = provider._stats_available['num_deployment'](provider)
     assert num_deployment == deployments_count, "Number of deployments is wrong"
+
+
+def test_num_datasource(provider):
+    """ Checks whether number of datasources is returned correct """
+    datasources_count = 0
+    feeds = provider.list_feed()
+    for feed in feeds:
+        datasources_count += len(provider.list_server_datasource(feed_id=feed.id))
+    num_datasource = provider._stats_available['num_datasource'](provider)
+    assert num_datasource == datasources_count, "Number of datasources is wrong"
 
 
 def test_list_event(provider):

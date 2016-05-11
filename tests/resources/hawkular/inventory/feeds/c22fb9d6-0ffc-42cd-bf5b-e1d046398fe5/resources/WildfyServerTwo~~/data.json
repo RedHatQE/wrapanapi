@@ -1,0 +1,11 @@
+{
+    "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/r;WildfyServerTwo~~/d;configuration",
+    "value": {
+        "Bound Address": "0.0.0.0",
+        "Version": "10.0.0.Final",
+        "Server State": "running",
+        "Product Name": "WildFly Full",
+        "Hostname": "skondkar-hawkular.bc.jonqe.lab.eng.bos.redhat.com"
+    },
+    "name": "configuration"
+}

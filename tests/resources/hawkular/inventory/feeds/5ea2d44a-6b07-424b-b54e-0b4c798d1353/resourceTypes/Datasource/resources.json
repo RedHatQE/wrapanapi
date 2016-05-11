@@ -1,0 +1,22 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleDS",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Datasource",
+            "name": "Datasource",
+            "id": "Datasource"
+        },
+        "name": "ExampleDS",
+        "id": "Local~/subsystem=datasources/data-source=ExampleDS"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fsubsystem%3Ddatasources%2Fdata-source%3DKeycloakDS",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Datasource",
+            "name": "Datasource",
+            "id": "Datasource"
+        },
+        "name": "KeycloakDS",
+        "id": "Local~/subsystem=datasources/data-source=KeycloakDS"
+    }
+]

@@ -31,6 +31,8 @@ Resource = namedtuple('Resource', ['id', 'name', 'path'])
 ResourceData = namedtuple('ResourceData', ['name', 'path', 'value'])
 Server = namedtuple('Server', ['id', 'name', 'path', 'data'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
+Datasource = namedtuple('Datasource', ['id', 'name', 'path'])
+ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
                              'category', 'text'])
 
@@ -115,6 +117,7 @@ class Hawkular(MgmtSystemAPIBase):
     _stats_available = {
         'num_server': lambda self: len(self.list_server()),
         'num_deployment': lambda self: len(self.list_server_deployment()),
+        'num_datasource': lambda self: len(self.list_server_datasource()),
     }
 
     def __init__(self,
@@ -300,3 +303,13 @@ class Hawkular(MgmtSystemAPIBase):
                                entity_j['category'], entity_j['text'])
                 entities.append(entity)
         return entities
+
+    def list_server_datasource(self, **kwargs):
+        """Returns list of datasources. Possible filters: `feed_id`"""
+        resources = self.list_resource(type_id='Datasource',
+                                       feed_id=kwargs['feed_id'] if 'feed_id' in kwargs else None)
+        datasources = []
+        if resources:
+            for resource in resources:
+                datasources.append(Datasource(resource.id, resource.name, resource.path))
+        return datasources

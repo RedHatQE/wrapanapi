@@ -1,0 +1,11 @@
+{
+    "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/d;configuration",
+    "value": {
+        "Bound Address": "0.0.0.0",
+        "Version": "1.0.0.Alpha13-SNAPSHOT",
+        "Server State": "running",
+        "Product Name": "Hawkular",
+        "Hostname": "skondkar-hawkular.bc.jonqe.lab.eng.bos.redhat.com"
+    },
+    "name": "configuration"
+}
