@@ -28,6 +28,7 @@ Feed = namedtuple('Feed', ['id', 'name', 'path'])
 ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Server = namedtuple('Server', ['id', 'name', 'path'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
+Datasource = namedtuple('Datasource', ['id', 'name', 'path'])
 ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
                              'category', 'text'])
@@ -52,6 +53,8 @@ class Hawkular(MgmtSystemAPIBase):
     _stats_available = {
         'num_server': lambda self: sum(len(self.list_server(f.id)) for f in self.list_feed()),
         'num_deployment': lambda self: sum(len(self.list_server_deployment(f.id))
+                                           for f in self.list_feed()),
+        'num_datasource': lambda self: sum(len(self.list_server_datasource(f.id))
                                            for f in self.list_feed()),
     }
 
@@ -207,5 +210,16 @@ class Hawkular(MgmtSystemAPIBase):
                 entity = Event(entity_j['id'], entity_j['eventType'], entity_j['ctime'],
                                entity_j['dataSource'], entity_j['dataId'],
                                entity_j['category'], entity_j['text'])
+                entities.append(entity)
+        return entities
+
+    def list_server_datasource(self, feed_id, type_id='Datasource'):
+        """Returns list of datasources on servers by provided feed ID and resource type ID"""
+        entities = []
+        entities_j = self.api.get_json('feeds/{}/resourceTypes/{}/resources'
+                                       .format(feed_id, type_id))
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Datasource(entity_j['id'], entity_j['name'], entity_j['path'])
                 entities.append(entity)
         return entities
