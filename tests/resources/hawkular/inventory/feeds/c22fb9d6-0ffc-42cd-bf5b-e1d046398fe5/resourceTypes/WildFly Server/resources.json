@@ -1,0 +1,12 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/r;WildfyServerTwo~~",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;WildFly%20Server",
+            "name": "WildFly Server",
+            "id": "WildFly Server"
+        },
+        "name": "skondkar-hawkular/WildfyServerTwo",
+        "id": "WildfyServerTwo~~"
+    }
+]

@@ -1,0 +1,47 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Operating%20System",
+        "name": "Operating System",
+        "id": "Operating System"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;File%20Store",
+        "name": "File Store",
+        "id": "File Store"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Memory",
+        "name": "Memory",
+        "id": "Memory"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Processor",
+        "name": "Processor",
+        "id": "Processor"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;WildFly%20Server",
+        "name": "WildFly Server",
+        "id": "WildFly Server"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Datasource",
+        "name": "Datasource",
+        "id": "Datasource"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;JDBC%20Driver",
+        "name": "JDBC Driver",
+        "id": "JDBC Driver"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Transaction%20Manager",
+        "name": "Transaction Manager",
+        "id": "Transaction Manager"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/rt;Hawkular%20WildFly%20Agent",
+        "name": "Hawkular WildFly Agent",
+        "id": "Hawkular WildFly Agent"
+    }
+]

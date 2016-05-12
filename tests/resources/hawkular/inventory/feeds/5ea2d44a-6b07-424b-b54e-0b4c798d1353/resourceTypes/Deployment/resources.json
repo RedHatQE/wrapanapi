@@ -1,0 +1,162 @@
+[
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-command-gateway-war.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-command-gateway-war.war",
+        "id": "Local~/deployment=hawkular-command-gateway-war.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-alerts-actions-email.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-alerts-actions-email.war",
+        "id": "Local~/deployment=hawkular-alerts-actions-email.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-wildfly-agent-download.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-wildfly-agent-download.war",
+        "id": "Local~/deployment=hawkular-wildfly-agent-download.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-avail-creator.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-avail-creator.war",
+        "id": "Local~/deployment=hawkular-avail-creator.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dsecret-store.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "secret-store.war",
+        "id": "Local~/deployment=secret-store.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-inventory-dist.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-inventory-dist.war",
+        "id": "Local~/deployment=hawkular-inventory-dist.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-alerts-rest.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-alerts-rest.war",
+        "id": "Local~/deployment=hawkular-alerts-rest.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-accounts-events-backend.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-accounts-events-backend.war",
+        "id": "Local~/deployment=hawkular-accounts-events-backend.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-pinger.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-pinger.war",
+        "id": "Local~/deployment=hawkular-pinger.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-rest-api.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-rest-api.war",
+        "id": "Local~/deployment=hawkular-rest-api.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-metrics-component.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-metrics-component.war",
+        "id": "Local~/deployment=hawkular-metrics-component.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-commons-embedded-cassandra-ear.ear",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-commons-embedded-cassandra-ear.ear",
+        "id": "Local~/deployment=hawkular-commons-embedded-cassandra-ear.ear"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-accounts.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-accounts.war",
+        "id": "Local~/deployment=hawkular-accounts.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-btm-server.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-btm-server.war",
+        "id": "Local~/deployment=hawkular-btm-server.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dkeycloak-server.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "keycloak-server.war",
+        "id": "Local~/deployment=keycloak-server.war"
+    },
+    {
+        "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~~/r;Local~%2Fdeployment%3Dhawkular-console.war",
+        "type": {
+            "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/rt;Deployment",
+            "name": "Deployment",
+            "id": "Deployment"
+        },
+        "name": "hawkular-console.war",
+        "id": "Local~/deployment=hawkular-console.war"
+    }
+]
