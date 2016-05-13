@@ -479,7 +479,7 @@ class VMWareSystem(MgmtSystemAPIBase):
 
     def clone_vm(self, source, destination, resourcepool=None, datastore=None, power_on=True,
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
-                 allowed_datastores=None):
+                 allowed_datastores=None, cpu=None, ram=None):
         try:
             if mobs.VirtualMachine.get(self.api, name=destination).name == destination:
                 raise Exception("VM already present!")
@@ -531,6 +531,11 @@ class VMWareSystem(MgmtSystemAPIBase):
         vm_clone_spec.template = template
         vm_clone_spec.location = vm_reloc_spec
         vm_clone_spec.snapshot = None
+
+        if cpu is not None:
+            vm_clone_spec.config.numCPUs = int(cpu)
+        if ram is not None:
+            vm_clone_spec.config.memoryMB = int(ram)
 
         try:
             folder = source_template.parent.parent.vmParent
