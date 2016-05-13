@@ -26,6 +26,10 @@ CHUNKSIZE = 2 * 1024 * 1024
 # Mimetype to use if one can't be guessed from the file extension.
 DEFAULT_MIMETYPE = 'application/octet-stream'
 
+# List of image project which gcr provided from the box. Could be extend in the futute and
+# will have impact on total number of templates/images
+IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
+                'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
 class GoogleCloudSystem (MgmtSystemAPIBase):
     """
@@ -34,8 +38,8 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        'num_vm': lambda self: len(self.all_vms()),
+        'num_template': lambda self: len(self.list_image()),
     }
 
     default_scope = ['https://www.googleapis.com/auth/cloud-platform']
@@ -90,19 +94,27 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         self._instances = self._compute.instances()
         self._buckets = self._storage.buckets()
 
-    def _get_all_instances(self):
-        return self._instances.list(project=self._project, zone=self._zone).execute()
+    def _get_zone_instances(self, zone):
+        return self._instances.list(project=self._project, zone=zone).execute()
 
     def _get_all_buckets(self):
         return self._buckets.list(project=self._project).execute()
 
     def _get_all_images(self):
         images = self._compute.images()
+        result = []
+        for image_project in IMAGE_PROJECTS:
+            result.extend(images.list(project=image_project).execute().get('items', []))
+        result.extend(images.list(project=self._project).execute().get('items', []))
+        return result
+
+    def get_private_images(self):
+        images = self._compute.images()
         return images.list(project=self._project).execute()
 
     def list_vm(self):
-        instances = self._get_all_instances()
-        return [instance.get('name') for instance in instances.get('items', [])]
+        instances = self.all_vms()
+        return [instance.name for instance in instances]
 
     def list_bucket(self):
         buckets = self._get_all_buckets()
@@ -110,7 +122,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
 
     def list_image(self):
         images = self._get_all_images()
-        return [image.get('name') for image in images.get('items', [])]
+        return [image.get('name') for image in images]
 
     def _find_instance_by_name(self, instance_name):
         try:
@@ -462,13 +474,16 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
 
     def all_vms(self):
         result = []
-        for vm in self._get_all_instances().get('items', []):
-            if (vm['id'] and vm['name'] and vm['status'] and vm.get('networkInterfaces')):
+        zones = self._compute.zones().list(project=self._project).execute()
+        for zone in zones.get('items', []):
+            zone_name = zone.get('name', None)
+            for vm in self._get_zone_instances(zone_name).get('items', []):
+                if vm['id'] and vm['name'] and vm['status'] and vm.get('networkInterfaces'):
 
-                result.append(VMInfo(
-                    vm['id'],
-                    vm['name'],
-                    vm['status'],
-                    vm.get('networkInterfaces')[0].get('networkIP'),
-                ))
+                    result.append(VMInfo(
+                        vm['id'],
+                        vm['name'],
+                        vm['status'],
+                        vm.get('networkInterfaces')[0].get('networkIP'),
+                    ))
         return result
