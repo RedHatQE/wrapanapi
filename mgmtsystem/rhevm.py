@@ -387,8 +387,11 @@ class RHEVMSystem(MgmtSystemAPIBase):
             policy = params.VmPlacementPolicy(host=host,
                 affinity=kwargs['placement_policy_affinity'])
             vm_kwargs['placement_policy'] = policy
-        vm = params.VM(**vm_kwargs)
-        self.api.vms.add(vm)
+        if 'cpu' in kwargs:
+            vm_kwargs['cpu'] = params.CPU(topology=params.CpuTopology(cores=int(kwargs['cpu'])))
+        if 'ram' in kwargs:
+            vm_kwargs['memory'] = int(kwargs['ram']) * 1024 * 1024  # MB
+        self.api.vms.add(params.VM(**vm_kwargs))
         self.wait_vm_stopped(kwargs['vm_name'], num_sec=timeout)
         if power_on:
             self.start_vm(kwargs['vm_name'])
