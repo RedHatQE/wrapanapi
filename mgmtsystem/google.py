@@ -397,7 +397,11 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         raise NotImplementedError('deploy_template not implemented.')
 
     def disconnect(self):
-        raise NotImplementedError('disconnect not implemented.')
+        """Disconnect from the GCE
+
+        GCE service is stateless, so there's nothing to disconnect from
+        """
+        pass
 
     def does_vm_exist(self, instance_name):
         try:
