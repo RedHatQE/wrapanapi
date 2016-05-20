@@ -346,6 +346,14 @@ class MgmtSystemAPIBase(object):
     def delete_template(self, template_name):
         return self.delete_vm(template_name)  # Fall back to original vSphere behaviour
 
+    def set_meta_value(self, instance, key, value):
+        raise NotImplementedError(
+            'Provider {} does not implement set_meta_value'.format(type(self).__name__))
+
+    def get_meta_value(self, instance, key):
+        raise NotImplementedError(
+            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+
 
 class ContainerMgmtSystemAPIBase(MgmtSystemAPIBase):
     """Base interface class for Container Management Systems
