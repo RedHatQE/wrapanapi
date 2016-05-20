@@ -387,6 +387,10 @@ class VMWareSystem(MgmtSystemAPIBase):
     def list_host(self):
         return [str(h.name) for h in mobs.HostSystem.all(self.api)]
 
+    def list_host_datastore_url(self, host_name):
+        host = mobs.HostSystem.get(self.api, name=host_name)
+        return [str(d.summary.url) for d in host.datastore]
+
     def list_datastore(self):
         return [str(h.name) for h in mobs.Datastore.all(self.api) if h.host]
 
