@@ -17,6 +17,7 @@ from novaclient.client import HTTPClient
 from novaclient.v2.floating_ips import FloatingIP
 from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
+import json
 import time
 import tzlocal
 from wait_for import wait_for
@@ -800,3 +801,20 @@ class OpenstackSystem(MgmtSystemAPIBase):
             return True
         except ActionTimedOutError:
             return False
+
+    def set_meta_value(self, instance, key, value):
+        instance = self._instance_or_name(instance)
+        instance.manager.set_meta_item(
+            instance, key, value if isinstance(value, basestring) else json.dumps(value))
+
+    def get_meta_value(self, instance, key):
+        instance = self._instance_or_name(instance)
+        try:
+            data = instance.metadata[key]
+            try:
+                return json.loads(data)
+            except ValueError:
+                # Support metadata set by others
+                return data
+        except KeyError:
+            raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
