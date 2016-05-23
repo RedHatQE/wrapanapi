@@ -5,6 +5,8 @@ Used to communicate with providers without using CFME facilities
 """
 import winrm
 import json
+import urlparse
+import os
 from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
@@ -38,6 +40,8 @@ class AzureSystem(MgmtSystemAPIBase):
         self.user_azure = kwargs["username_azure"]
         self.password_azure = kwargs["password_azure"]
         self.storage_key = kwargs["storage_key"]
+        self.subscription_id = kwargs["subscription_id"]
+        self.tenant_id = kwargs["tenant_id"]
         self.api = winrm.Session(self.host, auth=(self.user, self.password))
 
     @property
@@ -52,7 +56,8 @@ class AzureSystem(MgmtSystemAPIBase):
         $myazurepwd = ConvertTo-SecureString "{}" -AsPlainText -Force
         $azcreds = New-Object System.Management.Automation.PSCredential ($myazurename, $myazurepwd)
         Login-AzureRMAccount -Credential $azcreds
-        """.format(self.user_azure, self.password_azure))
+        Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" | Select-AzureRmSubscription
+        """.format(self.user_azure, self.password_azure, self.subscription_id, self.tenant_id))
 
     def run_script(self, script):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
@@ -188,8 +193,10 @@ class AzureSystem(MgmtSystemAPIBase):
         """It wants exact host and placement (c:/asdf/ghjk) :("""
         raise NotImplementedError('clone_vm not implemented.')
 
-    def does_vm_exist(self, vm_name, resource_group):
-        raise NotImplementedError('does_vm_exist not implemented.')
+    def does_vm_exist(self, vm_name):
+        result = self.list_vm()
+        if vm_name in result:
+            return True
 
     def deploy_template(self, template, vm_name=None, host_group=None, **bogus):
         raise NotImplementedError('deploy_template not implemented.')
@@ -220,11 +227,23 @@ class AzureSystem(MgmtSystemAPIBase):
             "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
             .format(resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
-        statusValue = json.loads(etree.parse(StringIO(data)).getroot().xpath(
+        status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StorageProfileText']/text()")[0])
-        vhd_disk_name = statusValue['OSDisk']['VirtualHardDisk']['Uri']
-        self.logger.info("Returned Status was {}".format(vhd_disk_name))
-        return vhd_disk_name
+        vhd_disk_uri = status_value['OSDisk']['VirtualHardDisk']['Uri']
+        self.logger.info("Returned Status was {}".format(vhd_disk_uri))
+        return os.path.split(urlparse.urlparse(vhd_disk_uri).path)[1]
+
+    def get_network_interface(self, vm_name, resource_group):
+        self.logger.info("Attempting to Retrieve Azure VM Network Interface {}".format(vm_name))
+        azure_data = self.run_script(
+            "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
+            .format(resource_group, vm_name))
+        data = self.clean_azure_xml(azure_data)
+        status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
+            "./Object/Property[@Name='NetworkProfileText']/text()")[0])
+        nic_uri = status_value['NetworkInterfaces'][0]['ReferenceUri']
+        self.logger.info("Returned URI was {}".format(nic_uri))
+        return os.path.split(urlparse.urlparse(nic_uri).path)[1]
 
     def remove_host_from_cluster(self, hostname):
         """I did not notice any scriptlet that lets you do this."""
