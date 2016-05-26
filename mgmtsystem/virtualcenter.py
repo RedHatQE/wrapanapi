@@ -228,7 +228,7 @@ class VMWareSystem(MgmtSystemAPIBase):
             ip_address = None
         return ip_address
 
-    def _get_list_vms(self, get_template=False):
+    def _get_list_vms(self, get_template=False, inaccessible=False):
         """ Obtains a list of all VMs on the system.
 
         Optional flag to obtain template names too.
@@ -241,7 +241,8 @@ class VMWareSystem(MgmtSystemAPIBase):
         # so we skip the network overhead of returning full managed objects
         property_spec = self.api.create('PropertySpec')
         property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template']
+        property_spec.pathSet = ['name', 'config.template', 'config.uuid',
+            'runtime.connectionState']
         property_spec.type = 'VirtualMachine'
         pfs = self.api.get_search_filter_spec(self.api.si.content.rootFolder, property_spec)
         object_contents = self.api.si.content.propertyCollector.RetrieveProperties(specSet=[pfs])
@@ -257,9 +258,11 @@ class VMWareSystem(MgmtSystemAPIBase):
             # object already "knows" the answer in its cached object
             # content. So we just pull the value straight out of the cache.
             vm_props = {p.name: p.val for p in object_content.propSet}
-
             if vm_props.get('config.template') == get_template:
-                obj_list.append(vm_props['name'])
+                if (vm_props.get('runtime.connectionState') == "inaccessible"
+                        and inaccessible) or vm_props.get(
+                            'runtime.connectionState') != "inaccessible":
+                    obj_list.append(vm_props['name'])
         return obj_list
 
     def all_vms(self):
@@ -372,8 +375,8 @@ class VMWareSystem(MgmtSystemAPIBase):
         self.logger.info(" Restarting vSphere VM %s" % vm_name)
         return self.stop_vm(vm_name) and self.start_vm(vm_name)
 
-    def list_vm(self):
-        return self._get_list_vms()
+    def list_vm(self, inaccessible=False):
+        return self._get_list_vms(inaccessible=inaccessible)
 
     def list_template(self):
         return self._get_list_vms(get_template=True)
