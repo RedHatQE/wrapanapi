@@ -417,10 +417,16 @@ class VMWareSystem(MgmtSystemAPIBase):
         vm = self._get_vm(vm_name)
         return str(vm.runtime.host.name)
 
-    def get_vm_datastore_path(self, vm_name):
+    def get_vm_datastore_path(self, vm_name, vm_config_datastore):
         vm = self._get_vm(vm_name)
-        datastore_url = vm.datastore[0].summary.url
-        return str(datastore_url)
+        datastore_url = [str(datastore['url']) for datastore in vm.config.datastoreUrl
+                         if datastore['name'] in vm_config_datastore]
+        return datastore_url[0]
+
+    def get_vm_config_files_path(self, vm_name):
+        vm = self._get_vm(vm_name)
+        vmfilespath = vm.config.files.vmPathName
+        return str(vmfilespath)
 
     def in_steady_state(self, vm_name):
         return self.vm_status(vm_name) in {self.POWERED_ON, self.POWERED_OFF, self.SUSPENDED}
