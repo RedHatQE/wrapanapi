@@ -34,15 +34,17 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def __init__(self, **kwargs):
         super(AzureSystem, self).__init__(kwargs)
-        self.host = kwargs["hostname"]
-        self.user = kwargs["username"]
+        self.host = kwargs["powershell_host"]
+        self.username = kwargs["username"]
         self.password = kwargs["password"]
-        self.user_azure = kwargs["username_azure"]
-        self.password_azure = kwargs["password_azure"]
+        self.ui_username = kwargs["ui_username"]
+        self.ui_password = kwargs["ui_password"]
+        self.ps_username = kwargs["powershell_username"]
+        self.ps_password = kwargs["powershell_password"]
         self.storage_key = kwargs["storage_key"]
         self.subscription_id = kwargs["subscription_id"]
         self.tenant_id = kwargs["tenant_id"]
-        self.api = winrm.Session(self.host, auth=(self.user, self.password))
+        self.api = winrm.Session(self.host, auth=(self.ps_username, self.ps_password))
 
     @property
     def pre_script(self):
@@ -57,12 +59,12 @@ class AzureSystem(MgmtSystemAPIBase):
         $azcreds = New-Object System.Management.Automation.PSCredential ($myazurename, $myazurepwd)
         Login-AzureRMAccount -Credential $azcreds
         Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" | Select-AzureRmSubscription
-        """.format(self.user_azure, self.password_azure, self.subscription_id, self.tenant_id))
+        """.format(self.ui_username, self.ui_password, self.subscription_id, self.tenant_id))
 
     def run_script(self, script):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
-        self.logger.info(" Running PowerShell script:\n{}\n".format(script))
+        self.logger.info(" Running PowerShell script:\n{}\nn{}".format(self.pre_script, script))
         result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
         if result.status_code != 0:
             raise self.PowerShellScriptError("Script returned {}!: {}"
@@ -122,7 +124,7 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def list_template(self):
         self.logger.info("Attempting to List Azure VHDs in templates directory")
-        script = "$myStorage = New-AzureStorageContext -StorageAccountName cfmeqe "
+        script = "$myStorage = New-AzureStorageContext -StorageAccountName cfmeqestore "
         script += "-StorageAccountKey '" + self.storage_key + "' ;"
         script += "Get-AzureStorageBlob -Container templates -Context $myStorage | Select Name;"
         azure_data = self.run_script("Invoke-Command -scriptblock {" + script + "}")
