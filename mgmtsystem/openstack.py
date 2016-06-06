@@ -439,6 +439,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
         Args:
             template: The name of the template to use.
             flavour_name: The name of the flavour to use.
+            flavour_id: UUID of the flavour to use.
             vm_name: A name to use for the vm.
             network_name: The name of the network if it is a multi network setup (Havanna).
 
@@ -448,10 +449,16 @@ class OpenstackSystem(MgmtSystemAPIBase):
         power_on = kwargs.pop("power_on", True)
         nics = []
         timeout = kwargs.pop('timeout', 900)
-        if 'flavour_name' not in kwargs:
-            kwargs['flavour_name'] = 'm1.tiny'
+        if 'flavour_name' in kwargs:
+            flavour = self.api.flavors.find(name=kwargs['flavour_name'])
+        elif 'flavour_id' in kwargs:
+            flavour = self.api.flavors.find(id=kwargs['flavour_id'])
+        else:
+            flavour = self.api.flavors.find(name='m1.tiny')
         if 'vm_name' not in kwargs:
-            kwargs['vm_name'] = 'new_instance_name'
+            vm_name = 'new_instance_name'
+        else:
+            vm_name = kwargs['vm_name']
         self.logger.info(" Deploying OpenStack template %s to instance %s (%s)" % (
             template, kwargs["vm_name"], kwargs["flavour_name"]))
         if len(self.list_network()) > 1:
@@ -462,17 +469,15 @@ class OpenstackSystem(MgmtSystemAPIBase):
                 nics = [{'net-id': net_id}]
 
         image = self.api.images.find(name=template)
-        flavour = self.api.flavors.find(name=kwargs['flavour_name'])
-        instance = self.api.servers.create(kwargs['vm_name'], image, flavour, nics=nics,
-                                           *args, **kwargs)
-        self.wait_vm_running(kwargs['vm_name'], num_sec=timeout)
+        instance = self.api.servers.create(vm_name, image, flavour, nics=nics, *args, **kwargs)
+        self.wait_vm_running(vm_name, num_sec=timeout)
         if kwargs.get('floating_ip_pool', None):
             self.assign_floating_ip(instance, kwargs['floating_ip_pool'])
 
         if power_on:
-            self.start_vm(kwargs['vm_name'])
+            self.start_vm(vm_name)
 
-        return kwargs['vm_name']
+        return vm_name
 
     def assign_floating_ip(self, instance_or_name, floating_ip_pool, safety_timer=5):
         """Assigns a floating IP to an instance.
