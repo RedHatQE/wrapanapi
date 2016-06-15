@@ -460,7 +460,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
         else:
             vm_name = kwargs['vm_name']
         self.logger.info(" Deploying OpenStack template %s to instance %s (%s)" % (
-            template, kwargs["vm_name"], kwargs["flavour_name"]))
+            template, kwargs["vm_name"], flavour.name))
         if len(self.list_network()) > 1:
             if 'network_name' not in kwargs:
                 raise NetworkNameNotFound('Must select a network name')
