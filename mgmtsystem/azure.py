@@ -41,6 +41,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.ui_password = kwargs["ui_password"]
         self.ps_username = kwargs["powershell_username"]
         self.ps_password = kwargs["powershell_password"]
+        self.storage_account = kwargs["storage_account"]
         self.storage_key = kwargs["storage_key"]
         self.subscription_id = kwargs["subscription_id"]
         self.tenant_id = kwargs["tenant_id"]
@@ -124,10 +125,14 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def list_template(self):
         self.logger.info("Attempting to List Azure VHDs in templates directory")
-        script = "$myStorage = New-AzureStorageContext -StorageAccountName cfmeqestore "
-        script += "-StorageAccountKey '" + self.storage_key + "' ;"
-        script += "Get-AzureStorageBlob -Container templates -Context $myStorage | Select Name;"
-        azure_data = self.run_script("Invoke-Command -scriptblock {" + script + "}")
+        azure_data = self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $myStorage = New-AzureStorageContext -StorageAccountName \"{}\" |
+            -StorageAccountKey '\"{}\"';
+            Get-AzureStorageBlob -Container templates -Context $myStorage | Select Name;
+            }}
+            """.format(self.storage_account, self.storage_key))
         lines = iter(azure_data.splitlines())
         templates = []
         for line in lines:
