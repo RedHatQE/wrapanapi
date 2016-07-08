@@ -7,10 +7,11 @@ import os
 import pytest
 from mgmtsystem import hawkular
 from mock import patch
+from random import sample
 
 
 def fake_urlopen(c_client, url):
-    """
+    """`
     A stub urlopen() implementation that load json responses from
     the filesystem.
     """
@@ -19,6 +20,27 @@ def fake_urlopen(c_client, url):
     resource_file = os.path.normpath("tests/resources/{}.json".format(parsed_url.path))
     # Must return a file-like object
     return json.load(open(resource_file))
+
+
+def fake_urldelete(c_client, url):
+    """
+    A stub delete_status() implementation that returns True
+    """
+    return True
+
+
+def fake_urlput(c_client, url, data):
+    """
+    A stub put_status() implementation that returns True
+    """
+    return True
+
+
+def fake_urlpost(c_client, url, data):
+    """
+    A stub post_status() implementation that returns True
+    """
+    return True
 
 
 @pytest.yield_fixture(scope="function")
@@ -37,9 +59,55 @@ def provider():
     if not os.getenv('HAWKULAR_HOSTNAME'):
         hwk.patcher = patch('mgmtsystem.rest_client.ContainerClient.get_json', fake_urlopen)
         hwk.patcher.start()
+        hwk.patcher = patch('mgmtsystem.rest_client.ContainerClient.delete_status', fake_urldelete)
+        hwk.patcher.start()
+        hwk.patcher = patch('mgmtsystem.rest_client.ContainerClient.post_status', fake_urlpost)
+        hwk.patcher.start()
+        hwk.patcher = patch('mgmtsystem.rest_client.ContainerClient.put_status', fake_urlput)
+        hwk.patcher.start()
     yield hwk
     if not os.getenv('HAWKULAR_HOSTNAME'):
         hwk.patcher.stop()
+
+
+@pytest.yield_fixture(scope="function")
+def datasource(provider):
+    """
+    Fixture for preparing Datasource for tests.
+    It creates resource and resource data for Datasource.
+    On the end of testing, Datasource is deleted.
+    """
+    datasources = provider.list_server_datasource()
+    assert len(datasources) > 0, "No resource data is listed for any of datasources"
+    new_datasource = None
+    for datasource in sample(datasources, 1):
+        r_data = _read_resource_data(provider, datasource)
+        assert r_data
+
+        name_ext = "MWTest"
+        new_datasource = hawkular.Resource(name="{}{}".format(datasource.name, name_ext),
+                                id="{}{}".format(datasource.id, name_ext),
+                                path=hawkular.Path("{}{}".format(datasource.path, name_ext)))
+        new_datasource.path.resource = new_datasource.path.resource[1]
+
+        resource_type = hawkular.ResourceType(id=None, name=None, path="Datasource")
+
+        new_datasource_data = hawkular.ResourceData(name=None, path=None, value=r_data.value)
+        new_datasource_data.value.update(
+            {"JNDI Name": "{}{}".format(r_data.value["JNDI Name"], name_ext),
+             "Enabled": "true"
+             }
+        )
+        _delete_resource(provider, new_datasource)
+        result = _create_resource(provider, resource=new_datasource,
+                                  resource_data=new_datasource_data, resource_type=resource_type)
+        assert result, "Create should be successful"
+        r_data = _read_resource_data(provider, new_datasource)
+        assert r_data, "Resource data should exist"
+        assert r_data.value == new_datasource_data.value
+    yield new_datasource
+    if new_datasource:
+        _delete_resource(provider, new_datasource)
 
 
 def test_list_feed(provider):
@@ -100,6 +168,58 @@ def test_resource_data(provider):
             assert r_data.path
             assert r_data.value
     assert found, "No resource data is listed for any of servers"
+
+
+def test_edit_resource_data(provider, datasource):
+    """ Checks whether resource data is edited """
+    r_data = _read_resource_data(provider, datasource)
+    assert r_data, "Resource data should exist"
+    r_data.value['Enabled'] = "false"
+    result = _update_resource_data(provider, r_data, datasource)
+    assert result, "Update should be successful"
+    r_data = _read_resource_data(provider, datasource)
+    # skip value verification for mocked provider
+    if not provider.patcher:
+        assert r_data.value['Enabled'] == "false"
+
+
+def test_delete_resource(provider, datasource):
+    """ Checks whether resource is deleted """
+    r_data = _read_resource_data(provider, datasource)
+    assert r_data, "Resource data should exist"
+    result = _delete_resource(provider, datasource)
+    assert result, "Delete should be successful"
+    r_data = _read_resource_data(provider, datasource)
+    # skip deleted verification for mocked provider
+    if not provider.patcher:
+        assert not r_data
+
+
+def _read_resource_data(provider, resource):
+    return provider.resource_data(feed_id=resource.path.feed,
+                    resource_id=_get_resource_id(resource))
+
+
+def _create_resource(provider, resource, resource_data, resource_type):
+    return provider.create_resource(resource=resource, resource_data=resource_data,
+                                    resource_type=resource_type, feed_id=resource.path.feed)
+
+
+def _update_resource_data(provider, resource_data, resource):
+    return provider.edit_resource_data(resource_data=resource_data, feed_id=resource.path.feed,
+                    resource_id=_get_resource_id(resource))
+
+
+def _delete_resource(provider, resource):
+    return provider.delete_resource(feed_id=resource.path.feed,
+                    resource_id=_get_resource_id(resource))
+
+
+def _get_resource_id(resource):
+    if isinstance(resource.path.resource, list):
+        return "{}/{}".format(resource.path.resource[0], resource.path.resource[1])
+    else:
+        return resource.path.resource
 
 
 def test_list_server_datasource(provider):

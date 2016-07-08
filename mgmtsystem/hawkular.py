@@ -1,6 +1,7 @@
 from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
+from urllib import quote as urlquote
 
 import re
 import sys
@@ -264,6 +265,55 @@ class Hawkular(MgmtSystemAPIBase):
         if entity_j:
             return ResourceData(entity_j['name'], Path(entity_j['path']), entity_j['value'])
         return None
+
+    def edit_resource_data(self, resource_data, **kwargs):
+        """Edits the data.value information for resource by provided\
+         `feed_id` and `resource_id`."""
+        if not isinstance(resource_data, ResourceData) or not resource_data.value:
+            raise KeyError(
+                "'resource_data' should be ResourceData with 'value' attribute")
+        if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
+            raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
+        r = self.inv_api.put_status('feeds/{}/resources/{}/data'
+                .format(kwargs['feed_id'], kwargs['resource_id']), {"value": resource_data.value})
+        return r
+
+    def create_resource(self, resource, resource_data, resource_type, **kwargs):
+        """Creates new resource and creates it's data by provided\
+         `feed_id` and `resource_id`."""
+        if not isinstance(resource, Resource):
+            raise KeyError("'resource' should be an instance of Resource")
+        if not isinstance(resource_data, ResourceData) or not resource_data.value:
+            raise KeyError(
+                "'resource_data' should be ResourceData with 'value' attribute")
+        if not isinstance(resource_type, ResourceType):
+            raise KeyError("'resource_type' should be an instance of ResourceType")
+        if not kwargs or 'feed_id' not in kwargs:
+            raise KeyError('Variable "feed_id" id mandatory field!')
+
+        resource_id = urlquote(resource.id, safe='')
+
+        r = self.inv_api.post_status('feeds/{}/resources'.format(kwargs['feed_id']),
+                                    data={"name": resource.name, "id": resource.id,
+                                        "resourceTypePath": resource_type.path})
+        if r:
+            r = self.inv_api.post_status('feeds/{}/resources/{}/data'
+                                    .format(kwargs['feed_id'], resource_id),
+                                    data={'role': 'configuration', "value": resource_data.value})
+        if not r:
+            # if resource or it's data was not created correctly, delete resource
+            self.inv_api.delete_status('feeds/{}/resources/{}'
+                                     .format(kwargs['feed_id'], resource_id))
+        return r
+
+    def delete_resource(self, **kwargs):
+        """Removed the resource by provided\
+         `feed_id` and `resource_id`."""
+        if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
+            raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
+        r = self.inv_api.delete_status('feeds/{}/resources/{}'
+                                     .format(kwargs['feed_id'], kwargs['resource_id']))
+        return r
 
     def list_feed(self):
         """Returns list of feeds"""
