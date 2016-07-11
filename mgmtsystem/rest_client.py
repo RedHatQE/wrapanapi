@@ -58,36 +58,38 @@ class ContainerClient(object):
         r = self.raw_get(path)
         return (r.status_code, r.json() if r.ok else None)
 
-    def get_json(self, path):
-        r = self.raw_get(path)
+    def get_json(self, path, headers=None):
+        r = self.raw_get(path, headers)
         return (r.json() if r.ok else None)
 
-    def put_status(self, path, data):
-        r = self.raw_put(path, data)
+    def put_status(self, path, data, headers=None):
+        r = self.raw_put(path, data, headers)
         return r.ok
 
-    def post_status(self, path, data):
-        r = self.raw_post(path, data)
+    def post_status(self, path, data, headers=None):
+        r = self.raw_post(path, data, headers)
         return r.ok
 
-    def delete_status(self, path):
-        r = self.raw_delete(path)
+    def delete_status(self, path, headers=None):
+        r = self.raw_delete(path, headers)
         return r.ok
 
-    def raw_get(self, path):
+    def raw_get(self, path, headers=None):
         return requests.get(
-            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify)
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
+            headers=headers)
 
-    def raw_put(self, path, data):
+    def raw_put(self, path, data, headers=None):
         return requests.put(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
-            headers={"Content-Type": "application/json"}, data=json.dumps(data))
+            headers=headers, data=json.dumps(data))
 
-    def raw_post(self, path, data):
+    def raw_post(self, path, data, headers=None):
         return requests.post(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
-            headers={"Content-Type": "application/json"}, data=json.dumps(data))
+            headers=headers, data=json.dumps(data))
 
-    def raw_delete(self, path):
+    def raw_delete(self, path, headers=None):
         return requests.delete(
-            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify)
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
+            headers=headers)
