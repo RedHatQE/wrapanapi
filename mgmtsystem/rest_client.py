@@ -1,5 +1,6 @@
 import requests
 import os
+import json
 from exceptions import RestClientException
 
 requests.packages.urllib3.disable_warnings()
@@ -61,6 +62,32 @@ class ContainerClient(object):
         r = self.raw_get(path)
         return (r.json() if r.ok else None)
 
+    def put_status(self, path, data):
+        r = self.raw_put(path, data)
+        return r.ok
+
+    def post_status(self, path, data):
+        r = self.raw_post(path, data)
+        return r.ok
+
+    def delete_status(self, path):
+        r = self.raw_delete(path)
+        return r.ok
+
     def raw_get(self, path):
         return requests.get(
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify)
+
+    def raw_put(self, path, data):
+        return requests.put(
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
+            headers={"Content-Type": "application/json"}, data=json.dumps(data))
+
+    def raw_post(self, path, data):
+        return requests.post(
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
+            headers={"Content-Type": "application/json"}, data=json.dumps(data))
+
+    def raw_delete(self, path):
+        return requests.delete(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify)

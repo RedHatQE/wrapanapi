@@ -1,0 +1,12 @@
+{
+  "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;5ea2d44a-6b07-424b-b54e-0b4c798d1353/r;Local~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleDSMWTest/d;configuration",
+  "value" : {
+    "Username" : "sa",
+    "Driver Name" : "h2",
+    "JNDI Name" : "java:jboss/datasources/ExampleDSMWTest",
+    "Connection URL" : "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+    "Enabled" : "true",
+    "Password" : "sa"
+  },
+  "name" : "configuration"
+}
