@@ -35,6 +35,8 @@ class AzureSystem(MgmtSystemAPIBase):
     def __init__(self, **kwargs):
         super(AzureSystem, self).__init__(kwargs)
         self.host = kwargs["powershell_host"]
+        self.provisioning = kwargs['provisioning']
+        self.resource_group = kwargs['provisioning']['resource_group']
         self.username = kwargs["username"]
         self.password = kwargs["password"]
         self.ui_username = kwargs["ui_username"]
@@ -73,47 +75,55 @@ class AzureSystem(MgmtSystemAPIBase):
         self.logger.info("PowerShell Returned:\n{}\n".format(result.std_out.strip()))
         return result.std_out.strip()
 
-    def start_vm(self, vm_name, resource_group):
-        if self.is_vm_stopped(vm_name, resource_group):
+    def start_vm(self, vm_name, resource_group=None):
+        if self.is_vm_stopped(vm_name, resource_group or self.resource_group):
             self.logger.info("Attempting to Start Azure VM {}".format(vm_name))
             self.run_script(
                 "Start-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\""
-                .format(resource_group, vm_name).strip())
+                .format(resource_group or self.resource_group, vm_name).strip())
         else:
             self.logger.info("Azure VM {} is already running".format(vm_name))
 
-    def restart_vm(self, vm_name, resource_group):
+    def restart_vm(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Restart Azure VM {}".format(vm_name))
         self.run_script(
             "Restart-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\""
-            .format(resource_group, vm_name).strip())
+            .format(resource_group or self.resource_group, vm_name).strip())
 
-    def stop_vm(self, vm_name, resource_group, shutdown=False):
-        if self.is_vm_running(vm_name, resource_group):
+    def stop_vm(self, vm_name, resource_group=None, shutdown=False):
+        if self.is_vm_running(vm_name, resource_group or self.resource_group):
             self.logger.info("Attempting to Stop Azure VM {}".format(vm_name))
             self.run_script(
                 "Stop-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" -Force"
-                .format(resource_group, vm_name).strip())
+                .format(resource_group or self.resource_group, vm_name).strip())
         else:
             self.logger.info("Azure VM {} is already stopped".format(vm_name))
 
-    def wait_vm_running(self, vm_name, resource_group, num_sec=300):
+    def wait_vm_running(self, vm_name, resource_group=None, num_sec=300):
         wait_for(
-            lambda: self.is_vm_running(vm_name),
+            lambda: self.is_vm_running(vm_name, resource_group or self.resource_group),
             message="Waiting for Azure VM {} to be running.".format(vm_name),
             num_sec=num_sec)
 
-    def wait_vm_stopped(self, vm_name, resource_group, num_sec=300):
+    def wait_vm_stopped(self, vm_name, resource_group=None, num_sec=300):
         wait_for(
-            lambda: self.is_vm_stopped(vm_name),
+            lambda: self.is_vm_stopped(vm_name, resource_group or self.resource_group),
             message="Waiting for Azure VM {} to be stopped.".format(vm_name),
             num_sec=num_sec)
 
-    def create_vm(self, vm_name, resource_group):
-        raise NotImplementedError('create_vm not implemented.')
+    def create_vm(self, vm_name, resource_group=None):
+        raise NotImplementedError('NIE - create_vm not implemented.')
 
-    def delete_vm(self, vm_name, resource_group):
-        raise NotImplementedError('delte_vm not implemented.')
+    def delete_vm(self, vm_name, resource_group=None):
+        current_vhd = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
+        self.logger.info("Attempting to Retrieve the VMs Disk {}".format(current_vhd))
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            Remove-AzureRmVM -ResourceGroupName \"{rg}\" -Name \"{vm}\" -Force
+            Remove-AzureRmNetworkInterface -Name \"{vm}\"-ResourceGroupName \"{rg}\" -Force
+            }}
+            """.format(rg=resource_group or self.resource_group, vm=vm_name))
 
     def list_vm(self):
         self.logger.info("Attempting to List Azure VMs")
@@ -139,6 +149,7 @@ class AzureSystem(MgmtSystemAPIBase):
             if ".vhd" in line:
                 vhd = line.split(" ")
                 templates.append(str(vhd[2])[:-4])
+        templates.append(str('Microsoft.Compute/Images/templates/tmpl-osDisk'))
         return templates
 
     def list_flavor(self):
@@ -162,11 +173,11 @@ class AzureSystem(MgmtSystemAPIBase):
         clean_xml = sep + azure_xml_data.split(sep, 1)[1]
         return clean_xml
 
-    def vm_status(self, vm_name, resource_group):
+    def vm_status(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Retrieve Azure VM Status {}".format(vm_name))
         azure_data = self.run_script(
             "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" -Status | convertto-xml -as String"
-            .format(resource_group, vm_name))
+            .format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
         statusValue = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StatusesText']/text()")[0])
@@ -175,38 +186,109 @@ class AzureSystem(MgmtSystemAPIBase):
         self.logger.info("Returned Status was {}".format(powerDisplayStatus))
         return powerDisplayStatus
 
-    def is_vm_running(self, vm_name, resource_group):
-        return self.vm_status(vm_name, resource_group) == self.STATE_RUNNING
+    def is_vm_running(self, vm_name, resource_group=None):
+        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_RUNNING
 
-    def is_vm_stopped(self, vm_name, resource_group):
-        return self.vm_status(vm_name, resource_group) == self.STATE_STOPPED
+    def is_vm_stopped(self, vm_name, resource_group=None):
+        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STOPPED
 
-    def is_vm_starting(self, vm_name, resource_group):
-        return self.vm_status(vm_name, resource_group) == self.STATE_STARTING
+    def is_vm_starting(self, vm_name, resource_group=None):
+        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STARTING
 
-    def is_vm_suspended(self, vm_name, resource_group):
-        return self.vm_status(vm_name, resource_group) == self.STATE_PAUSED
+    def is_vm_suspended(self, vm_name, resource_group=None):
+        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_PAUSED
 
-    def in_steady_state(self, vm_name, resource_group):
-        return self.vm_status(vm_name, resource_group) in self.STATES_STEADY
+    def in_steady_state(self, vm_name, resource_group=None):
+        return self.vm_status(vm_name, resource_group or self.resource_group) in self.STATES_STEADY
 
-    def suspend_vm(self, vm_name, resource_group):
+    def suspend_vm(self, vm_name, resource_group=None):
         self._do_vm(vm_name, "Suspend")
 
-    def wait_vm_suspended(self, vm_name, resource_group, num_sec=300):
-        raise NotImplementedError('wait_vm_suspended not implemented.')
+    def wait_vm_suspended(self, vm_name, resource_group=None, num_sec=300):
+        raise NotImplementedError('NIE - wait_vm_suspended not implemented.')
 
     def clone_vm(self, source_name, vm_name):
         """It wants exact host and placement (c:/asdf/ghjk) :("""
-        raise NotImplementedError('clone_vm not implemented.')
+        raise NotImplementedError('NIE - clone_vm not implemented.')
 
     def does_vm_exist(self, vm_name):
         result = self.list_vm()
         if vm_name in result:
             return True
 
-    def deploy_template(self, template, vm_name=None, host_group=None, **bogus):
-        raise NotImplementedError('deploy_template not implemented.')
+    def deploy_template(self, template, vm_name=None, **vm_settings):
+        self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
+            vm_settings['template_blob'], vm_settings['storage_blob'])
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $StorageAccount = Get-AzureRmStorageAccount -ResourceGroupName \"{resource_group}\" `
+                 -Name \"{storage_account}\"
+            $NetworkSecurityGroupID = Get-AzureRmNetworkSecurityGroup -Name \"{network_nsg}\" `
+                -ResourceGroupName \"{resource_group}\"
+            $PIp = New-AzureRmPublicIpAddress -Name \"{vm_name}\" -ResourceGroupName `
+                \"{resource_group}\" -Location \"{region}\" -AllocationMethod Dynamic -Force
+            $SubnetConfig = New-AzureRmVirtualNetworkSubnetConfig -Name "default" `
+                -AddressPrefix "10.0.0.0/24"
+            $VNet = New-AzureRmVirtualNetwork -Name \"{virtual_net}\" -ResourceGroupName `
+                \"{resource_group}\" -Location \"{region}\" -AddressPrefix "10.0.0.0/16" `
+                -Subnet $SubnetConfig -Force
+            $Interface = New-AzureRmNetworkInterface -Name \"{vm_name}\" -ResourceGroupName `
+                \"{resource_group}\" -Location \"{region}\" -SubnetId $VNet.Subnets[0].Id `
+                -PublicIpAddressId $PIp.Id -Force
+            $VirtualMachine = New-AzureRmVMConfig -VMName \"{vm_name}\" -VMSize \"{vm_size}\"
+            $VirtualMachine = Add-AzureRmVMNetworkInterface -VM $VirtualMachine -Id $Interface.Id
+            $OSDiskUri = $StorageAccount.PrimaryEndpoints.Blob.ToString() + \"{storage_blob}\" `
+                + "/" + \"{vm_name}.vhd\"
+            $VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -Name \"{vm_name}\" `
+                -VhdUri $OSDiskUri -CreateOption attach -Linux
+            New-AzureRmVM -ResourceGroupName \"{resource_group}\" -Location \"{region}\"`
+                -VM $VirtualMachine
+            }}
+            """.format(source_name=template.split("/")[-1],
+                       vm_name=vm_name,
+                       resource_group=vm_settings['resource_group'],
+                       virtual_net=vm_settings['virtual_net'],
+                       network_nsg=vm_settings['network_nsg'],
+                       region=vm_settings['region'],
+                       vm_size=vm_settings['vm_size'],
+                       av_set=vm_settings['av_set'],
+                       storage_account=vm_settings['storage_account'],
+                       storage_blob=vm_settings['storage_blob']))
+
+    def copy_blob_image(self, template, vm_name, storage_account, template_blob, storage_blob):
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $sourceContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            $destContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            $blobCopy = Start-AzureStorageBlobCopy -DestContainer \"{storage_blob}\" `
+                        -DestContext $destContext -DestBlob \"{vm_name}.vhd\" `
+                        -SrcBlob \"{source_name}.vhd\" `
+                        -Context $sourceContext -SrcContainer \"{template_blob}\"
+            }}
+            """.format(source_name=template.split("/")[-1],
+                       vm_name=vm_name,
+                       storage_account=storage_account,
+                       storage_key=self.storage_key,
+                       template_blob=template_blob,
+                       storage_blob=storage_blob))
+
+    def remove_blob_image(self, vm_vhd, storage_account, storage_blob):
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $sourceContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            $blobRemove = Remove-AzureStorageBlob -Blob \"{vm_vhd}\" `
+                        -Context $sourceContext -Container \"{storage_blob}\"
+            }}
+            """.format(vm_vhd=vm_vhd,
+                       storage_account=storage_account,
+                       storage_key=self.storage_key,
+                       storage_blob=storage_blob))
 
     @contextmanager
     def with_vm(self, *args, **kwargs):
@@ -215,24 +297,24 @@ class AzureSystem(MgmtSystemAPIBase):
         yield name
         self.delete_vm(name)
 
-    def current_ip_address(self, vm_name, resource_group):
+    def current_ip_address(self, vm_name, resource_group=None):
         azure_data = self.run_script(
             "Get-AzureRmPublicIpAddress -ResourceGroup \"{}\" -Name \"{}\" |"
-            "convertto-xml -as String".format(resource_group, vm_name))
+            "convertto-xml -as String".format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
         return etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='IpAddress']/text()")
         # TODO: Scavenge informations how these are formatted, I see no if-s in SCVMM
 
-    def get_ip_address(self, vm_name, resource_group, **kwargs):
-        current_ip_address = self.current_ip_address(vm_name, resource_group)
+    def get_ip_address(self, vm_name, resource_group=None, **kwargs):
+        current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
         return current_ip_address
 
-    def get_vm_vhd(self, vm_name, resource_group):
+    def get_vm_vhd(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Retrieve Azure VM VHD {}".format(vm_name))
         azure_data = self.run_script(
             "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
-            .format(resource_group, vm_name))
+            .format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
         status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StorageProfileText']/text()")[0])
@@ -240,11 +322,11 @@ class AzureSystem(MgmtSystemAPIBase):
         self.logger.info("Returned Status was {}".format(vhd_disk_uri))
         return os.path.split(urlparse.urlparse(vhd_disk_uri).path)[1]
 
-    def get_network_interface(self, vm_name, resource_group):
+    def get_network_interface(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Retrieve Azure VM Network Interface {}".format(vm_name))
         azure_data = self.run_script(
             "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
-            .format(resource_group, vm_name))
+            .format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
         status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='NetworkProfileText']/text()")[0])
@@ -258,7 +340,7 @@ class AzureSystem(MgmtSystemAPIBase):
     def disconnect_dvd_drives(self, vm_name):
         raise NotImplementedError('disconnect_dvd_drives not implemented.')
 
-    def data(self, vm_name, resource_group):
+    def data(self, vm_name, resource_group=None):
         raise NotImplementedError('data not implemented.')
 
     ##
