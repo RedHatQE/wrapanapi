@@ -1,0 +1,6 @@
+{
+    "Implementation-Version": "0.17.2.Final",
+    "Built-From-Git-SHA1": "3c8ac6648aa0ec33643ae1b98faadc475d2c6f02",
+    "Inventory-Implementation": "org.hawkular.inventory.impl.tinkerpop.TinkerpopInventory",
+    "Initialized": "true"
+}

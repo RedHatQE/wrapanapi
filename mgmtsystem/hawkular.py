@@ -129,7 +129,14 @@ class Hawkular(MgmtSystemAPIBase):
         self.password = kwargs.get('password', '')
         self.auth = self.username, self.password
         self.inv_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/inventory")
+        # temporary solution, switching to deprecated API
+        if self._check_inv_version('0.17'):
+            self.inv_api = ContainerClient(hostname, self.auth, protocol, port,
+                                           "hawkular/inventory/deprecated")
         self.alerts_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/alerts")
+
+    def _check_inv_version(self, version):
+        return version in self._get_inv_json('status')['Implementation-Version']
 
     def info(self):
         raise NotImplementedError('info not implemented.')
@@ -246,10 +253,10 @@ class Hawkular(MgmtSystemAPIBase):
             raise KeyError('Variable "feed_id" is a mandatory field!')
         entities = []
         if kwargs['type_id']:
-            entities_j = self.inv_api.get_json('feeds/{}/resourceTypes/{}/resources'
-                                               .format(kwargs['feed_id'], kwargs['type_id']))
+            entities_j = self._get_inv_json('feeds/{}/resourceTypes/{}/resources'
+                                        .format(kwargs['feed_id'], kwargs['type_id']))
         else:
-            entities_j = self.inv_api.get_json('feeds/{}/resources'.format(kwargs['feed_id']))
+            entities_j = self._get_inv_json('feeds/{}/resources'.format(kwargs['feed_id']))
         if entities_j:
             for entity_j in entities_j:
                 entities.append(Resource(entity_j['id'], entity_j['name'], Path(entity_j['path'])))
@@ -260,7 +267,7 @@ class Hawkular(MgmtSystemAPIBase):
          `feed_id` and `resource_id`."""
         if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
             raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
-        entity_j = self.inv_api.get_json('feeds/{}/resources/{}/data'
+        entity_j = self._get_inv_json('feeds/{}/resources/{}/data'
                                      .format(kwargs['feed_id'], kwargs['resource_id']))
         if entity_j:
             return ResourceData(entity_j['name'], Path(entity_j['path']), entity_j['value'])
@@ -274,7 +281,7 @@ class Hawkular(MgmtSystemAPIBase):
                 "'resource_data' should be ResourceData with 'value' attribute")
         if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
             raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
-        r = self.inv_api.put_status('feeds/{}/resources/{}/data'
+        r = self._pup_inv_status('feeds/{}/resources/{}/data'
                 .format(kwargs['feed_id'], kwargs['resource_id']), {"value": resource_data.value})
         return r
 
@@ -293,17 +300,17 @@ class Hawkular(MgmtSystemAPIBase):
 
         resource_id = urlquote(resource.id, safe='')
 
-        r = self.inv_api.post_status('feeds/{}/resources'.format(kwargs['feed_id']),
-                                    data={"name": resource.name, "id": resource.id,
-                                        "resourceTypePath": resource_type.path})
+        r = self._post_inv_status('feeds/{}/resources'.format(kwargs['feed_id']),
+                                data={"name": resource.name, "id": resource.id,
+                                "resourceTypePath": resource_type.path})
         if r:
-            r = self.inv_api.post_status('feeds/{}/resources/{}/data'
+            r = self._post_inv_status('feeds/{}/resources/{}/data'
                                     .format(kwargs['feed_id'], resource_id),
                                     data={'role': 'configuration', "value": resource_data.value})
         if not r:
             # if resource or it's data was not created correctly, delete resource
-            self.inv_api.delete_status('feeds/{}/resources/{}'
-                                     .format(kwargs['feed_id'], resource_id))
+            self._delete_inv_status('feeds/{}/resources/{}'
+                                .format(kwargs['feed_id'], resource_id))
         return r
 
     def delete_resource(self, **kwargs):
@@ -311,14 +318,14 @@ class Hawkular(MgmtSystemAPIBase):
          `feed_id` and `resource_id`."""
         if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
             raise KeyError('Variable "feed_id" and "resource_id" are mandatory field!')
-        r = self.inv_api.delete_status('feeds/{}/resources/{}'
-                                     .format(kwargs['feed_id'], kwargs['resource_id']))
+        r = self._delete_inv_status('feeds/{}/resources/{}'
+                                .format(kwargs['feed_id'], kwargs['resource_id']))
         return r
 
     def list_feed(self):
         """Returns list of feeds"""
         entities = []
-        entities_j = self.inv_api.get_json('feeds')
+        entities_j = self._get_inv_json('feeds')
         if entities_j:
             for entity_j in entities_j:
                 entity = Feed(entity_j['id'],
@@ -332,7 +339,7 @@ class Hawkular(MgmtSystemAPIBase):
         if not kwargs or 'feed_id' not in kwargs:
             raise KeyError('Variable "feed_id" is a mandatory field!')
         entities = []
-        entities_j = self.inv_api.get_json('feeds/{}/resourceTypes'.format(kwargs['feed_id']))
+        entities_j = self._get_inv_json('feeds/{}/resourceTypes'.format(kwargs['feed_id']))
         if entities_j:
             for entity_j in entities_j:
                 entity = ResourceType(entity_j['id'], entity_j['name'], entity_j['path'])
@@ -344,7 +351,7 @@ class Hawkular(MgmtSystemAPIBase):
         Or lists all events if no argument provided.
         This information is wrapped into Event."""
         entities = []
-        entities_j = self.alerts_api.get_json('events?startTime={}&endTime={}'
+        entities_j = self._get_alerts_json('events?startTime={}&endTime={}'
                                      .format(start_time, end_time))
         if entities_j:
             for entity_j in entities_j:
@@ -363,3 +370,21 @@ class Hawkular(MgmtSystemAPIBase):
             for resource in resources:
                 datasources.append(Datasource(resource.id, resource.name, resource.path))
         return datasources
+
+    def _get_inv_json(self, path):
+        return self.inv_api.get_json(path, headers={"Hawkular-Tenant": "hawkular"})
+
+    def _post_inv_status(self, path, data):
+        return self.inv_api.post_status(path, data,
+                                        headers={"Hawkular-Tenant": "hawkular",
+                                                "Content-Type": "application/json"})
+
+    def _pup_inv_status(self, path, data):
+        return self.inv_api.put_status(path, data, headers={"Hawkular-Tenant": "hawkular",
+                                                       "Content-Type": "application/json"})
+
+    def _delete_inv_status(self, path):
+        return self.inv_api.delete_status(path, headers={"Hawkular-Tenant": "hawkular"})
+
+    def _get_alerts_json(self, path):
+        return self.alerts_api.get_json(path, headers={"Hawkular-Tenant": "hawkular"})
