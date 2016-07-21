@@ -23,6 +23,7 @@ class AzureSystem(MgmtSystemAPIBase):
     STATE_RUNNING = "VM running"
     STATE_STOPPED = "VM deallocated"
     STATE_STARTING = "VM starting"
+    STATE_SUSPEND = "VM stopped"
     STATE_PAUSED = "Paused"
     STATES_STEADY = {STATE_RUNNING, STATE_PAUSED}
     STATES_STEADY.update(STATE_STOPPED)
@@ -81,6 +82,7 @@ class AzureSystem(MgmtSystemAPIBase):
             self.run_script(
                 "Start-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\""
                 .format(resource_group or self.resource_group, vm_name).strip())
+            self.wait_vm_running(vm_name, resource_group)
         else:
             self.logger.info("Azure VM {} is already running".format(vm_name))
 
@@ -96,8 +98,19 @@ class AzureSystem(MgmtSystemAPIBase):
             self.run_script(
                 "Stop-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" -Force"
                 .format(resource_group or self.resource_group, vm_name).strip())
+            self.wait_vm_stopped(vm_name, resource_group)
         else:
             self.logger.info("Azure VM {} is already stopped".format(vm_name))
+
+    def suspend_vm(self, vm_name, resource_group=None):
+        if self.is_vm_running(vm_name, resource_group or self.resource_group):
+            self.logger.info("Attempting to Suspend Azure VM {}".format(vm_name))
+            self.run_script(
+                "Stop-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" -Force -StayProvisioned"
+                .format(resource_group or self.resource_group, vm_name).strip())
+            self.wait_vm_suspended(vm_name, resource_group)
+        else:
+            self.logger.info("Azure VM {} is already suspended or stopped".format(vm_name))
 
     def wait_vm_running(self, vm_name, resource_group=None, num_sec=300):
         wait_for(
@@ -105,10 +118,20 @@ class AzureSystem(MgmtSystemAPIBase):
             message="Waiting for Azure VM {} to be running.".format(vm_name),
             num_sec=num_sec)
 
+    def wait_vm_steady(self, vm_name, resource_group=None, num_sec=300):
+        self.logger.info("All states are steady in Azure. {}".format(vm_name))
+        return True
+
     def wait_vm_stopped(self, vm_name, resource_group=None, num_sec=300):
         wait_for(
             lambda: self.is_vm_stopped(vm_name, resource_group or self.resource_group),
             message="Waiting for Azure VM {} to be stopped.".format(vm_name),
+            num_sec=num_sec)
+
+    def wait_vm_suspended(self, vm_name, resource_group=None, num_sec=300):
+        wait_for(
+            lambda: self.is_vm_suspended(vm_name, resource_group or self.resource_group),
+            message="Waiting for Azure VM {} to be suspended.".format(vm_name),
             num_sec=num_sec)
 
     def create_vm(self, vm_name, resource_group=None):
@@ -187,25 +210,35 @@ class AzureSystem(MgmtSystemAPIBase):
         return powerDisplayStatus
 
     def is_vm_running(self, vm_name, resource_group=None):
-        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_RUNNING
+        if self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_RUNNING:
+            self.logger.info("According to Azure, the VM \"{}\" is running".format(vm_name))
+            return True
+        else:
+            return False
 
     def is_vm_stopped(self, vm_name, resource_group=None):
-        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STOPPED
+        if self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STOPPED:
+            self.logger.info("According to Azure, the VM \"{}\" is stopped".format(vm_name))
+            return True
+        else:
+            return False
 
     def is_vm_starting(self, vm_name, resource_group=None):
-        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STARTING
+        if self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_STARTING:
+            self.logger.info("According to Azure, the VM \"{}\" is starting".format(vm_name))
+            return True
+        else:
+            return False
 
     def is_vm_suspended(self, vm_name, resource_group=None):
-        return self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_PAUSED
+        if self.vm_status(vm_name, resource_group or self.resource_group) == self.STATE_SUSPEND:
+            self.logger.info("According to Azure, the VM \"{}\" is suspended".format(vm_name))
+            return True
+        else:
+            return False
 
     def in_steady_state(self, vm_name, resource_group=None):
         return self.vm_status(vm_name, resource_group or self.resource_group) in self.STATES_STEADY
-
-    def suspend_vm(self, vm_name, resource_group=None):
-        self._do_vm(vm_name, "Suspend")
-
-    def wait_vm_suspended(self, vm_name, resource_group=None, num_sec=300):
-        raise NotImplementedError('NIE - wait_vm_suspended not implemented.')
 
     def clone_vm(self, source_name, vm_name):
         """It wants exact host and placement (c:/asdf/ghjk) :("""
@@ -215,6 +248,8 @@ class AzureSystem(MgmtSystemAPIBase):
         result = self.list_vm()
         if vm_name in result:
             return True
+        else:
+            return False
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
         self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
@@ -250,11 +285,12 @@ class AzureSystem(MgmtSystemAPIBase):
                        resource_group=vm_settings['resource_group'],
                        virtual_net=vm_settings['virtual_net'],
                        network_nsg=vm_settings['network_nsg'],
-                       region=vm_settings['region'],
+                       region=vm_settings['region_api'],
                        vm_size=vm_settings['vm_size'],
                        av_set=vm_settings['av_set'],
                        storage_account=vm_settings['storage_account'],
                        storage_blob=vm_settings['storage_blob']))
+        self.wait_vm_running(vm_name, vm_settings['resource_group'])
 
     def copy_blob_image(self, template, vm_name, storage_account, template_blob, storage_blob):
         self.run_script(
@@ -319,7 +355,7 @@ class AzureSystem(MgmtSystemAPIBase):
         status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StorageProfileText']/text()")[0])
         vhd_disk_uri = status_value['OSDisk']['VirtualHardDisk']['Uri']
-        self.logger.info("Returned Status was {}".format(vhd_disk_uri))
+        self.logger.info("Returned Disk Endpoint was {}".format(vhd_disk_uri))
         return os.path.split(urlparse.urlparse(vhd_disk_uri).path)[1]
 
     def get_network_interface(self, vm_name, resource_group=None):
