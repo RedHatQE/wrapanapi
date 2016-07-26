@@ -8,18 +8,31 @@ import pytest
 from mgmtsystem import hawkular
 from mock import patch
 from random import sample
+from mgmtsystem.hawkular import CanonicalPath
 
 
 def fake_urlopen(c_client, url, headers):
     """
-    Added temporary solution by working with deprecated API for new Hawkular-Inventory
     A stub urlopen() implementation that load json responses from
     the filesystem.
     """
     # Map path from url to a file
     parsed_url = urlparse("{}/{}".format(c_client.api_entry, url)).path
-    # temporary solution for deprecated API
-    parsed_url = parsed_url.replace("/deprecated/", "/")
+    if parsed_url.startswith('/hawkular/inventory/traversal') \
+            or parsed_url.startswith('/hawkular/inventory/entity'):
+        # Change parsed url, when we use default one, 'd;configuration' replaced with 'd'
+        parsed_url = "{}/{}".format(urlparse("{}".format(c_client.api_entry)).path, url)
+        parsed_url = parsed_url.replace('traversal/', '')
+        parsed_url = parsed_url.replace('entity/', '')
+        parsed_url = parsed_url.replace('f;', 'feeds/')
+        parsed_url = parsed_url.replace('r;', 'resources/', 1)
+        parsed_url = parsed_url.replace('r;', '')
+        parsed_url = parsed_url.replace('rt;', 'resourceTypes/')
+        parsed_url = parsed_url.replace('rl;defines/', '')
+        parsed_url = parsed_url.replace('type=rt', 'resourceTypes')
+        parsed_url = parsed_url.replace('type=r', 'resources')
+        parsed_url = parsed_url.replace('type=f', 'feeds')
+        parsed_url = parsed_url.replace('d;configuration', 'data')
     resource_file = os.path.normpath("tests/resources/{}.json".format(parsed_url))
     # Must return a file-like object
     return json.load(open(resource_file))
@@ -91,10 +104,11 @@ def datasource(provider):
         name_ext = "MWTest"
         new_datasource = hawkular.Resource(name="{}{}".format(datasource.name, name_ext),
                                 id="{}{}".format(datasource.id, name_ext),
-                                path=hawkular.Path("{}{}".format(datasource.path, name_ext)))
-        new_datasource.path.resource = new_datasource.path.resource[1]
-
-        resource_type = hawkular.ResourceType(id=None, name=None, path="Datasource")
+                                path=hawkular.CanonicalPath(
+                                    "{}{}".format(datasource.path.to_string, name_ext)))
+        new_datasource.path.resource_id = new_datasource.path.resource_id[1]
+        resource_type = hawkular.ResourceType(id=None, name=None,
+                                              path=CanonicalPath("/rt;Datasource"))
 
         new_datasource_data = hawkular.ResourceData(name=None, path=None, value=r_data.value)
         new_datasource_data.value.update(
@@ -142,7 +156,6 @@ def test_list_server(provider):
         assert server.id
         assert server.name
         assert server.path
-        assert server.data['data_name']
         assert server.data['Hostname']
         assert server.data['Server State']
     assert len(servers) > 0, "No server is listed for any of feeds"
@@ -158,12 +171,12 @@ def test_list_server_deployment(provider):
     assert len(deployments) > 0, "No deployment is listed for any of feeds"
 
 
-def test_resource_data(provider):
+def test_get_config_data(provider):
     """ Checks whether resource data is provided and has attributes """
     found = False
     servers = provider.list_server()
     for server in servers:
-        r_data = provider.resource_data(feed_id=server.path.feed, resource_id=server.id)
+        r_data = provider.get_config_data(feed_id=server.path.feed_id, resource_id=server.id)
         if r_data:
             found = True
             assert r_data.name
@@ -198,30 +211,30 @@ def test_delete_resource(provider, datasource):
 
 
 def _read_resource_data(provider, resource):
-    return provider.resource_data(feed_id=resource.path.feed,
+    return provider.get_config_data(feed_id=resource.path.feed_id,
                     resource_id=_get_resource_id(resource))
 
 
 def _create_resource(provider, resource, resource_data, resource_type):
     return provider.create_resource(resource=resource, resource_data=resource_data,
-                                    resource_type=resource_type, feed_id=resource.path.feed)
+                                    resource_type=resource_type, feed_id=resource.path.feed_id)
 
 
 def _update_resource_data(provider, resource_data, resource):
-    return provider.edit_resource_data(resource_data=resource_data, feed_id=resource.path.feed,
+    return provider.edit_config_data(resource_data=resource_data, feed_id=resource.path.feed_id,
                     resource_id=_get_resource_id(resource))
 
 
 def _delete_resource(provider, resource):
-    return provider.delete_resource(feed_id=resource.path.feed,
+    return provider.delete_resource(feed_id=resource.path.feed_id,
                     resource_id=_get_resource_id(resource))
 
 
 def _get_resource_id(resource):
-    if isinstance(resource.path.resource, list):
-        return "{}/{}".format(resource.path.resource[0], resource.path.resource[1])
+    if isinstance(resource.path.resource_id, list):
+        return "{}".format('/r;'.join(resource.path.resource_id))
     else:
-        return resource.path.resource
+        return resource.path.resource_id
 
 
 def test_list_server_datasource(provider):
@@ -234,8 +247,8 @@ def test_list_server_datasource(provider):
         assert datasource.id
         assert datasource.name
         assert datasource.path
-    assert (found | provider._stats_available['num_datasource'](provider) > 0,
-            "No any datasource is listed for any of feeds, but they exists")
+    assert found | provider._stats_available['num_datasource'](provider) > 0,\
+        "No any datasource is listed for any of feeds, but they exists"
 
 
 def test_path(provider):
@@ -243,14 +256,14 @@ def test_path(provider):
     feeds = provider.list_feed()
     for feed in feeds:
         assert feed.path
-        assert feed.path.tenant
-        assert feed.path.feed
+        assert feed.path.tenant_id
+        assert feed.path.feed_id
     servers = provider.list_server()
     for server in servers:
         assert server.path
-        assert server.path.tenant
-        assert server.path.feed
-        assert server.path.resource
+        assert server.path.tenant_id
+        assert server.path.feed_id
+        assert server.path.resource_id
 
 
 def test_num_server(provider):
