@@ -145,6 +145,7 @@ class AzureSystem(MgmtSystemAPIBase):
             Invoke-Command -scriptblock {{
             Remove-AzureRmVM -ResourceGroupName \"{rg}\" -Name \"{vm}\" -Force
             Remove-AzureRmNetworkInterface -Name \"{vm}\"-ResourceGroupName \"{rg}\" -Force
+            Remove-AzureRmPublicIpAddress -Name \"{vm}\" -ResourceGroupName \"{rg}\" -Force
             }}
             """.format(rg=resource_group or self.resource_group, vm=vm_name))
 
