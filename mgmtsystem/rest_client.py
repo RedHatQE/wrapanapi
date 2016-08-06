@@ -58,8 +58,8 @@ class ContainerClient(object):
         r = self.raw_get(path)
         return (r.status_code, r.json() if r.ok else None)
 
-    def get_json(self, path, headers=None):
-        r = self.raw_get(path, headers)
+    def get_json(self, path, headers=None, params=None):
+        r = self.raw_get(path, headers, params)
         return (r.json() if r.ok else None)
 
     def put_status(self, path, data, headers=None):
@@ -74,10 +74,13 @@ class ContainerClient(object):
         r = self.raw_delete(path, headers)
         return r.ok
 
-    def raw_get(self, path, headers=None):
+    def raw_get(self, path, headers=None, params=None):
         return requests.get(
-            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
-            headers=headers)
+            os.path.join(self.api_entry, path),
+            auth=self.auth,
+            verify=self.verify,
+            headers=headers,
+            params=params)
 
     def raw_put(self, path, data, headers=None):
         return requests.put(
