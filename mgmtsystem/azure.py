@@ -265,9 +265,9 @@ class AzureSystem(MgmtSystemAPIBase):
             $PIp = New-AzureRmPublicIpAddress -Name \"{vm_name}\" -ResourceGroupName `
                 \"{resource_group}\" -Location \"{region}\" -AllocationMethod Dynamic -Force
             $SubnetConfig = New-AzureRmVirtualNetworkSubnetConfig -Name "default" `
-                -AddressPrefix "10.0.0.0/24"
+                -AddressPrefix \"{subnet_range}\"
             $VNet = New-AzureRmVirtualNetwork -Name \"{virtual_net}\" -ResourceGroupName `
-                \"{resource_group}\" -Location \"{region}\" -AddressPrefix "10.0.0.0/16" `
+                \"{resource_group}\" -Location \"{region}\" -AddressPrefix \"{address_space}\" `
                 -Subnet $SubnetConfig -Force
             $Interface = New-AzureRmNetworkInterface -Name \"{vm_name}\" -ResourceGroupName `
                 \"{resource_group}\" -Location \"{region}\" -SubnetId $VNet.Subnets[0].Id `
@@ -285,6 +285,8 @@ class AzureSystem(MgmtSystemAPIBase):
                        vm_name=vm_name,
                        resource_group=vm_settings['resource_group'],
                        virtual_net=vm_settings['virtual_net'],
+                       address_space=vm_settings['address_space'],
+                       subnet_range=vm_settings['subnet_range'],
                        network_nsg=vm_settings['network_nsg'],
                        region=vm_settings['region_api'],
                        vm_size=vm_settings['vm_size'],
