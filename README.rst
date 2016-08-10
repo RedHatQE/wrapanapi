@@ -1,18 +1,18 @@
-.. image:: https://landscape.io/github/RedHatQE/mgmtsystem/master/landscape.svg?style=fla
+.. image:: https://landscape.io/github/ManageIQ/wrapanapi/master/landscape.svg?style=fla
    :scale: 50 %
    :alt: Health Status
    :align: left
-   :target: (https://landscape.io/github/RedHatQE/mgmtsystem/master
-.. image:: https://coveralls.io/repos/RedHatQE/mgmtsystem/badge.svg?branch=master&service=github
+   :target: (https://landscape.io/github/ManageIQ/wrapanapi/master
+.. image:: https://coveralls.io/repos/ManageIQ/wrapanapi/badge.svg?branch=master&service=github
    :scale: 50 %
    :alt: Coverage Status
    :align: left
-   :target: https://coveralls.io/github/RedHatQE/mgmtsystem?branch=master
-.. image:: https://travis-ci.org/RedHatQE/mgmtsystem.svg
+   :target: https://coveralls.io/github/ManageIQ/wrapanapi?branch=master
+.. image:: https://travis-ci.org/ManageIQ/wrapanapi.svg
    :scale: 50 %
    :alt: Build Status
    :align: left
-   :target: https://travis-ci.org/RedHatQE/mgmtsystem
+   :target: https://travis-ci.org/ManageIQ/wrapanapi
 
 mgmtsystem
 ==========
