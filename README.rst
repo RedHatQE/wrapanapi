@@ -31,14 +31,14 @@ mgmtsystem is a simple virtualization client with support (in varying degrees) f
 * Kubernetes
 * Hawkular
 
-It can be used to control virtualization clients and offersoperations such as
+It can be used to control virtualization clients and offers operations such as
 
 * list_vm (returns a list of vm_names)
 * list_template (returns a list of templates/images)
 * start_vm (starts a vm)
 * stop_vm (stops a vm)
 
-Though conceptually names differ between cloud and infrastructure virualization technologies ie. instance/v
+Though conceptually names differ between cloud and infrastructure virtualization technologies (e.g. instance/vm)
 it was decided to stick to one representation in the codebase and interface to give a singlar API across
 all systems.
 
