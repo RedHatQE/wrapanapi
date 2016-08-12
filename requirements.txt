@@ -1,4 +1,5 @@
 boto
+enum34
 fauxfactory>=2.0.7
 google-api-python-client
 ovirt-engine-sdk-python
