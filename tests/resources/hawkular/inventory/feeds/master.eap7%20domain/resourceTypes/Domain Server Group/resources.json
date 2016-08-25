@@ -1,0 +1,17 @@
+[
+{
+  "path" : "/t;hawkular/f;master.eap7%20domain/r;Local~~/r;Local~%2Fserver-group%3Dmain-server-group",
+  "properties" : {
+    "__identityHash" : "ca2e1881e75e3ab350ef69a54fcf16f42d4066ec"
+  },
+  "name" : "Domain Server Group [main-server-group]",
+  "identityHash" : "ca2e1881e75e3ab350ef69a54fcf16f42d4066ec",
+  "type" : {
+    "path" : "/t;hawkular/f;master.eap7%20domain/rt;Domain%20Server%20Group",
+    "name" : "Domain Server Group",
+    "identityHash" : "2a89f94d4341236830f235ccdf6588aeebf896",
+    "id" : "Domain Server Group"
+  },
+  "id" : "Local~/server-group=main-server-group"
+}
+]

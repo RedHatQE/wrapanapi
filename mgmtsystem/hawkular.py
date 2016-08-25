@@ -32,6 +32,8 @@ ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Resource = namedtuple('Resource', ['id', 'name', 'path'])
 ResourceData = namedtuple('ResourceData', ['name', 'path', 'value'])
 Server = namedtuple('Server', ['id', 'name', 'path', 'data'])
+ServerGroup = namedtuple('ServerGroup', ['id', 'name', 'path', 'data'])
+Domain = namedtuple('Domain', ['id', 'name', 'path', 'data'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
 Datasource = namedtuple('Datasource', ['id', 'name', 'path'])
 OperationType = namedtuple('OperationType', ['id', 'name', 'path'])
@@ -155,6 +157,7 @@ class Hawkular(MgmtSystemAPIBase):
 
     _stats_available = {
         'num_server': lambda self: len(self.list_server()),
+        'num_domain': lambda self: len(self.list_domain()),
         'num_deployment': lambda self: len(self.list_server_deployment()),
         'num_datasource': lambda self: len(self.list_server_datasource()),
     }
@@ -266,14 +269,52 @@ class Hawkular(MgmtSystemAPIBase):
             feed_id: Feed id of the resource (optional)
         """
         resources = self.list_resource(feed_id=feed_id, resource_type_id='WildFly Server')
+        resources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='Domain WildFly Server'))
         servers = []
         if resources:
             for resource in resources:
                 resource_data = self.get_config_data(
-                    feed_id=resource.path.feed_id, resource_id=resource.id)
+                    feed_id=resource.path.feed_id,
+                    resource_id=self._get_resource_id(resource.path.resource_id))
                 server_data = resource_data.value
                 servers.append(Server(resource.id, resource.name, resource.path, server_data))
         return servers
+
+    def list_domain(self, feed_id=None):
+        """Returns list of middleware domains.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(feed_id=feed_id, resource_type_id='Host Controller')
+        domains = []
+        if resources:
+            for resource in resources:
+                resource_data = self.get_config_data(
+                    feed_id=resource.path.feed_id, resource_id=resource.id)
+                domain_data = resource_data.value
+                domains.append(Domain(resource.id, resource.name, resource.path, domain_data))
+        return domains
+
+    def list_server_group(self, feed_id):
+        """Returns list of middleware domain's server groups.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(feed_id=feed_id, resource_type_id='Domain Server Group')
+        server_groups = []
+        if resources:
+            for resource in resources:
+                resource_data = self.get_config_data(
+                    feed_id=resource.path.feed_id,
+                    resource_id=self._get_resource_id(resource.path.resource_id))
+                server_group_data = resource_data.value
+                server_groups.append(ServerGroup(
+                    resource.id, resource.name, resource.path, server_group_data))
+        return server_groups
 
     def list_resource(self, resource_type_id, feed_id=None):
         """Returns list of resources.
@@ -345,7 +386,7 @@ class Hawkular(MgmtSystemAPIBase):
         if not feed_id or not resource_id:
             raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
         entity_j = self._get_inv_json('entity/f;{}/r;{}/d;configuration'
-                                      .format(feed_id, resource_id))
+                                      .format(feed_id, self._get_resource_id(resource_id)))
         if entity_j:
             return ResourceData(entity_j['name'], CanonicalPath(entity_j['path']),
                                 entity_j['value'])
@@ -504,6 +545,12 @@ class Hawkular(MgmtSystemAPIBase):
         return self.metrics_api.get_json(path,
                                          headers={"Hawkular-Tenant": self.tenant_id},
                                          params=params)
+
+    def _get_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return "{}".format('/r;'.join(resource_id))
+        else:
+            return resource_id
 
     def status_alerts(self):
         """returns status of alerts service"""
