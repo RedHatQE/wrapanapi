@@ -74,6 +74,11 @@ class RHEVMSystem(MgmtSystemAPIBase):
         username: The username to connect with.
         password: The password to connect with.
 
+    Keywords:
+        port: (Optional) Port where RHEVM API listens.
+        api_endpoint: (Optional) If you need to fine-tune and pass an exact endpoint in form of a
+            full URL, use this keyword. the ``port`` keyword is then not used.
+
     Returns: A :py:class:`RHEVMSystem` object.
     """
 
@@ -90,7 +95,9 @@ class RHEVMSystem(MgmtSystemAPIBase):
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
         super(RHEVMSystem, self).__init__(kwargs)
-        if 'port' in kwargs:
+        if 'api_endpoint' in kwargs:
+            url = kwargs['api_endpoint']
+        elif 'port' in kwargs:
             url = 'https://%s:%s/api' % (hostname, kwargs['port'])
         else:
             url = 'https://%s/api' % hostname
