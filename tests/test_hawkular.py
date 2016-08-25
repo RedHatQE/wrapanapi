@@ -156,9 +156,32 @@ def test_list_server(provider):
         assert server.id
         assert server.name
         assert server.path
-        assert server.data['Hostname']
-        assert server.data['Server State']
+        assert server.data
     assert len(servers) > 0, "No server is listed for any of feeds"
+
+
+def test_list_domain(provider):
+    """ Checks whether any domain is listed and has attributes"""
+    domains = provider.list_domain()
+    for domain in domains:
+        assert domain.id
+        assert domain.name
+        assert domain.path
+        assert domain.data['Local Host Name']
+    assert len(domains) > 0, "No domain is listed for any of feeds"
+
+
+def test_list_server_group(provider):
+    """ Checks whether any group is listed and has attributes"""
+    domains = provider.list_domain()
+    for domain in domains:
+        server_groups = provider.list_server_group(domain.path.feed_id)
+        for server_group in server_groups:
+            assert server_group.id
+            assert server_group.name
+            assert server_group.path
+            assert server_group.data
+        assert len(server_group) > 0, "No server group is listed for any of feeds"
 
 
 def test_list_server_deployment(provider):
@@ -212,7 +235,7 @@ def test_delete_resource(provider, datasource):
 
 def _read_resource_data(provider, resource):
     return provider.get_config_data(feed_id=resource.path.feed_id,
-                    resource_id=_get_resource_id(resource))
+                    resource_id=resource.path.resource_id)
 
 
 def _create_resource(provider, resource, resource_data, resource_type):
@@ -222,19 +245,12 @@ def _create_resource(provider, resource, resource_data, resource_type):
 
 def _update_resource_data(provider, resource_data, resource):
     return provider.edit_config_data(resource_data=resource_data, feed_id=resource.path.feed_id,
-                    resource_id=_get_resource_id(resource))
+                    resource_id=resource.path.resource_id)
 
 
 def _delete_resource(provider, resource):
     return provider.delete_resource(feed_id=resource.path.feed_id,
-                    resource_id=_get_resource_id(resource))
-
-
-def _get_resource_id(resource):
-    if isinstance(resource.path.resource_id, list):
-        return "{}".format('/r;'.join(resource.path.resource_id))
-    else:
-        return resource.path.resource_id
+                    resource_id=resource.path.resource_id)
 
 
 def test_list_server_datasource(provider):
