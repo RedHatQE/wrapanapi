@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from datetime import datetime
 import winrm
 import json
 import urlparse
@@ -38,6 +39,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.host = kwargs["powershell_host"]
         self.provisioning = kwargs['provisioning']
         self.resource_group = kwargs['provisioning']['resource_group']
+        self.storage_blob = kwargs['provisioning']['storage_blob']
         self.username = kwargs["username"]
         self.password = kwargs["password"]
         self.ui_username = kwargs["ui_username"]
@@ -65,15 +67,15 @@ class AzureSystem(MgmtSystemAPIBase):
         Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" | Select-AzureRmSubscription
         """.format(self.ui_username, self.ui_password, self.subscription_id, self.tenant_id))
 
-    def run_script(self, script):
+    def run_script(self, script, ignore_error=False):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
-        self.logger.info(" Running PowerShell script:\n{}\nn{}".format(self.pre_script, script))
+        self.logger.info(" Running PowerShell script:\n{}\n{}".format(self.pre_script, script))
         result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
-        if result.status_code != 0:
+        if result.status_code != 0 and not ignore_error:
             raise self.PowerShellScriptError("Script returned {}!: {}"
                 .format(result.status_code, result.std_err))
-        self.logger.info("PowerShell Returned:\n{}\n".format(result.std_out.strip()))
+        self.logger.info("run_script Script Complete")
         return result.std_out.strip()
 
     def start_vm(self, vm_name, resource_group=None):
@@ -138,16 +140,17 @@ class AzureSystem(MgmtSystemAPIBase):
         raise NotImplementedError('NIE - create_vm not implemented.')
 
     def delete_vm(self, vm_name, resource_group=None):
-        current_vhd = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
-        self.logger.info("Attempting to Retrieve the VMs Disk {}".format(current_vhd))
+        vhd_endpoint = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
+        self.logger.info("Begin delete_vm {}".format(vm_name))
         self.run_script(
             """
             Invoke-Command -scriptblock {{
             Remove-AzureRmVM -ResourceGroupName \"{rg}\" -Name \"{vm}\" -Force
-            Remove-AzureRmNetworkInterface -Name \"{vm}\"-ResourceGroupName \"{rg}\" -Force
+            Remove-AzureRmNetworkInterface -Name \"{vm}\" -ResourceGroupName \"{rg}\" -Force
             Remove-AzureRmPublicIpAddress -Name \"{vm}\" -ResourceGroupName \"{rg}\" -Force
             }}
-            """.format(rg=resource_group or self.resource_group, vm=vm_name))
+            """.format(rg=resource_group or self.resource_group, vm=vm_name), True)
+        self.remove_blob_image(vhd_endpoint)
 
     def list_vm(self):
         self.logger.info("Attempting to List Azure VMs")
@@ -182,8 +185,28 @@ class AzureSystem(MgmtSystemAPIBase):
     def list_network(self):
         raise NotImplementedError('list_network not implemented.')
 
-    def vm_creation_time(self, vm_name):
-        raise NotImplementedError('vm_creation_time not implemented.')
+    def vm_creation_time(self, vm_name, resource_group=None):
+        # There is no such parameter as vm creation time.  Using VHD date instead.
+        self.logger.info("Attempting to Retrieve Azure VM Modification Time {}".format(vm_name))
+        vm_vhd = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
+        vhd_name = os.path.split(urlparse.urlparse(vm_vhd).path)[1]
+        data = self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $storageContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            Get-AzureStorageBlob -Name \"{storage_blob}\" `
+                            -Context $storageContext -Blob \"{vhd_blob}\" | convertto-xml -as String
+            }}
+            """.format(storage_account=self.storage_account,
+                       storage_blob=self.storage_blob,
+                       storage_key=self.storage_key,
+                       vhd_blob=vhd_name), True)
+        vhd_last_modified = etree.parse(StringIO(self.clean_azure_xml(data))).getroot().xpath(
+            "./Object/Property[@Name='LastModified']/text()")
+        create_time = datetime.strptime(str(vhd_last_modified), '[\'%m/%d/%Y %H:%M:%S %p +00:00\']')
+        self.logger.info("VM last edit time based on vhd =  {}".format(str(create_time)))
+        return create_time
 
     def info(self, vm_name):
         pass
@@ -278,7 +301,7 @@ class AzureSystem(MgmtSystemAPIBase):
                 + "/" + \"{vm_name}.vhd\"
             $VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -Name \"{vm_name}\" `
                 -VhdUri $OSDiskUri -CreateOption attach -Linux
-            New-AzureRmVM -ResourceGroupName \"{resource_group}\" -Location \"{region}\"`
+            New-AzureRmVM -ResourceGroupName \"{resource_group}\" -Location \"{region}\" `
                 -VM $VirtualMachine
             }}
             """.format(source_name=template.split("/")[-1],
@@ -315,19 +338,36 @@ class AzureSystem(MgmtSystemAPIBase):
                        template_blob=template_blob,
                        storage_blob=storage_blob))
 
-    def remove_blob_image(self, vm_vhd, storage_account, storage_blob):
+    def remove_blob_image(self, vm_vhd):
+        vhd_name = os.path.split(urlparse.urlparse(vm_vhd).path)[1]
         self.run_script(
             """
             Invoke-Command -scriptblock {{
             $sourceContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
                             -StorageAccountKey \"{storage_key}\"
-            $blobRemove = Remove-AzureStorageBlob -Blob \"{vm_vhd}\" `
+            $blobRemove = Remove-AzureStorageBlob -Blob \"{vhd_name}\" `
                         -Context $sourceContext -Container \"{storage_blob}\"
             }}
-            """.format(vm_vhd=vm_vhd,
-                       storage_account=storage_account,
+            """.format(vhd_name=vhd_name,
+                       storage_account=self.storage_account,
                        storage_key=self.storage_key,
-                       storage_blob=storage_blob))
+                       storage_blob=self.storage_blob), True)
+
+    def remove_diags_container(self):
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            $storeContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            $storageContainer = Get-AzureStorageContainer -Context $storeContext
+            foreach ($container in $storageContainer) {{
+                if ($container.name -like 'bootdiagnostics-test*'){{
+                    Remove-AzureStorageContainer -Name $container.name -Context $storeContext -Force
+                }}
+            }}
+            }}
+            """.format(storage_account=self.storage_account,
+                       storage_key=self.storage_key), True)
 
     @contextmanager
     def with_vm(self, *args, **kwargs):
@@ -337,29 +377,29 @@ class AzureSystem(MgmtSystemAPIBase):
         self.delete_vm(name)
 
     def current_ip_address(self, vm_name, resource_group=None):
+        # Returns first active IPv4 IpAddress only
         azure_data = self.run_script(
             "Get-AzureRmPublicIpAddress -ResourceGroup \"{}\" -Name \"{}\" |"
             "convertto-xml -as String".format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
         return etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='IpAddress']/text()")
-        # TODO: Scavenge informations how these are formatted, I see no if-s in SCVMM
 
     def get_ip_address(self, vm_name, resource_group=None, **kwargs):
         current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
         return current_ip_address
 
     def get_vm_vhd(self, vm_name, resource_group=None):
-        self.logger.info("Attempting to Retrieve Azure VM VHD {}".format(vm_name))
+        self.logger.info("get_vm_vhd - Attempting to Retrieve Azure VM VHD {}".format(vm_name))
         azure_data = self.run_script(
             "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
             .format(resource_group or self.resource_group, vm_name))
         data = self.clean_azure_xml(azure_data)
-        status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
+        vhd_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StorageProfileText']/text()")[0])
-        vhd_disk_uri = status_value['OSDisk']['VirtualHardDisk']['Uri']
-        self.logger.info("Returned Disk Endpoint was {}".format(vhd_disk_uri))
-        return os.path.split(urlparse.urlparse(vhd_disk_uri).path)[1]
+        vhd_endpoint = vhd_value['OSDisk']['VirtualHardDisk']['Uri']
+        self.logger.info("Returned Disk Endpoint was {}".format(vhd_endpoint))
+        return vhd_endpoint
 
     def get_network_interface(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Retrieve Azure VM Network Interface {}".format(vm_name))
