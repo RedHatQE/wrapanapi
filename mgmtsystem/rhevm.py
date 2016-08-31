@@ -95,12 +95,13 @@ class RHEVMSystem(MgmtSystemAPIBase):
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
         super(RHEVMSystem, self).__init__(kwargs)
+        url_component = 'ovirt-engine/api' if float(kwargs['version']) >= 4.0 else 'api'
         if 'api_endpoint' in kwargs:
             url = kwargs['api_endpoint']
         elif 'port' in kwargs:
-            url = 'https://%s:%s/api' % (hostname, kwargs['port'])
+            url = 'https://{}:{}/{}'.format(hostname, kwargs['port'], url_component)
         else:
-            url = 'https://%s/api' % hostname
+            url = 'https://{}/{}'.format(hostname, url_component)
 
         self._api = None
         self._api_kwargs = {
