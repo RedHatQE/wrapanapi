@@ -3,6 +3,7 @@ from collections import namedtuple
 from rest_client import ContainerClient
 from urllib import quote as urlquote
 from enum import Enum
+from websocket_client import HawkularWebsocketClient
 
 import re
 import sys
@@ -39,7 +40,7 @@ Datasource = namedtuple('Datasource', ['id', 'name', 'path'])
 OperationType = namedtuple('OperationType', ['id', 'name', 'path'])
 ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
-                             'category', 'text'])
+                             'category', 'text', 'tags', 'tenantId', 'context'])
 
 CANONICAL_PATH_NAME_MAPPING = {
     '/d;': 'data_id',
@@ -76,6 +77,7 @@ class CanonicalPath(object):
         /f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;Local~~
 
     """
+
     def __init__(self, path):
         if path is None or len(path) == 0:
             raise KeyError("CanonicalPath should not be None or empty!")
@@ -155,24 +157,44 @@ class Hawkular(MgmtSystemAPIBase):
 
     """
 
-    _stats_available = {
-        'num_server': lambda self: len(self.list_server()),
-        'num_domain': lambda self: len(self.list_domain()),
-        'num_deployment': lambda self: len(self.list_server_deployment()),
-        'num_datasource': lambda self: len(self.list_server_datasource()),
-    }
-
     def __init__(self,
-            hostname, protocol="http", port=8080, **kwargs):
+                 hostname, protocol="http", port=8080, **kwargs):
         super(Hawkular, self).__init__(kwargs)
         self.hostname = hostname
-        self.username = kwargs.get('username', '')
-        self.password = kwargs.get('password', '')
+        self.port = port
+        self.username = kwargs.get('username', 'jdoe')
+        self.password = kwargs.get('password', 'password')
         self.tenant_id = kwargs.get('tenant_id', 'hawkular')
         self.auth = self.username, self.password
-        self.inv_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/inventory")
-        self.alerts_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/alerts")
-        self.metrics_api = ContainerClient(hostname, self.auth, protocol, port, "hawkular/metrics")
+        self._hawkular = HawkularService(hostname=hostname, port=port, auth=self.auth,
+                                         protocol=protocol, tenant_id=self.tenant_id,
+                                         entry="hawkular")
+        self._alert = HawkularAlert(hostname=hostname, port=port, auth=self.auth,
+                                    protocol=protocol, tenant_id=self.tenant_id)
+        self._inventory = HawkularInventory(hostname=hostname, port=port, auth=self.auth,
+                                            protocol=protocol, tenant_id=self.tenant_id)
+        self._metric = HawkularMetric(hostname=hostname, port=port, auth=self.auth,
+                                      protocol=protocol, tenant_id=self.tenant_id)
+        self._operation = HawkularOperation(hostname=self.hostname, port=self.port,
+                                            username=self.username, password=self.password,
+                                            tenant_id=self.tenant_id,
+                                            connect=kwargs.get('ws_connect', True))
+
+    @property
+    def alert(self):
+        return self._alert
+
+    @property
+    def inventory(self):
+        return self._inventory
+
+    @property
+    def metric(self):
+        return self._metric
+
+    @property
+    def operation(self):
+        return self._operation
 
     def _check_inv_version(self, version):
         return version in self._get_inv_json('status')['Implementation-Version']
@@ -196,7 +218,7 @@ class Hawkular(MgmtSystemAPIBase):
         raise NotImplementedError('deploy_template not implemented.')
 
     def disconnect(self):
-        pass
+        self.operation.close()
 
     def does_vm_exist(self, name):
         raise NotImplementedError('does_vm_exist not implemented.')
@@ -248,6 +270,99 @@ class Hawkular(MgmtSystemAPIBase):
 
     def wait_vm_suspended(self, vm_name, num_sec):
         raise NotImplementedError('wait_vm_suspended not implemented.')
+
+    def status(self):
+        """Returns status of hawkular services"""
+        return {
+            'hawkular_services': self._hawkular.status(),
+            'alerts': self.alert.status(),
+            'inventory': self.inventory.status(),
+            'metrics': self.metric.status()
+        }
+
+
+class HawkularService(object):
+    def __init__(self, hostname, port, protocol, auth, tenant_id, entry):
+        """This class is parent class for all hawkular services
+        Args:
+            hostname: hostname of the hawkular server
+            port: port number of hawkular server
+            protocol: protocol for the hawkular server
+            auth: Either a (user, pass) sequence or a string with token
+            tenant_id: tenant id for the current session
+            entry: entry point of a service url
+        """
+        self.auth = auth
+        self.hostname = hostname
+        self.port = port
+        self.protocol = protocol
+        self.tenant_id = tenant_id
+        self._api = ContainerClient(hostname=hostname, auth=self.auth, protocol=protocol,
+                                    port=port, entry=entry)
+
+    def status(self):
+        """Returns status of a service"""
+        return self._get(path='status')
+
+    def _get(self, path, params=None):
+        """runs GET request and returns response as JSON"""
+        return self._api.get_json(path, headers={"Hawkular-Tenant": self.tenant_id}, params=params)
+
+    def _delete(self, path):
+        """runs DELETE request and returns status"""
+        return self._api.delete_status(path, headers={"Hawkular-Tenant": self.tenant_id})
+
+    def _put(self, path, data):
+        """runs PUT request and returns status"""
+        return self._api.put_status(path, data, headers={"Hawkular-Tenant": self.tenant_id,
+                                                         "Content-Type": "application/json"})
+
+    def _post(self, path, data):
+        """runs POST request and returns status"""
+        return self._api.post_status(path, data,
+                                     headers={"Hawkular-Tenant": self.tenant_id,
+                                              "Content-Type": "application/json"})
+
+
+class HawkularAlert(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates hawkular alert service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/alerts")
+
+    def list_event(self, start_time=0, end_time=sys.maxsize):
+        """Returns the list of events.
+        Filtered by provided start time and end time. Or lists all events if no argument provided.
+        This information is wrapped into Event.
+
+         Args:
+             start_time: Start time as timestamp
+             end_time: End time as timestamp
+         """
+        entities = []
+        entities_j = self._get('events?startTime={}&endTime={}'.format(start_time, end_time))
+        if entities_j:
+            for entity_j in entities_j:
+                entity = Event(entity_j['id'], entity_j['eventType'], entity_j['ctime'],
+                               entity_j['dataSource'], entity_j.get('dataId', None),
+                               entity_j['category'], entity_j['text'], entity_j.get('tags', None),
+                               entity_j.get('tenantId', None), entity_j.get('context', None))
+                entities.append(entity)
+        return entities
+
+
+class HawkularInventory(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates hawkular inventory service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/inventory")
+
+    _stats_available = {
+        'num_server': lambda self: len(self.list_server()),
+        'num_domain': lambda self: len(self.list_domain()),
+        'num_deployment': lambda self: len(self.list_server_deployment()),
+        'num_datasource': lambda self: len(self.list_server_datasource()),
+    }
 
     def list_server_deployment(self, feed_id=None):
         """Returns list of server deployments.
@@ -327,7 +442,7 @@ class Hawkular(MgmtSystemAPIBase):
             resources = []
             for feed in self.list_feed():
                 resources.extend(self._list_resource(feed_id=feed.path.feed_id,
-                                                    resource_type_id=resource_type_id))
+                                                     resource_type_id=resource_type_id))
             return resources
         else:
             return self._list_resource(feed_id=feed_id, resource_type_id=resource_type_id)
@@ -344,11 +459,11 @@ class Hawkular(MgmtSystemAPIBase):
             raise KeyError("'feed_id' and 'resource_id' are a mandatory field!")
         resources = []
         if recursive:
-            entities_j = self._get_inv_json('traversal/f;{}/r;{}/recursive;over=isParentOf;type=r'
-                                          .format(feed_id, resource_id))
+            entities_j = self._get('traversal/f;{}/r;{}/recursive;over=isParentOf;type=r'
+                                   .format(feed_id, resource_id))
         else:
-            entities_j = self._get_inv_json('traversal/f;{}/r;{}/type=r'
-                                            .format(feed_id, resource_id))
+            entities_j = self._get('traversal/f;{}/r;{}/type=r'
+                                   .format(feed_id, resource_id))
         if entities_j:
             for entity_j in entities_j:
                 resources.append(Resource(entity_j['id'], entity_j['name'],
@@ -366,10 +481,10 @@ class Hawkular(MgmtSystemAPIBase):
             raise KeyError("'feed_id' is a mandatory field!")
         entities = []
         if resource_type_id:
-            entities_j = self._get_inv_json('traversal/f;{}/rt;{}/rl;defines/type=r'
-                                        .format(feed_id, resource_type_id))
+            entities_j = self._get('traversal/f;{}/rt;{}/rl;defines/type=r'
+                                   .format(feed_id, resource_type_id))
         else:
-            entities_j = self._get_inv_json('traversal/f;{}/type=r'.format(feed_id))
+            entities_j = self._get('traversal/f;{}/type=r'.format(feed_id))
         if entities_j:
             for entity_j in entities_j:
                 entities.append(Resource(entity_j['id'], entity_j['name'],
@@ -385,17 +500,23 @@ class Hawkular(MgmtSystemAPIBase):
          """
         if not feed_id or not resource_id:
             raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
-        entity_j = self._get_inv_json('entity/f;{}/r;{}/d;configuration'
-                                      .format(feed_id, self._get_resource_id(resource_id)))
+        entity_j = self._get('entity/f;{}/r;{}/d;configuration'
+                             .format(feed_id, self._get_resource_id(resource_id)))
         if entity_j:
             return ResourceData(entity_j['name'], CanonicalPath(entity_j['path']),
                                 entity_j['value'])
         return None
 
+    def _get_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return "{}".format('/r;'.join(resource_id))
+        else:
+            return resource_id
+
     def list_feed(self):
         """Returns list of feeds"""
         entities = []
-        entities_j = self._get_inv_json('traversal/type=f')
+        entities_j = self._get('traversal/type=f')
         if entities_j:
             for entity_j in entities_j:
                 entities.append(Feed(entity_j['id'], CanonicalPath(entity_j['path'])))
@@ -410,7 +531,7 @@ class Hawkular(MgmtSystemAPIBase):
         if not feed_id:
             raise KeyError("'feed_id' is a mandatory field!")
         entities = []
-        entities_j = self._get_inv_json('traversal/f;{}/type=rt'.format(feed_id))
+        entities_j = self._get('traversal/f;{}/type=rt'.format(feed_id))
         if entities_j:
             for entity_j in entities_j:
                 entities.append(ResourceType(entity_j['id'], entity_j['name'], entity_j['path']))
@@ -425,7 +546,7 @@ class Hawkular(MgmtSystemAPIBase):
         """
         if feed_id is None or resource_type_id is None:
             raise KeyError("'feed_id' and 'resource_type_id' are mandatory fields!")
-        res_j = self._get_inv_json('traversal/f;{}/rt;{}/type=ot'.format(feed_id, resource_type_id))
+        res_j = self._get('traversal/f;{}/rt;{}/type=ot'.format(feed_id, resource_type_id))
         operations = []
         if res_j:
             for res in res_j:
@@ -456,8 +577,9 @@ class Hawkular(MgmtSystemAPIBase):
                 "'resource_data' should be ResourceData with 'value' attribute")
         if not kwargs or 'feed_id' not in kwargs or 'resource_id' not in kwargs:
             raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
-        r = self._put_inv_status('entity/f;{}/r;{}/d;configuration'
-                .format(kwargs['feed_id'], kwargs['resource_id']), {"value": resource_data.value})
+        r = self._put('entity/f;{}/r;{}/d;configuration'
+                      .format(kwargs['feed_id'], kwargs['resource_id']),
+                      {"value": resource_data.value})
         return r
 
     def create_resource(self, resource, resource_data, resource_type, **kwargs):
@@ -479,17 +601,17 @@ class Hawkular(MgmtSystemAPIBase):
             raise KeyError('Variable "feed_id" id mandatory field!')
 
         resource_id = urlquote(resource.id, safe='')
-        r = self._post_inv_status('entity/f;{}/resource'.format(kwargs['feed_id']),
-                                data={"name": resource.name, "id": resource.id,
-                                "resourceTypePath": "rt;{}"
-                                  .format(resource_type.path.resource_type_id)})
+        r = self._post('entity/f;{}/resource'.format(kwargs['feed_id']),
+                       data={"name": resource.name, "id": resource.id,
+                             "resourceTypePath": "rt;{}"
+                       .format(resource_type.path.resource_type_id)})
         if r:
-            r = self._post_inv_status('entity/f;{}/r;{}/data'
-                                    .format(kwargs['feed_id'], resource_id),
-                                    data={'role': 'configuration', "value": resource_data.value})
+            r = self._post('entity/f;{}/r;{}/data'
+                           .format(kwargs['feed_id'], resource_id),
+                           data={'role': 'configuration', "value": resource_data.value})
         else:
             # if resource or it's data was not created correctly, delete resource
-            self._delete_inv_status('entity/f;{}/r;{}'.format(kwargs['feed_id'], resource_id))
+            self._delete('entity/f;{}/r;{}'.format(kwargs['feed_id'], resource_id))
         return r
 
     def delete_resource(self, feed_id, resource_id):
@@ -500,111 +622,49 @@ class Hawkular(MgmtSystemAPIBase):
         """
         if not feed_id or not resource_id:
             raise KeyError("'feed_id' and 'resource_id' are mandatory fields!")
-        r = self._delete_inv_status('entity/f;{}/r;{}'.format(feed_id, resource_id))
+        r = self._delete('entity/f;{}/r;{}'.format(feed_id, resource_id))
         return r
 
-    def list_event(self, start_time=0, end_time=sys.maxsize):
-        """Returns the list of events.
-        Filtered by provided start time and end time. Or lists all events if no argument provided.
-        This information is wrapped into Event.
 
-         Args:
-             start_time: Start time as timestamp
-             end_time: End time as timestamp
-         """
-        entities = []
-        entities_j = self._get_alerts_json('events?startTime={}&endTime={}'
-                                     .format(start_time, end_time))
-        if entities_j:
-            for entity_j in entities_j:
-                entity = Event(entity_j['id'], entity_j['eventType'], entity_j['ctime'],
-                               entity_j['dataSource'], entity_j['dataId'],
-                               entity_j['category'], entity_j['text'])
-                entities.append(entity)
-        return entities
+class HawkularMetric(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates hawkular metric service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/metrics")
 
-    def _get_inv_json(self, path):
-        return self.inv_api.get_json(path, headers={"Hawkular-Tenant": self.tenant_id})
-
-    def _post_inv_status(self, path, data):
-        return self.inv_api.post_status(path, data,
-                                        headers={"Hawkular-Tenant": self.tenant_id,
-                                                "Content-Type": "application/json"})
-
-    def _put_inv_status(self, path, data):
-        return self.inv_api.put_status(path, data, headers={"Hawkular-Tenant": self.tenant_id,
-                                                       "Content-Type": "application/json"})
-
-    def _delete_inv_status(self, path):
-        return self.inv_api.delete_status(path, headers={"Hawkular-Tenant": self.tenant_id})
-
-    def _get_alerts_json(self, path):
-        return self.alerts_api.get_json(path, headers={"Hawkular-Tenant": self.tenant_id})
-
-    def _get_metrics_json(self, path, params=None):
-        return self.metrics_api.get_json(path,
-                                         headers={"Hawkular-Tenant": self.tenant_id},
-                                         params=params)
-
-    def _get_resource_id(self, resource_id):
-        if isinstance(resource_id, list):
-            return "{}".format('/r;'.join(resource_id))
-        else:
-            return resource_id
-
-    def status_alerts(self):
-        """returns status of alerts service"""
-        return self._get_alerts_json(path='status')
-
-    def status_inventory(self):
-        """Returns status of inventory service"""
-        return self._get_inv_json(path='status')
-
-    def status_metrics(self):
-        """Returns status of metrics service"""
-        return self._get_metrics_json(path='status')
-
-    def status(self):
-        """Returns status of alerts, inventory and metrics services"""
-        return {
-            'alerts': self.status_alerts(),
-            'inventory': self.status_inventory(),
-            'metrics': self.status_metric()
-        }
-
-    def list_metric_availability_feed(self, feed_id, **kwargs):
+    def list_availability_feed(self, feed_id, **kwargs):
         """Returns list of DataPoint of a feed
         Args:
             feed_id: Feed id of the metric resource
-            kwargs: Refer ``list_metric_availability``
+            kwargs: Refer ``list_availability``
         """
         metric_id = "hawkular-feed-availability-{}".format(feed_id)
-        return self.list_metric_availability(metric_id=metric_id, **kwargs)
+        return self.list_availability(metric_id=metric_id, **kwargs)
 
-    def list_metric_availability_server(self, feed_id, server_id, **kwargs):
+    def list_availability_server(self, feed_id, server_id, **kwargs):
         """Returns list of `DataPoint` of a server
         Args:
             feed_id: Feed id of the server
             server_id: Server id
-            kwargs: Refer ``list_metric_availability``
+            kwargs: Refer ``list_availability``
         """
         metric_id = "AI~R~[{}/{}~~]~AT~Server Availability~Server Availability" \
             .format(feed_id, server_id)
-        return self.list_metric_availability(metric_id=metric_id, **kwargs)
+        return self.list_availability(metric_id=metric_id, **kwargs)
 
-    def list_metric_availability_deployment(self, feed_id, server_id, resource_id, **kwargs):
+    def list_availability_deployment(self, feed_id, server_id, resource_id, **kwargs):
         """Returns list of `DataPoint` of a deployment
         Args:
             feed_id: Feed id of the deployment
             server_id: Server id of the deployment
             resource_id: deployment id
-            kwargs: Refer ``list_metric_availability``
+            kwargs: Refer ``list_availability``
         """
         metric_id = "AI~R~[{}/{}~/deployment={}]~AT~Deployment Status~Deployment Status" \
             .format(feed_id, server_id, resource_id)
-        return self.list_metric_availability(metric_id=metric_id, **kwargs)
+        return self.list_availability(metric_id=metric_id, **kwargs)
 
-    def list_metric_availability(self, metric_id, **kwargs):
+    def list_availability(self, metric_id, **kwargs):
         """Returns list of `DataPoint` of a metric
         Args:
             metric_id: Metric id
@@ -623,50 +683,50 @@ class Hawkular(MgmtSystemAPIBase):
             raw: set True when you want to get raw data, Default False which returns stats
         """
         prefix_id = "availability/{}".format(urlquote(metric_id, safe=''))
-        return self._list_metric_data(prefix_id=prefix_id, **kwargs)
+        return self._list_data(prefix_id=prefix_id, **kwargs)
 
-    def list_metric_gauge_datasource(self, feed_id, server_id, resource_id, metric_enum, **kwargs):
+    def list_gauge_datasource(self, feed_id, server_id, resource_id, metric_enum, **kwargs):
         """Returns list of NumericBucketPoint of datasource metric
             Args:
                 feed_id: feed id of the datasource
                 server_id: server id of the datasource
                 resource_id: resource id, here which is datasource id
                 metric_enum: Any one of *DS_* Enum value from ``MetricEnumGauge``
-                kwargs: Refer ``list_metric_gauge``
+                kwargs: Refer ``list_gauge``
             """
         if not isinstance(metric_enum, MetricEnumGauge):
             raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
-        return self._list_metric_gauge_datasource(feed_id=feed_id, server_id=server_id,
-                                                  resource_id=resource_id,
-                                                  metric_type=metric_enum.metric_type,
-                                                  metric_sub_type=metric_enum.sub_type, **kwargs)
+        return self._list_gauge_datasource(feed_id=feed_id, server_id=server_id,
+                                           resource_id=resource_id,
+                                           metric_type=metric_enum.metric_type,
+                                           metric_sub_type=metric_enum.sub_type, **kwargs)
 
-    def _list_metric_gauge_datasource(self, feed_id, server_id, resource_id, metric_type,
-                                      metric_sub_type, **kwargs):
+    def _list_gauge_datasource(self, feed_id, server_id, resource_id, metric_type,
+                               metric_sub_type, **kwargs):
         metric_id = "MI~R~[{}/{}~/subsystem=datasources/data-source={}]~MT~{}~{}" \
             .format(feed_id, server_id, resource_id, metric_type, metric_sub_type)
-        return self.list_metric_gauge(metric_id=metric_id, **kwargs)
+        return self.list_gauge(metric_id=metric_id, **kwargs)
 
-    def list_metric_gauge_server(self, feed_id, server_id, metric_enum, **kwargs):
+    def list_gauge_server(self, feed_id, server_id, metric_enum, **kwargs):
         """Returns list of `NumericBucketPoint` of server metric
             Args:
                 feed_id: feed id of the server
                 server_id: server id
                 metric_enum: Any one of *SVR_* ``Enum`` value from ``MetricEnumGauge``
-                kwargs: Refer ``list_metric_gauge``
+                kwargs: Refer ``list_gauge``
             """
         if not isinstance(metric_enum, MetricEnumGauge):
             raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
-        return self._list_metric_gauge_server(feed_id=feed_id, server_id=server_id,
-                                              metric_type=metric_enum.metric_type,
-                                              metric_sub_type=metric_enum.sub_type, **kwargs)
+        return self._list_gauge_server(feed_id=feed_id, server_id=server_id,
+                                       metric_type=metric_enum.metric_type,
+                                       metric_sub_type=metric_enum.sub_type, **kwargs)
 
-    def _list_metric_gauge_server(self, feed_id, server_id, metric_type, metric_sub_type, **kwargs):
+    def _list_gauge_server(self, feed_id, server_id, metric_type, metric_sub_type, **kwargs):
         metric_id = "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id,
                                                      metric_type, metric_sub_type)
-        return self.list_metric_gauge(metric_id=metric_id, **kwargs)
+        return self.list_gauge(metric_id=metric_id, **kwargs)
 
-    def list_metric_gauge(self, metric_id, **kwargs):
+    def list_gauge(self, metric_id, **kwargs):
         """Returns list of `NumericBucketPoint` of a metric
             Args:
                 metric_id: Metric id
@@ -687,56 +747,56 @@ class Hawkular(MgmtSystemAPIBase):
                 stats: return stats data default True
             """
         prefix_id = "gauges/{}".format(urlquote(metric_id, safe=''))
-        return self._list_metric_data(prefix_id=prefix_id, **kwargs)
+        return self._list_data(prefix_id=prefix_id, **kwargs)
 
-    def list_metric_counter_server(self, feed_id, server_id, metric_enum, **kwargs):
+    def list_counter_server(self, feed_id, server_id, metric_enum, **kwargs):
         """Returns list of `NumericBucketPoint` of server metric
             Args:
                 feed_id: feed id of the server
                 server_id: server id
                 metric_enum: Any one of *SVR_* ``Enum`` value from ``MetricEnumCounter``
-                kwargs: Refer ``list_metric_counter``
+                kwargs: Refer ``list_counter``
             """
         if not isinstance(metric_enum, MetricEnumCounter):
             raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
-        return self._list_metric_counter_server(feed_id=feed_id, server_id=server_id,
-                                              metric_type=metric_enum.metric_type,
-                                              metric_sub_type=metric_enum.sub_type, **kwargs)
+        return self._list_counter_server(feed_id=feed_id, server_id=server_id,
+                                         metric_type=metric_enum.metric_type,
+                                         metric_sub_type=metric_enum.sub_type, **kwargs)
 
-    def _list_metric_counter_server(self,
-                                   feed_id, server_id, metric_type, metric_sub_type, **kwargs):
+    def _list_counter_server(self,
+                             feed_id, server_id, metric_type, metric_sub_type, **kwargs):
         if MetricEnumCounter.SVR_TXN_NUMBER_OF_TRANSACTIONS.metric_type == metric_type:
-            metric_id = "MI~R~[{}/{}~/subsystem=transactions]~MT~{}~{}"\
+            metric_id = "MI~R~[{}/{}~/subsystem=transactions]~MT~{}~{}" \
                 .format(feed_id, server_id, metric_type, metric_sub_type)
         else:
             metric_id = "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id, metric_type,
                                                          metric_sub_type)
-        return self.list_metric_counter(metric_id=metric_id, **kwargs)
+        return self.list_counter(metric_id=metric_id, **kwargs)
 
-    def list_metric_counter_deployment(self,
-                                       feed_id, server_id, resource_id, metric_enum, **kwargs):
+    def list_counter_deployment(self,
+                                feed_id, server_id, resource_id, metric_enum, **kwargs):
         """Returns list of `NumericBucketPoint` of server metric
             Args:
                 feed_id: feed id of the deployment
                 server_id: server id of the deployment
                 resource_id: resource id, that's deployment id
                 metric_enum: Any one of *DEP_* ``Enum`` value from ``MetricEnumCounter``
-                kwargs: Refer ``list_metric_counter``
+                kwargs: Refer ``list_counter``
             """
         if not isinstance(metric_enum, MetricEnumCounter):
             raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
-        return self._list_metric_counter_deployment(feed_id=feed_id, server_id=server_id,
-                                                    resource_id=resource_id,
-                                                    metric_type=metric_enum.metric_type,
-                                                    metric_sub_type=metric_enum.sub_type, **kwargs)
+        return self._list_counter_deployment(feed_id=feed_id, server_id=server_id,
+                                             resource_id=resource_id,
+                                             metric_type=metric_enum.metric_type,
+                                             metric_sub_type=metric_enum.sub_type, **kwargs)
 
-    def _list_metric_counter_deployment(self, feed_id, server_id, resource_id,
-                                       metric_type, metric_sub_type, **kwargs):
-        metric_id = "MI~R~[{}/{}~/deployment={}]~MT~{}~{}"\
+    def _list_counter_deployment(self, feed_id, server_id, resource_id,
+                                 metric_type, metric_sub_type, **kwargs):
+        metric_id = "MI~R~[{}/{}~/deployment={}]~MT~{}~{}" \
             .format(feed_id, server_id, resource_id, metric_type, metric_sub_type)
-        return self.list_metric_counter(metric_id=metric_id, **kwargs)
+        return self.list_counter(metric_id=metric_id, **kwargs)
 
-    def list_metric_counter(self, metric_id, **kwargs):
+    def list_counter(self, metric_id, **kwargs):
         """Returns list of `NumericBucketPoint` of a metric
             Args:
                 metric_id: metric id
@@ -757,48 +817,195 @@ class Hawkular(MgmtSystemAPIBase):
                 stats: return stats data default True
             """
         prefix_id = "counters/{}".format(urlquote(metric_id, safe=''))
-        return self._list_metric_data(prefix_id=prefix_id, **kwargs)
+        return self._list_data(prefix_id=prefix_id, **kwargs)
 
-    def list_metric_availability_definition(self):
+    def list_availability_definition(self):
         """Lists all availability type metric definitions"""
-        return self._get_metrics_json(path='availability')
+        return self._get(path='availability')
 
-    def list_metric_gauge_definition(self):
+    def list_gauge_definition(self):
         """Lists all gauge type metric definitions"""
-        return self._get_metrics_json(path='gauges')
+        return self._get(path='gauges')
 
-    def list_metric_counter_definition(self):
+    def list_counter_definition(self):
         """Lists all counter type metric definitions"""
-        return self._get_metrics_json(path='counters')
+        return self._get(path='counters')
 
-    def list_metric_definition(self):
+    def list_definition(self):
         """Lists all metric definitions"""
-        return self._get_metrics_json(path='metrics')
+        return self._get(path='metrics')
 
-    def _list_metric_data(self, prefix_id, **kwargs):
+    def _list_data(self, prefix_id, **kwargs):
         params = {
             'start': kwargs.get('start', None),
             'end': kwargs.get('end', None),
-            'bucketDuration': kwargs.get('bucketDuration', None),
+            'bucketDuration': kwargs.get('bucket_duration', None),
             'buckets': kwargs.get('buckets', None),
             'percentiles': kwargs.get('percentiles', None),
             'limit': kwargs.get('limit', None),
             'order': kwargs.get('order', None),
         }
+        if kwargs.get('bucketDuration', None) is not None:
+            params['bucketDuration'] = kwargs.get('bucketDuration')
         raw = kwargs.get('raw', False)
         rate = kwargs.get('rate', False)
         if not raw and params['bucketDuration'] is None and params['buckets'] is None:
-            raise KeyError("Either the 'buckets' or 'bucketDuration' parameter must be used")
+            raise KeyError("Either the 'buckets' or 'bucket_duration' parameter must be used")
         if rate:
-            return self._get_metrics_json(path='{}/rate/stats'.format(prefix_id), params=params)
+            return self._get(path='{}/rate/stats'.format(prefix_id), params=params)
         elif raw:
-            return self._get_metrics_json(path='{}/raw'.format(prefix_id), params=params)
+            return self._get(path='{}/raw'.format(prefix_id), params=params)
         else:
-            return self._get_metrics_json(path='{}/stats'.format(prefix_id), params=params)
+            return self._get(path='{}/stats'.format(prefix_id), params=params)
+
+
+class HawkularOperation(object):
+    def __init__(self, hostname, port, username, password, tenant_id, connect=True):
+        """Creates hawkular command gateway websocket client service instance.
+        Args:
+            hostname: hostname or IP of the server
+            port: port number of the server
+            username: username of the server
+            password: password of the server
+            tenant_id: tenant id of the server
+            connect: If you do not want to connect on initialization pass this as False
+        """
+        self.cmd_gw_ws_api = HawkularWebsocketClient(
+            url="ws://{}:{}/hawkular/command-gateway/ui/ws".format(hostname, port),
+            headers={"Hawkular-Tenant": tenant_id, "Accept": "application/json"},
+            username=username, password=password)
+        self.tenant_id = tenant_id
+        if connect:
+            self.cmd_gw_ws_api.connect()
+
+    def add_jdbc_driver(self, feed_id, server_id, driver_name, module_name,
+                        driver_class, driver_jar_name=None, binary_content=None,
+                        binary_file_location=None):
+        """Adds JDBC driver on specified server under specified feed. return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            driver_name: driver name
+            module_name: module name
+            driver_class: driver class
+            driver_jar_name: driver jar file name
+            binary_content: driver file content in binary format
+            binary_file_location: driver file location(on local disk)
+        """
+        if driver_jar_name and not binary_content and not binary_file_location:
+            raise KeyError("If 'driver_jar_name' field is set the jar file must be passed"
+                           " as binary or file location")
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"resourcePath": resource_path, "driverJarName": driver_jar_name,
+                   "driverName": driver_name, "moduleName": module_name,
+                   "driverClass": driver_class}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="AddJdbcDriver",
+                                                       payload=payload,
+                                                       binary_file_location=binary_file_location,
+                                                       binary_content=binary_content)
+
+    def remove_jdbc_driver(self, feed_id, server_id, driver_name):
+        """Removes JDBC driver on specified server under specified feed. return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            driver_name: driver name
+        """
+        payload = {"resourcePath": "/t;{}/f;{}/r;{}~%2Fsubsystem%3Ddatasources%2Fjdbc-driver%3D{}"
+            .format(self.tenant_id, feed_id, server_id, driver_name)}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="RemoveJdbcDriver",
+                                                       payload=payload)
+
+    def add_deployment(self, feed_id, server_id, destination_file_name, force_deploy=False,
+                       enabled=True, server_groups=None, binary_file_location=None,
+                       binary_content=None):
+        """Adds deployment to hawkular server. Return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            destination_file_name: resulting file name
+            force_deploy: whether to replace existing content or not (default = false)
+            enabled: whether the deployment should be enabled immediately, or not (default = true)
+            server_groups: comma-separated list of server groups for the operation (default = None)
+            binary_content: driver file content in binary format
+            binary_file_location: driver file location(on local disk)
+        """
+        if not binary_content and not binary_file_location:
+            raise KeyError("Deployment file must be passed as binary or file location")
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"destinationFileName": destination_file_name, "forceDeploy": force_deploy,
+                   "resourcePath": resource_path, "enabled": enabled, "serverGroups": server_groups}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="DeployApplication",
+                                                       payload=payload,
+                                                       binary_content=binary_content,
+                                                       binary_file_location=binary_file_location)
+
+    def undeploy(self, feed_id, server_id, destination_file_name, remove_content=True,
+                 server_groups=None):
+        """Removes deployment on a hawkular server. Return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            destination_file_name: deployment file name
+            remove_content: whether to remove the deployment content or not (default = true)
+            server_groups: comma-separated list of server groups for the operation (default = None)
+        """
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"destinationFileName": destination_file_name, "removeContent": remove_content,
+                   "serverGroups": server_groups, "resourcePath": resource_path}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="UndeployApplication",
+                                                       payload=payload)
+
+    def enable_deployment(self, feed_id, server_id, destination_file_name, server_groups=None):
+        """Enables deployment on a hawkular server. Return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            destination_file_name: deployment file name
+            server_groups: comma-separated list of server groups for the operation (default = None)
+            """
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"destinationFileName": destination_file_name, "serverGroups": server_groups,
+                   "resourcePath": resource_path}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="EnableApplication",
+                                                       payload=payload)
+
+    def disable_deployment(self, feed_id, server_id, destination_file_name, server_groups=None):
+        """Disable deployment on a hawkular server. Return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            destination_file_name: deployment file name
+            server_groups: comma-separated list of server groups for the operation (default = None)
+        """
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"destinationFileName": destination_file_name, "serverGroups": server_groups,
+                   "resourcePath": resource_path}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="DisableApplication",
+                                                       payload=payload)
+
+    def restart_deployment(self, feed_id, server_id, destination_file_name, server_groups=None):
+        """Restarts deployment on a hawkular server. Return status
+        Args:
+            feed_id: feed id of the server
+            server_id: server id under a feed
+            destination_file_name: deployment file name
+            server_groups: comma-separated list of server groups for the operation (default = None)
+            """
+        resource_path = "/t;{}/f;{}/r;{}~~".format(self.tenant_id, feed_id, server_id)
+        payload = {"destinationFileName": destination_file_name, "serverGroups": server_groups,
+                   "resourcePath": resource_path}
+        return self.cmd_gw_ws_api.hwk_invoke_operation(operation_name="RestartApplication",
+                                                       payload=payload)
+
+    def close_ws(self):
+        """Closes web socket client session"""
+        self.cmd_gw_ws_api.close()
 
 
 class MetricEnum(Enum):
     """Enum to define Metrics type and sub type. This is base for all Enum types in metrics"""
+
     def __init__(self, metric_type, sub_type):
         self.metric_type = metric_type  # metric type
         self.sub_type = sub_type  # sub type

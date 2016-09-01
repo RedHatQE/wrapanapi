@@ -13,6 +13,7 @@ requests
 suds
 tzlocal
 wait_for
+websocket_client
 
 ###
 # Libraries with compiled components, and their related devel packages
