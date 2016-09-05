@@ -8,7 +8,7 @@ from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
 from apiclient import errors
 from base import MgmtSystemAPIBase, VMInfo
-from exceptions import VMInstanceNotFound, ImageNotFoundError
+from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported
 from json import dumps as json_dumps
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
@@ -276,20 +276,17 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         self.logger.info(json_dumps(response, indent=2))
         return (True, blob_name)
 
-    def create_vm(self, instance_name, source_disk_image=None, machine_type=None,
-            startup_script_data=None, timeout=180):
-        if self.does_vm_exist(instance_name):
-            self.logger.info("The {} instance is already exists, skipping".format(instance_name))
-            return True
+    def deploy_template(self, template, **kwargs):
 
+        template_link = self.get_image_by_name(template)['selfLink']
+
+        instance_name = kwargs['vm_name']
         self.logger.info("Creating {} instance".format(instance_name))
 
-        if not source_disk_image:
-            source_disk_image = "projects/debian-cloud/global/images/debian-7-wheezy-v20150320"
-
-        machine_type = machine_type or ("zones/{}/machineTypes/n1-standard-1".format(self._zone))
-
-        script = startup_script_data or "#!/bin/bash"
+        machine_type = kwargs.get('machine_type',
+            "zones/{}/machineTypes/n1-standard-1".format(self._zone))
+        script = kwargs.get('startup_script_data', "#!/bin/bash")
+        timeout = kwargs.get('timeout', 180)
 
         config = {
             'name': instance_name,
@@ -301,7 +298,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
                     'boot': True,
                     'autoDelete': True,
                     'initializeParams': {
-                        'sourceImage': source_disk_image,
+                        'sourceImage': template_link,
                     }
                 }
             ],
@@ -405,9 +402,6 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
     def current_ip_address(self, vm_name):
         return self.vm_status(vm_name)['natIP']
 
-    def deploy_template(self, template, *args, **kwargs):
-        raise NotImplementedError('deploy_template not implemented.')
-
     def disconnect(self):
         """Disconnect from the GCE
 
@@ -435,7 +429,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         return self.vm_status(vm_name) in self.states['stopped']
 
     def is_vm_suspended(self, vm_name):
-        raise NotImplementedError('is_vm_suspended not implemented.')
+        raise ActionNotSupported('vm_suspend not supported.')
 
     # These methods indicate if the vm is in the process of stopping or starting
     def is_vm_stopping(self, vm_name):
@@ -454,7 +448,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         raise NotImplementedError('remove_host_from_cluster not implemented.')
 
     def suspend_vm(self, vm_name):
-        raise NotImplementedError('suspend_vm not implemented.')
+        raise ActionNotSupported('vm_suspend not supported.')
 
     def vm_status(self, vm_name):
         if self.does_vm_exist(vm_name):
@@ -470,7 +464,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
     def wait_vm_suspended(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_suspended not implemented.')
+        raise ActionNotSupported('vm_suspend not supported.')
 
     def all_vms(self):
         result = []
