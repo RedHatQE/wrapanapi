@@ -11,7 +11,7 @@ from random import sample
 from mgmtsystem.hawkular import CanonicalPath
 
 
-def fake_urlopen(c_client, url, headers):
+def fake_urlopen(c_client, url, headers, params):
     """
     A stub urlopen() implementation that load json responses from
     the filesystem.
@@ -80,7 +80,8 @@ def provider():
         protocol=os.getenv('HAWKULAR_PROTOCOL', 'http'),
         port=os.getenv('HAWKULAR_PORT', 8080),
         username=os.getenv('HAWKULAR_USERNAME', 'jdoe'),
-        password=os.getenv('HAWKULAR_PASSWORD', 'password')
+        password=os.getenv('HAWKULAR_PASSWORD', 'password'),
+        ws_connect=False
     )
     yield hwk
     if not os.getenv('HAWKULAR_HOSTNAME'):
@@ -94,7 +95,7 @@ def datasource(provider):
     It creates resource and resource data for Datasource.
     On the end of testing, Datasource is deleted.
     """
-    datasources = provider.list_server_datasource()
+    datasources = provider.inventory.list_server_datasource()
     assert len(datasources) > 0, "No resource data is listed for any of datasources"
     new_datasource = None
     for datasource in sample(datasources, 1):
@@ -130,7 +131,7 @@ def datasource(provider):
 
 def test_list_feed(provider):
     """ Checks whether any feed is listed """
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     assert len(feeds) > 0, "No feeds are listed"
     for feed in feeds:
         assert feed.id
@@ -139,9 +140,9 @@ def test_list_feed(provider):
 
 def test_list_resource_type(provider):
     """ Checks whether any resource type is listed and has attributes """
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     for feed in feeds:
-        res_types = provider.list_resource_type(feed_id=feed.id)
+        res_types = provider.inventory.list_resource_type(feed_id=feed.id)
         for res_type in res_types:
             assert res_type.id
             assert res_type.name
@@ -151,7 +152,7 @@ def test_list_resource_type(provider):
 
 def test_list_server(provider):
     """ Checks whether any server is listed and has attributes"""
-    servers = provider.list_server()
+    servers = provider.inventory.list_server()
     for server in servers:
         assert server.id
         assert server.name
@@ -162,7 +163,7 @@ def test_list_server(provider):
 
 def test_list_domain(provider):
     """ Checks whether any domain is listed and has attributes"""
-    domains = provider.list_domain()
+    domains = provider.inventory.list_domain()
     for domain in domains:
         assert domain.id
         assert domain.name
@@ -173,9 +174,9 @@ def test_list_domain(provider):
 
 def test_list_server_group(provider):
     """ Checks whether any group is listed and has attributes"""
-    domains = provider.list_domain()
+    domains = provider.inventory.list_domain()
     for domain in domains:
-        server_groups = provider.list_server_group(domain.path.feed_id)
+        server_groups = provider.inventory.list_server_group(domain.path.feed_id)
         for server_group in server_groups:
             assert server_group.id
             assert server_group.name
@@ -186,7 +187,7 @@ def test_list_server_group(provider):
 
 def test_list_server_deployment(provider):
     """ Checks whether any deployment is listed and has attributes """
-    deployments = provider.list_server_deployment()
+    deployments = provider.inventory.list_server_deployment()
     for deployment in deployments:
         assert deployment.id
         assert deployment.name
@@ -197,9 +198,10 @@ def test_list_server_deployment(provider):
 def test_get_config_data(provider):
     """ Checks whether resource data is provided and has attributes """
     found = False
-    servers = provider.list_server()
+    servers = provider.inventory.list_server()
     for server in servers:
-        r_data = provider.get_config_data(feed_id=server.path.feed_id, resource_id=server.id)
+        r_data = provider.inventory.get_config_data(feed_id=server.path.feed_id,
+                                                    resource_id=server.id)
         if r_data:
             found = True
             assert r_data.name
@@ -234,47 +236,49 @@ def test_delete_resource(provider, datasource):
 
 
 def _read_resource_data(provider, resource):
-    return provider.get_config_data(feed_id=resource.path.feed_id,
-                    resource_id=resource.path.resource_id)
+    return provider.inventory.get_config_data(feed_id=resource.path.feed_id,
+                                              resource_id=resource.path.resource_id)
 
 
 def _create_resource(provider, resource, resource_data, resource_type):
-    return provider.create_resource(resource=resource, resource_data=resource_data,
-                                    resource_type=resource_type, feed_id=resource.path.feed_id)
+    return provider.inventory.create_resource(resource=resource, resource_data=resource_data,
+                                              resource_type=resource_type,
+                                              feed_id=resource.path.feed_id)
 
 
 def _update_resource_data(provider, resource_data, resource):
-    return provider.edit_config_data(resource_data=resource_data, feed_id=resource.path.feed_id,
-                    resource_id=resource.path.resource_id)
+    return provider.inventory.edit_config_data(resource_data=resource_data,
+                                               feed_id=resource.path.feed_id,
+                                               resource_id=resource.path.resource_id)
 
 
 def _delete_resource(provider, resource):
-    return provider.delete_resource(feed_id=resource.path.feed_id,
+    return provider.inventory.delete_resource(feed_id=resource.path.feed_id,
                     resource_id=resource.path.resource_id)
 
 
 def test_list_server_datasource(provider):
     """ Checks whether any datasource is listed and has attributes """
     found = False
-    datasources = provider.list_server_datasource()
+    datasources = provider.inventory.list_server_datasource()
     if len(datasources) > 0:
         found = True
     for datasource in datasources:
         assert datasource.id
         assert datasource.name
         assert datasource.path
-    assert found | provider._stats_available['num_datasource'](provider) > 0,\
+    assert found | provider.inventory._stats_available['num_datasource'](provider.inventory) > 0,\
         "No any datasource is listed for any of feeds, but they exists"
 
 
 def test_path(provider):
     """ Checks whether path returned correctly """
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     for feed in feeds:
         assert feed.path
         assert feed.path.tenant_id
         assert feed.path.feed_id
-    servers = provider.list_server()
+    servers = provider.inventory.list_server()
     for server in servers:
         assert server.path
         assert server.path.tenant_id
@@ -285,36 +289,36 @@ def test_path(provider):
 def test_num_server(provider):
     """ Checks whether number of servers is returned correct """
     servers_count = 0
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     for feed in feeds:
-        servers_count += len(provider.list_server(feed_id=feed.id))
-    num_server = provider._stats_available['num_server'](provider)
+        servers_count += len(provider.inventory.list_server(feed_id=feed.id))
+    num_server = provider.inventory._stats_available['num_server'](provider.inventory)
     assert num_server == servers_count, "Number of servers is wrong"
 
 
 def test_num_deployment(provider):
     """ Checks whether number of deployments is returned correct """
     deployments_count = 0
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     for feed in feeds:
-        deployments_count += len(provider.list_server_deployment(feed_id=feed.id))
-    num_deployment = provider._stats_available['num_deployment'](provider)
+        deployments_count += len(provider.inventory.list_server_deployment(feed_id=feed.id))
+    num_deployment = provider.inventory._stats_available['num_deployment'](provider.inventory)
     assert num_deployment == deployments_count, "Number of deployments is wrong"
 
 
 def test_num_datasource(provider):
     """ Checks whether number of datasources is returned correct """
     datasources_count = 0
-    feeds = provider.list_feed()
+    feeds = provider.inventory.list_feed()
     for feed in feeds:
-        datasources_count += len(provider.list_server_datasource(feed_id=feed.id))
-    num_datasource = provider._stats_available['num_datasource'](provider)
+        datasources_count += len(provider.inventory.list_server_datasource(feed_id=feed.id))
+    num_datasource = provider.inventory._stats_available['num_datasource'](provider.inventory)
     assert num_datasource == datasources_count, "Number of datasources is wrong"
 
 
 def test_list_event(provider):
     """ Checks whether is any event listed """
-    events = provider.list_event()
+    events = provider.alert.list_event()
     if len(events) > 0:
         event = events[0]
         assert event.id
