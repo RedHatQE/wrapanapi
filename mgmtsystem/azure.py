@@ -16,6 +16,7 @@ from lxml import etree
 from wait_for import wait_for
 
 from base import MgmtSystemAPIBase
+from exceptions import ActionTimedOutError
 
 
 class AzureSystem(MgmtSystemAPIBase):
@@ -273,6 +274,22 @@ class AzureSystem(MgmtSystemAPIBase):
         if vm_name in result:
             return True
         else:
+            return False
+
+    def stack_exist(self, stack_name):
+        return bool(self.api.stacks.get(stack_name))
+
+    def delete_stack(self, stack_name):
+        """Deletes stack
+
+        Args:
+            stack_name: Unique name of stack
+        """
+        self.logger.info(" Terminating Azure stack {}" .format(stack_name))
+        try:
+            self.api.delete_stack(stack_name)
+            return True
+        except ActionTimedOutError:
             return False
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
