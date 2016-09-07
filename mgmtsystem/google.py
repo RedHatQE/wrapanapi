@@ -381,7 +381,7 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
         operation = self._instances.stop(
             project=self._project, zone=self._zone, instance=instance_name).execute()
         wait_for(lambda: self._nested_operation_wait(operation['name']),
-            message="Stop {}".format(instance_name))
+            message="Stop {}".format(instance_name), timeout=360)
         return True
 
     def start_vm(self, instance_name):
