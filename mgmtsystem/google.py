@@ -31,7 +31,8 @@ DEFAULT_MIMETYPE = 'application/octet-stream'
 IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
                 'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
-class GoogleCloudSystem (MgmtSystemAPIBase):
+
+class GoogleCloudSystem(MgmtSystemAPIBase):
     """
     Client to Google Cloud Platform API
 
@@ -347,6 +348,9 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
             num_sec=timeout, message=" Create {}".format(instance_name))
         return True
 
+    def create_vm(self):
+        raise NotImplementedError('create_vm not implemented.')
+
     def delete_vm(self, instance_name, timeout=180):
         if not self.does_vm_exist(instance_name):
             self.logger.info("The {} instance is not exists, skipping".format(instance_name))
@@ -377,7 +381,7 @@ class GoogleCloudSystem (MgmtSystemAPIBase):
         operation = self._instances.stop(
             project=self._project, zone=self._zone, instance=instance_name).execute()
         wait_for(lambda: self._nested_operation_wait(operation['name']),
-            message="Stop {}".format(instance_name))
+            message="Stop {}".format(instance_name), timeout=360)
         return True
 
     def start_vm(self, instance_name):
