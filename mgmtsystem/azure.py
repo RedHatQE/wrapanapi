@@ -283,12 +283,10 @@ class AzureSystem(MgmtSystemAPIBase):
         raise NotImplementedError('NIE - clone_vm not implemented.')
 
     def does_vm_exist(self, vm_name):
-        result = self.list_vm()
-        return True if vm_name in result else False
+        return vm_name in self.list_vm()
 
     def stack_exist(self, stack_name):
-        result = self.list_stack()
-        return True if stack_name in result else False
+        return stack_name in self.list_stack()
 
     def delete_stack(self, stack_name, resource_group=None):
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
