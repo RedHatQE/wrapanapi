@@ -16,7 +16,6 @@ from lxml import etree
 from wait_for import wait_for
 
 from base import MgmtSystemAPIBase
-from exceptions import ActionTimedOutError
 
 
 class AzureSystem(MgmtSystemAPIBase):
@@ -161,6 +160,20 @@ class AzureSystem(MgmtSystemAPIBase):
             "./Object/Property[@Name='Name']/text()")
         return nameList
 
+    def list_stack(self, resource_group=None):
+        self.logger.info("Attempting to List Azure Orchestration Deployment Stacks")
+        azure_data = self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            Get-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" |
+            convertto-xml -as String;
+            }}
+            """.format(rg=resource_group or self.resource_group))
+        data = self.clean_azure_xml(azure_data)
+        name_list = etree.parse(StringIO(data)).getroot().xpath(
+            "./Object/Property[@Name='DeploymentName']/text()")
+        return name_list
+
     def list_template(self):
         self.logger.info("Attempting to List Azure VHDs in templates directory")
         azure_data = self.run_script(
@@ -271,26 +284,22 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def does_vm_exist(self, vm_name):
         result = self.list_vm()
-        if vm_name in result:
-            return True
-        else:
-            return False
+        return True if vm_name in result else False
 
     def stack_exist(self, stack_name):
-        return bool(self.api.stacks.get(stack_name))
+        result = self.list_stack()
+        return True if stack_name in result else False
 
-    def delete_stack(self, stack_name):
-        """Deletes stack
-
-        Args:
-            stack_name: Unique name of stack
-        """
-        self.logger.info(" Terminating Azure stack {}" .format(stack_name))
-        try:
-            self.api.delete_stack(stack_name)
-            return True
-        except ActionTimedOutError:
-            return False
+    def delete_stack(self, stack_name, resource_group=None):
+        self.logger.info("Removes a Deployment Stack resource created with Orchestration")
+        self.run_script(
+            """
+            Invoke-Command -scriptblock {{
+            Remove-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" `
+            -DeploymentName \"{stack}\" -Force
+            }}
+            """.format(rg=resource_group or self.resource_group, stack=stack_name))
+        return True
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
         self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
