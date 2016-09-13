@@ -5,6 +5,7 @@ import boto
 from boto.ec2 import EC2Connection, get_region
 from boto.cloudformation import CloudFormationConnection
 import tzlocal
+import re
 from wait_for import wait_for
 
 from base import MgmtSystemAPIBase
@@ -356,8 +357,8 @@ class EC2System(MgmtSystemAPIBase):
         # Quick validation that the instance name isn't actually an ID
         # If people start naming their instances in such a way to break this,
         # check, that would be silly, but we can upgrade to regex if necessary.
-        if instance_name.startswith('i-') and len(instance_name) == 10:
-            # This is already an instance id, return it!
+        pattern = re.compile('^i-\w{8,17}$')
+        if pattern.match(instance_name):
             return instance_name
 
         # Filter by the 'Name' tag
