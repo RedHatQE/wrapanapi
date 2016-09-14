@@ -180,6 +180,13 @@ class Hawkular(MgmtSystemAPIBase):
                                             tenant_id=self.tenant_id,
                                             connect=kwargs.get('ws_connect', True))
 
+    _stats_available = {
+        'num_server': lambda self: len(self.inventory.list_server()),
+        'num_domain': lambda self: len(self.inventory.list_domain()),
+        'num_deployment': lambda self: len(self.inventory.list_server_deployment()),
+        'num_datasource': lambda self: len(self.inventory.list_server_datasource()),
+    }
+
     @property
     def alert(self):
         return self._alert
