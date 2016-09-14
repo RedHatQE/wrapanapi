@@ -632,13 +632,62 @@ class HawkularMetric(HawkularService):
         HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
                                  auth=auth, tenant_id=tenant_id, entry="hawkular/metrics")
 
+    @staticmethod
+    def _metric_id_availability_feed(feed_id):
+        return "hawkular-feed-availability-{}".format(feed_id)
+
+    @staticmethod
+    def _metric_id_availability_server(feed_id, server_id):
+        return "AI~R~[{}/{}~~]~AT~Server Availability~Server Availability"\
+            .format(feed_id, server_id)
+
+    @staticmethod
+    def _metric_id_availability_deployment(feed_id, server_id, resource_id):
+        return "AI~R~[{}/{}~/deployment={}]~AT~Deployment Status~Deployment Status"\
+            .format(feed_id, server_id, resource_id)
+
+    @staticmethod
+    def _metric_id_guage_server(feed_id, server_id, metric_enum):
+        if not isinstance(metric_enum, MetricEnumGauge):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
+        return "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id, metric_enum.metric_type,
+                                                metric_enum.sub_type)
+
+    @staticmethod
+    def _metric_id_guage_datasource(feed_id, server_id, resource_id, metric_enum):
+        if not isinstance(metric_enum, MetricEnumGauge):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
+        return "MI~R~[{}/{}~/subsystem=datasources/data-source={}]~MT~{}~{}" \
+            .format(feed_id, server_id, resource_id, metric_enum.metric_type, metric_enum.sub_type)
+
+    @staticmethod
+    def _metric_id_counter_server(feed_id, server_id, metric_enum):
+        if not isinstance(metric_enum, MetricEnumCounter):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
+        if MetricEnumCounter.SVR_TXN_NUMBER_OF_TRANSACTIONS.metric_type == metric_enum.metric_type:
+            metric_id = "MI~R~[{}/{}~/subsystem=transactions]~MT~{}~{}" \
+                .format(feed_id, server_id, metric_enum.metric_type, metric_enum.sub_type)
+        else:
+            metric_id = "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id,
+                                                         metric_enum.metric_type,
+                                                         metric_enum.sub_type)
+        return metric_id
+
+    @staticmethod
+    def _metric_id_counter_deployment(feed_id, server_id, resource_id, metric_enum):
+        if not isinstance(metric_enum, MetricEnumCounter):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
+        return "MI~R~[{}/{}~/deployment={}]~MT~{}~{}".format(feed_id, server_id, resource_id,
+                                                             metric_enum.metric_type,
+                                                             metric_enum.sub_type)
+
     def list_availability_feed(self, feed_id, **kwargs):
         """Returns list of DataPoint of a feed
         Args:
             feed_id: Feed id of the metric resource
             kwargs: Refer ``list_availability``
         """
-        metric_id = "hawkular-feed-availability-{}".format(feed_id)
+        metric_id = self._metric_id_availability_feed(feed_id=feed_id)
         return self.list_availability(metric_id=metric_id, **kwargs)
 
     def list_availability_server(self, feed_id, server_id, **kwargs):
@@ -648,8 +697,7 @@ class HawkularMetric(HawkularService):
             server_id: Server id
             kwargs: Refer ``list_availability``
         """
-        metric_id = "AI~R~[{}/{}~~]~AT~Server Availability~Server Availability" \
-            .format(feed_id, server_id)
+        metric_id = self._metric_id_availability_server(feed_id=feed_id, server_id=server_id)
         return self.list_availability(metric_id=metric_id, **kwargs)
 
     def list_availability_deployment(self, feed_id, server_id, resource_id, **kwargs):
@@ -660,8 +708,8 @@ class HawkularMetric(HawkularService):
             resource_id: deployment id
             kwargs: Refer ``list_availability``
         """
-        metric_id = "AI~R~[{}/{}~/deployment={}]~AT~Deployment Status~Deployment Status" \
-            .format(feed_id, server_id, resource_id)
+        metric_id = self._metric_id_availability_deployment(feed_id=feed_id, server_id=server_id,
+                                                            resource_id=resource_id)
         return self.list_availability(metric_id=metric_id, **kwargs)
 
     def list_availability(self, metric_id, **kwargs):
@@ -694,17 +742,9 @@ class HawkularMetric(HawkularService):
                 metric_enum: Any one of *DS_* Enum value from ``MetricEnumGauge``
                 kwargs: Refer ``list_gauge``
             """
-        if not isinstance(metric_enum, MetricEnumGauge):
-            raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
-        return self._list_gauge_datasource(feed_id=feed_id, server_id=server_id,
-                                           resource_id=resource_id,
-                                           metric_type=metric_enum.metric_type,
-                                           metric_sub_type=metric_enum.sub_type, **kwargs)
-
-    def _list_gauge_datasource(self, feed_id, server_id, resource_id, metric_type,
-                               metric_sub_type, **kwargs):
-        metric_id = "MI~R~[{}/{}~/subsystem=datasources/data-source={}]~MT~{}~{}" \
-            .format(feed_id, server_id, resource_id, metric_type, metric_sub_type)
+        metric_id = self._metric_id_guage_datasource(feed_id=feed_id, server_id=server_id,
+                                                     resource_id=resource_id,
+                                                     metric_enum=metric_enum)
         return self.list_gauge(metric_id=metric_id, **kwargs)
 
     def list_gauge_server(self, feed_id, server_id, metric_enum, **kwargs):
@@ -715,15 +755,8 @@ class HawkularMetric(HawkularService):
                 metric_enum: Any one of *SVR_* ``Enum`` value from ``MetricEnumGauge``
                 kwargs: Refer ``list_gauge``
             """
-        if not isinstance(metric_enum, MetricEnumGauge):
-            raise KeyError("'metric_enum' should be a type of 'MetricEnumGauge' Enum class")
-        return self._list_gauge_server(feed_id=feed_id, server_id=server_id,
-                                       metric_type=metric_enum.metric_type,
-                                       metric_sub_type=metric_enum.sub_type, **kwargs)
-
-    def _list_gauge_server(self, feed_id, server_id, metric_type, metric_sub_type, **kwargs):
-        metric_id = "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id,
-                                                     metric_type, metric_sub_type)
+        metric_id = self._metric_id_guage_server(feed_id=feed_id, server_id=server_id,
+                                                 metric_enum=metric_enum)
         return self.list_gauge(metric_id=metric_id, **kwargs)
 
     def list_gauge(self, metric_id, **kwargs):
@@ -757,20 +790,8 @@ class HawkularMetric(HawkularService):
                 metric_enum: Any one of *SVR_* ``Enum`` value from ``MetricEnumCounter``
                 kwargs: Refer ``list_counter``
             """
-        if not isinstance(metric_enum, MetricEnumCounter):
-            raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
-        return self._list_counter_server(feed_id=feed_id, server_id=server_id,
-                                         metric_type=metric_enum.metric_type,
-                                         metric_sub_type=metric_enum.sub_type, **kwargs)
-
-    def _list_counter_server(self,
-                             feed_id, server_id, metric_type, metric_sub_type, **kwargs):
-        if MetricEnumCounter.SVR_TXN_NUMBER_OF_TRANSACTIONS.metric_type == metric_type:
-            metric_id = "MI~R~[{}/{}~/subsystem=transactions]~MT~{}~{}" \
-                .format(feed_id, server_id, metric_type, metric_sub_type)
-        else:
-            metric_id = "MI~R~[{}/{}~~]~MT~{}~{}".format(feed_id, server_id, metric_type,
-                                                         metric_sub_type)
+        metric_id = self._metric_id_counter_server(feed_id=feed_id, server_id=server_id,
+                                                   metric_enum=metric_enum)
         return self.list_counter(metric_id=metric_id, **kwargs)
 
     def list_counter_deployment(self,
@@ -783,17 +804,9 @@ class HawkularMetric(HawkularService):
                 metric_enum: Any one of *DEP_* ``Enum`` value from ``MetricEnumCounter``
                 kwargs: Refer ``list_counter``
             """
-        if not isinstance(metric_enum, MetricEnumCounter):
-            raise KeyError("'metric_enum' should be a type of 'MetricEnumCounter' Enum class")
-        return self._list_counter_deployment(feed_id=feed_id, server_id=server_id,
-                                             resource_id=resource_id,
-                                             metric_type=metric_enum.metric_type,
-                                             metric_sub_type=metric_enum.sub_type, **kwargs)
-
-    def _list_counter_deployment(self, feed_id, server_id, resource_id,
-                                 metric_type, metric_sub_type, **kwargs):
-        metric_id = "MI~R~[{}/{}~/deployment={}]~MT~{}~{}" \
-            .format(feed_id, server_id, resource_id, metric_type, metric_sub_type)
+        metric_id = self._metric_id_counter_deployment(feed_id=feed_id, server_id=server_id,
+                                                       resource_id=resource_id,
+                                                       metric_enum=metric_enum)
         return self.list_counter(metric_id=metric_id, **kwargs)
 
     def list_counter(self, metric_id, **kwargs):
@@ -857,6 +870,128 @@ class HawkularMetric(HawkularService):
             return self._get(path='{}/raw'.format(prefix_id), params=params)
         else:
             return self._get(path='{}/stats'.format(prefix_id), params=params)
+
+    def add_availability_feed(self, data, feed_id):
+        """Add availability data for a feed
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+        """
+        metric_id = self._metric_id_availability_feed(feed_id=feed_id)
+        self.add_availability(data=data, metric_id=metric_id)
+
+    def add_availability_server(self, data, feed_id, server_id):
+        """Add availability data for a server
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+            server_id: servier id
+        """
+        metric_id = self._metric_id_availability_server(feed_id=feed_id, server_id=server_id)
+        self.add_availability(data=data, metric_id=metric_id)
+
+    def add_availability_deployment(self, data, feed_id, server_id, resource_id):
+        """Add availability data for a deployment
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+            server_id: server id
+            resource_id: resource id (deployment id)
+        """
+        metric_id = self._metric_id_counter_deployment(feed_id=feed_id, server_id=server_id,
+                                                       resource_id=resource_id)
+        self.add_availability(data=data, metric_id=metric_id)
+
+    def add_gauge_server(self, data, feed_id, server_id, metric_enum):
+        """Add guage data for a server
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+            server_id: server id
+            metric_enum: type of MetricEmumGuage
+        """
+        metric_id = self._metric_id_gauge_server(feed_id=feed_id, server_id=server_id,
+                                                 metric_enum=metric_enum)
+        self.add_gauge(data=data, metric_id=metric_id)
+
+    def add_gauge_datasource(self, data, feed_id, server_id, resource_id, metric_enum):
+        """Add guage data for a datasource
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+            server_id: server id
+            resource_id: resource id (datasource id)
+            metric_enum: type of MetricEmumGuage
+        """
+        metric_id = self._metric_id_guage_datasource(feed_id=feed_id, server_id=server_id,
+                                                     resource_id=resource_id,
+                                                     metric_enum=metric_enum)
+        self.add_gauge(data=data, metric_id=metric_id)
+
+    def add_counter_server(self, data, feed_id, server_id, metric_enum):
+        """Add counter data for a server
+        Args:
+            data: list of DataPoint
+            feed_id: feed id
+            server_id: server id
+            metric_enum: type of MetricEmumCounter
+        """
+        metric_id = self._metric_id_counter_server(feed_id=feed_id, server_id=server_id,
+                                                   metric_enum=metric_enum)
+        self.add_counter(data=data, metric_id=metric_id)
+
+    def add_counter_deployment(self, data, feed_id, server_id, resource_id, metric_enum):
+        """Add counter data for a deployment
+            Args:
+                data: list of DataPoint
+                feed_id: feed id
+                server_id: server id
+                resource_id: resource id (deployment id)
+                metric_enum: type of MetricEmumCounter
+            """
+        metric_id = self._metric_id_counter_deployment(feed_id=feed_id, server_id=server_id,
+                                                       resource_id=resource_id,
+                                                       metric_enum=metric_enum)
+        self.add_counter(data=data, metric_id=metric_id)
+
+    def add_string(self, data, metric_id=None):
+        """Add string data for a metric or metrics
+            Args:
+                data: list of DataPoint
+                metric_id: metric id
+            """
+        self._post_data(prefix_id='strings', data=data, metric_id=metric_id)
+
+    def add_gauge(self, data, metric_id=None):
+        """Add guage data for a metric or metrics
+            Args:
+                data: list of DataPoint
+                metric_id: metric id
+            """
+        self._post_data(prefix_id='gauges', data=data, metric_id=metric_id)
+
+    def add_counter(self, data, metric_id=None):
+        """Add counter data for a metric or metrics
+            Args:
+                data: list of DataPoint
+                metric_id: metric id
+            """
+        self._post_data(prefix_id='counters', data=data, metric_id=metric_id)
+
+    def add_availability(self, data, metric_id=None):
+        """Add availability data for a metric or metrics
+            Args:
+                data: list of DataPoint
+                metric_id: metric id
+            """
+        self._post_data(prefix_id='availability', data=data, metric_id=metric_id)
+
+    def _post_data(self, prefix_id, data, metric_id=None):
+        if metric_id:
+            metric_id = urlquote(metric_id, safe='')
+            self._post(path='{}/{}/raw'.format(prefix_id, metric_id), data=data)
+        else:
+            self._post(path='{}/raw'.format(prefix_id), data=data)
 
 
 class HawkularOperation(object):
