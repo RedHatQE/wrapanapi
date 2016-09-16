@@ -1,0 +1,17 @@
+[ {
+  "path" : "/t;hawkular/f;f73deb8d-2209-4af9-8048-322685df8cf1/r;EAP7~~/r;EAP7~%2Fsubsystem%3Dmessaging-activemq%2Fserver%3Ddefault/r;EAP7~%2Fsubsystem%3Dmessaging-activemq%2Fserver%3Ddefault%2Fjms-queue%3DExpiryQueue",
+  "name" : "JMS Queue [ExpiryQueue]",
+  "identityHash" : "4d91aeb17fc77a9c53b5c87182a0711f959f5f35",
+  "contentHash" : "be8465843986b46521f790755ed20ed975fc02a",
+  "syncHash" : "521e44635398f2b9868668acbde46c2d7383792",
+  "type" : {
+    "path" : "/t;hawkular/f;f73deb8d-2209-4af9-8048-322685df8cf1/rt;JMS%20Queue",
+    "name" : "JMS Queue",
+    "identityHash" : "e231d2d4c8c38b428725c32f4e695fad772c1db8",
+    "contentHash" : "75b04b43485b3d9ee4da2153e44944e2f63ef",
+    "syncHash" : "646cd44497a45d7afbdabbd466c412829c3262",
+    "id" : "JMS Queue"
+  },
+  "id" : "EAP7~/subsystem=messaging-activemq/server=default/jms-queue=ExpiryQueue"
+}
+]

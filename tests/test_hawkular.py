@@ -195,6 +195,16 @@ def test_list_server_deployment(provider):
     assert len(deployments) > 0, "No deployment is listed for any of feeds"
 
 
+def test_list_messaging(provider):
+    """ Checks whether any messaging is listed and has attributes """
+    messagings = provider.inventory.list_messaging()
+    for messaging in messagings:
+        assert messaging.id
+        assert messaging.name
+        assert messaging.path
+    assert len(messagings) > 0, "No messaging is listed for any of feeds"
+
+
 def test_get_config_data(provider):
     """ Checks whether resource data is provided and has attributes """
     found = False
@@ -314,6 +324,16 @@ def test_num_datasource(provider):
         datasources_count += len(provider.inventory.list_server_datasource(feed_id=feed.id))
     num_datasource = provider.inventory._stats_available['num_datasource'](provider.inventory)
     assert num_datasource == datasources_count, "Number of datasources is wrong"
+
+
+def test_num_messaging(provider):
+    """ Checks whether number of messagings is returned correct """
+    messagings_count = 0
+    feeds = provider.inventory.list_feed()
+    for feed in feeds:
+        messagings_count += len(provider.inventory.list_messaging(feed_id=feed.id))
+    num_messaging = provider.inventory._stats_available['num_messaging'](provider.inventory)
+    assert num_messaging == messagings_count, "Number of messagings is wrong"
 
 
 def test_list_event(provider):
