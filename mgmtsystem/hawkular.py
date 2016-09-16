@@ -35,6 +35,7 @@ ResourceData = namedtuple('ResourceData', ['name', 'path', 'value'])
 Server = namedtuple('Server', ['id', 'name', 'path', 'data'])
 ServerGroup = namedtuple('ServerGroup', ['id', 'name', 'path', 'data'])
 Domain = namedtuple('Domain', ['id', 'name', 'path', 'data'])
+Messaging = namedtuple('Messaging', ['id', 'name', 'path'])
 Deployment = namedtuple('Deployment', ['id', 'name', 'path'])
 Datasource = namedtuple('Datasource', ['id', 'name', 'path'])
 OperationType = namedtuple('OperationType', ['id', 'name', 'path'])
@@ -185,6 +186,7 @@ class Hawkular(MgmtSystemAPIBase):
         'num_domain': lambda self: len(self.inventory.list_domain()),
         'num_deployment': lambda self: len(self.inventory.list_server_deployment()),
         'num_datasource': lambda self: len(self.inventory.list_server_datasource()),
+        'num_messaging': lambda self: len(self.inventory.list_messaging()),
     }
 
     @property
@@ -369,6 +371,7 @@ class HawkularInventory(HawkularService):
         'num_domain': lambda self: len(self.list_domain()),
         'num_deployment': lambda self: len(self.list_server_deployment()),
         'num_datasource': lambda self: len(self.list_server_datasource()),
+        'num_messaging': lambda self: len(self.list_messaging()),
     }
 
     def list_server_deployment(self, feed_id=None):
@@ -383,6 +386,22 @@ class HawkularInventory(HawkularService):
             for resource in resources:
                 deployments.append(Deployment(resource.id, resource.name, resource.path))
         return deployments
+
+    def list_messaging(self, feed_id=None):
+        """Returns list of massagings (JMS Queue and JMS Topic).
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(feed_id=feed_id, resource_type_id='JMS Queue')
+        resources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='JMS Topic'))
+        messagings = []
+        if resources:
+            for resource in resources:
+                messagings.append(Messaging(resource.id, resource.name, resource.path))
+        return messagings
 
     def list_server(self, feed_id=None):
         """Returns list of middleware servers.

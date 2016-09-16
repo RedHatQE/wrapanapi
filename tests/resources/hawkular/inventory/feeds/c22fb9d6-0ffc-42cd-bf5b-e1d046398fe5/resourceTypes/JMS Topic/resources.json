@@ -1,0 +1,17 @@
+[ {
+  "path" : "/t;hawkular/f;6945b9ef-2479-4c8d-b29b-01f43a526543/r;Local~~/r;Local~%2Fsubsystem%3Dmessaging-activemq%2Fserver%3Ddefault/r;Local~%2Fsubsystem%3Dmessaging-activemq%2Fserver%3Ddefault%2Fjms-topic%3DHawkularCommandEvent",
+  "name" : "JMS Topic [HawkularCommandEvent]",
+  "identityHash" : "a1d81daf83be5d6fd7a8384c3ffdd75632e481",
+  "contentHash" : "4059e5718dadc5704f17227ea74616a3751b6e7",
+  "syncHash" : "86e088466e69eb1acd50a784d075f15fae4f1057",
+  "type" : {
+    "path" : "/t;hawkular/f;6945b9ef-2479-4c8d-b29b-01f43a526543/rt;JMS%20Topic",
+    "name" : "JMS Topic",
+    "identityHash" : "75c24027bbd562b062152731fd59a0cee80ffa2",
+    "contentHash" : "2eb3b63ebb579817658d11a75d0299b2daf334a",
+    "syncHash" : "f3d5fa41258b4ab487abd41428b89a15372533",
+    "id" : "JMS Topic"
+  },
+  "id" : "Local~/subsystem=messaging-activemq/server=default/jms-topic=HawkularCommandEvent"
+}
+]
