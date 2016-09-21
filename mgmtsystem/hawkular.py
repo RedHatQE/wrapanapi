@@ -42,6 +42,15 @@ OperationType = namedtuple('OperationType', ['id', 'name', 'path'])
 ServerStatus = namedtuple('ServerStatus', ['address', 'version', 'state', 'product', 'host'])
 Event = namedtuple('event', ['id', 'eventType', 'ctime', 'dataSource', 'dataId',
                              'category', 'text', 'tags', 'tenantId', 'context'])
+Trigger = namedtuple('Trigger', ['id', 'name', 'enabled', 'severity', 'autoResolve',
+                                 'autoResolveAlerts', 'eventType', 'eventCategory', 'description',
+                                 'autoEnable', 'autoDisable', 'context', 'type', 'tags', 'memberOf',
+                                 'dataIdMap', 'firingMatch', 'autoResolveMatch', 'conditions',
+                                 'dampenings'])
+Condition = namedtuple('Condition', ['conditionId', 'type', 'operator', 'threshold', 'triggerMode',
+                                     'dataId', 'data2Id', 'data2Multiplier', 'triggerId'])
+Dampening = namedtuple('Dampening', ['dampeningId', 'triggerId', 'type', 'evalTrueSetting',
+                                     'evalTotalSetting', 'evalTimeSetting'])
 
 CANONICAL_PATH_NAME_MAPPING = {
     '/d;': 'data_id',
@@ -339,6 +348,30 @@ class HawkularAlert(HawkularService):
         HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
                                  auth=auth, tenant_id=tenant_id, entry="hawkular/alerts")
 
+    @classmethod
+    def _convert_trigger(cls, entity):
+        return Trigger(entity.get('id'), entity.get('name'), entity.get('enabled'),
+                       entity.get('severity'), entity.get('autoResolve'),
+                       entity.get('autoResolveAlerts'), entity.get('eventType'),
+                       entity.get('eventCategory'), entity.get('description', None),
+                       entity.get('autoEnable'), entity.get('autoDisable'),
+                       entity.get('context'), entity.get('type'), entity.get('tags'),
+                       entity.get('memberOf'), entity.get('dataIdMap'), entity.get('firingMatch'),
+                       entity.get('autoResolveMatch'), [], [])
+
+    @classmethod
+    def _convert_condition(cls, entity):
+        return Condition(entity.get('conditionId'), entity.get('type'), entity.get('operator'),
+                         entity.get('threshold'), entity.get('triggerMode'), entity.get('dataId'),
+                         entity.get('data2Id'), entity.get('data2Multiplier'),
+                         entity.get('triggerId'))
+
+    @classmethod
+    def _convert_dampening(cls, entity):
+        return Dampening(entity.get('dampeningId'), entity.get('triggerId'), entity.get('type'),
+                         entity.get('evalTrueSetting'), entity.get('evalTotalSetting'),
+                         entity.get('evalTimeSetting'))
+
     def list_event(self, start_time=0, end_time=sys.maxsize):
         """Returns the list of events.
         Filtered by provided start time and end time. Or lists all events if no argument provided.
@@ -358,6 +391,81 @@ class HawkularAlert(HawkularService):
                                entity_j.get('tenantId', None), entity_j.get('context', None))
                 entities.append(entity)
         return entities
+
+    def list_alert(self, start_time=None, end_time=None, alert_ids=None, trigger_ids=None,
+                   statuses=None, severities=None, tags=None, thin=None):
+        """Obtain the alerts with optional filters
+        Args:
+            start_time: Filter out alerts created before this time, millisecond since epoch.
+            end_time: Filter out alerts created after this time, millisecond since epoch.
+            alert_ids: Filter out alerts for unspecified alertIds,
+                        comma separated list of alert IDs.
+            trigger_ids: Filter out alerts for unspecified triggers,
+                        comma separated list of trigger IDs.
+            statuses: Filter out alerts for unspecified lifecycle status,
+                        comma separated list of status values.
+            severities: Filter out alerts for unspecified severity,
+                        comma separated list of severity values.
+            tags: Filter out events for unspecified tags, comma separated list of tags,
+                        each tag of format 'name
+            thin: Return only thin alerts, do not include: evalSets, resolvedEvalSets.
+        """
+        parms = {'startTime': start_time, 'endTime': end_time, 'alertIds': alert_ids,
+                 'triggerIds': trigger_ids, 'statuses': statuses, 'severities': severities,
+                 'tags': tags, 'thin': thin}
+        entities = self._get(path='', params=parms)
+        if entities:
+            return entities
+        return []
+
+    def list_trigger(self, ids=[], tags=[]):
+        """Lists defined triggers in the system
+        Args:
+            ids: List of trigger ids. If provided, limits to the given triggers
+            tags: List of tags. If provided, limits to the given tags. Individual
+                    tags are of the format # key|value
+        """
+        params = {'triggerIds': ids, 'tags': tags}
+        entities = self._get(path='triggers', params=params)
+        triggers = []
+        if not entities:
+            return triggers
+        for entity in entities:
+            triggers.append(self._convert_trigger(entity))
+        return triggers
+
+    def get_single_trigger(self, trigger_id, full=False):
+        """Obtains one Trigger definition from the server
+        Args:
+            trigger_id: Id of the trigger to fetch
+            full: If True then conditions and dampenings for the trigger are also fetched
+        """
+        if full:
+            path = "triggers/trigger/{}".format(trigger_id)
+        else:
+            path = "triggers/{}".format(trigger_id)
+        entity = self._get(path=path)
+        if not entity:
+            return None
+        trigger = self._convert_trigger(entity)
+        c_entities = entity.get('conditions', None)
+        if c_entities:
+            for c_entity in c_entities:
+                trigger.conditions.append(self._convert_condition(c_entity))
+        d_entities = entity.get('dampenings', None)
+        if d_entities:
+            for d_entity in d_entities:
+                trigger.dampenings.append(self._convert_dampening(d_entity))
+        return trigger
+
+    def create_trigger(self, trigger, conditions=[], dampenings=[]):
+        """Creates the trigger definition."""
+        full_trigger = {'trigger': trigger, 'conditions': conditions, 'dampenings': dampenings}
+        self._post(path='triggers/trigger', data=full_trigger)
+
+    def delete_trigger(self, trigger_id):
+        """Deletes the trigger definition."""
+        self._delete(path="triggers/{}".format(trigger_id))
 
 
 class HawkularInventory(HawkularService):
