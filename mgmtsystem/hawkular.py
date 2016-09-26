@@ -236,7 +236,7 @@ class Hawkular(MgmtSystemAPIBase):
         raise NotImplementedError('deploy_template not implemented.')
 
     def disconnect(self):
-        self.operation.close()
+        pass
 
     def does_vm_exist(self, name):
         raise NotImplementedError('does_vm_exist not implemented.')
