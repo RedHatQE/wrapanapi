@@ -50,6 +50,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.storage_key = kwargs["storage_key"]
         self.subscription_id = kwargs["subscription_id"]
         self.tenant_id = kwargs["tenant_id"]
+        self.region = kwargs["provisioning"]["region_api"]
         self.api = winrm.Session(self.host, auth=(self.ps_username, self.ps_password))
 
     @property
@@ -160,6 +161,26 @@ class AzureSystem(MgmtSystemAPIBase):
             "./Object/Property[@Name='Name']/text()")
         return nameList
 
+    def capture_vm(self, vm_name, resource_group, container, image_name):
+        self.logger.info("Attempting to Capture Azure VM {}".format(vm_name))
+        self.stop_vm(vm_name, resource_group)
+
+        self.logger.info("Generalizing passed VM {}".format(vm_name))
+        self.run_script('Set-AzureRmVM -ResourceGroupName "{}" '
+                        '-Name "{}" -Generalized'.format(resource_group, vm_name))
+        self.logger.info("The VM {} is generalized".format(vm_name))
+
+        self.run_script('Save-AzureRmVMImage -ResourceGroupName "{}" '
+                        '-VMName "{}" -DestinationContainerName "{}" '
+                        '-VHDNamePrefix "{}"'.format(resource_group, vm_name, container,
+                                                     image_name))
+        # save..image always puts image to system
+        # https://github.com/Azure/azure-powershell/issues/2714
+        if len([image for image in self.list_blob_images('system') if image_name in image]) > 0:
+            self.logger.info("Azure VM {} is captured".format(vm_name))
+        else:
+            raise RuntimeError("image {} isn't found in container {}".format(image_name, container))
+
     def list_stack(self, resource_group=None):
         self.logger.info("Attempting to List Azure Orchestration Deployment Stacks")
         azure_data = self.run_script(
@@ -221,6 +242,20 @@ class AzureSystem(MgmtSystemAPIBase):
         create_time = datetime.strptime(str(vhd_last_modified), '[\'%m/%d/%Y %H:%M:%S %p +00:00\']')
         self.logger.info("VM last edit time based on vhd =  {}".format(str(create_time)))
         return create_time
+
+    def create_netsec_group(self, group_name, resource_group):
+        self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
+        self.run_script(
+            'New-AzureRmNetworkSecurityGroup -Location "{}" -Name "{}" '
+            '-ResourceGroupName "{}"'.format(self.region, group_name, resource_group))
+        self.logger.info("Network Security Group {} is created".format(group_name))
+
+    def remove_netsec_group(self, group_name, resource_group):
+        self.logger.info("Attempting to Remove Azure Security Group {}".format(group_name))
+        self.run_script(
+            'Remove-AzureRmNetworkSecurityGroup -Name "{}" '
+            '-ResourceGroupName "{}" -Force'.format(group_name, resource_group))
+        self.logger.info("Network Security Group {} is removed".format(group_name))
 
     def info(self, vm_name):
         pass
@@ -376,6 +411,18 @@ class AzureSystem(MgmtSystemAPIBase):
                        storage_account=self.storage_account,
                        storage_key=self.storage_key,
                        storage_blob=self.storage_blob), True)
+
+    def list_blob_images(self, container):
+        azure_data = self.run_script(
+            'New-AzureStorageContext -StorageAccountName "{acc_name}"'
+            ' -StorageAccountKey "{acc_key}"|Get-AzureStorageBlob -Container "{container}"|'
+            'Select Name|convertto-xml -as String'.format(acc_name=self.storage_account,
+                                                          acc_key=self.storage_key,
+                                                          container=container))
+        data = self.clean_azure_xml(azure_data)
+        names = etree.parse(StringIO(data)).getroot().xpath(
+            "./Object/Property[@Name='Name']/text()")
+        return names
 
     def remove_diags_container(self):
         self.run_script(
