@@ -57,6 +57,7 @@ class EC2System(MgmtSystemAPIBase):
 
         region = get_region(kwargs.get('region'))
         self.api = EC2Connection(username, password, region=region)
+        self.s3_connection = boto.connect_s3(username, password)
         self.stackapi = CloudFormationConnection(username, password)
         self.kwargs = kwargs
 
@@ -417,3 +418,16 @@ class EC2System(MgmtSystemAPIBase):
 
     def remove_host_from_cluster(self, hostname):
         raise NotImplementedError('remove_host_from_cluster not implemented')
+
+    def create_s3_bucket(self, bucket_name):
+        self.logger.info("Creating bucket: {}".format(bucket_name))
+        self.s3_connection.create_bucket(bucket_name)
+
+    def upload_file_to_s3_bucket(self, bucket_name, file_path, key_name):
+        bucket = self.s3_connection.get_bucket(bucket_name)
+        self.logger.info("uploading file {} to bucket: {}".format(file_path, bucket_name))
+        key = boto.s3.key.Key(bucket, key_name)
+        with open(file_path) as f:
+            key.set_contents_from_file(f)
+        self.logger.info("Success: uploading file completed")
+        return True
