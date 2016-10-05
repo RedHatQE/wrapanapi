@@ -297,6 +297,7 @@ class AzureSystem(MgmtSystemAPIBase):
             -DeploymentName \"{stack}\" -Force
             }}
             """.format(rg=resource_group or self.resource_group, stack=stack_name))
+        self.delete_vm(stack_name, resource_group or self.resource_group)
         return True
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
