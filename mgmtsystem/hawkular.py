@@ -489,6 +489,9 @@ class HawkularInventory(HawkularService):
             feed_id: Feed id of the resource (optional)
         """
         resources = self.list_resource(feed_id=feed_id, resource_type_id='Deployment')
+        resources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='SubDeployment'))
         deployments = []
         if resources:
             for resource in resources:

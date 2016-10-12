@@ -1,0 +1,33 @@
+[
+{
+  "path" : "/t;hawkular/f;67bc8fa2-4583-4513-96fb-0d44722993c1/r;EAP7-113~~/r;EAP7-113~%2Fdeployment%3Djboss-ejb-in-ear.ear/r;EAP7-113~%2Fdeployment%3Djboss-ejb-in-ear.ear%2Fsubdeployment%3Djboss-ejb-in-ear-ejb.jar",
+  "name" : "SubDeployment [jboss-ejb-in-ear-ejb.jar]",
+  "identityHash" : "5a4d443bf8f819f5428624b20bfd385b954df56",
+  "contentHash" : "99c830f4cd686e3b883db1460478812cb6fdc7",
+  "syncHash" : "449fe237855753bee0a83fccc44ba352658a4259",
+  "type" : {
+    "path" : "/t;hawkular/f;67bc8fa2-4583-4513-96fb-0d44722993c1/rt;SubDeployment",
+    "name" : "SubDeployment",
+    "identityHash" : "e7c36274c35e9eeeb9564de6c5e7f14697bdbdc",
+    "contentHash" : "ed9a1f4e8965cb7c17a2278f406ef1d9bae45d7",
+    "syncHash" : "a7fcbe50b890591b1346776254aa8c2826ec4b3f",
+    "id" : "SubDeployment"
+  },
+  "id" : "EAP7-113~/deployment=jboss-ejb-in-ear.ear/subdeployment=jboss-ejb-in-ear-ejb.jar"
+}, {
+  "path" : "/t;hawkular/f;67bc8fa2-4583-4513-96fb-0d44722993c1/r;EAP7-113~~/r;EAP7-113~%2Fdeployment%3Djboss-ejb-in-ear.ear/r;EAP7-113~%2Fdeployment%3Djboss-ejb-in-ear.ear%2Fsubdeployment%3Djboss-ejb-in-ear-web.war",
+  "name" : "SubDeployment [jboss-ejb-in-ear-web.war]",
+  "identityHash" : "f8d6abfff227e9c8dc6bd73bb911331b4cc360",
+  "contentHash" : "54a851ae421f5a5ecd407bbb2e83d2eaa320ba1b",
+  "syncHash" : "636e9d0faefa1f8f6e68f11df514ee8816663f",
+  "type" : {
+    "path" : "/t;hawkular/f;67bc8fa2-4583-4513-96fb-0d44722993c1/rt;SubDeployment",
+    "name" : "SubDeployment",
+    "identityHash" : "e7c36274c35e9eeeb9564de6c5e7f14697bdbdc",
+    "contentHash" : "ed9a1f4e8965cb7c17a2278f406ef1d9bae45d7",
+    "syncHash" : "a7fcbe50b890591b1346776254aa8c2826ec4b3f",
+    "id" : "SubDeployment"
+  },
+  "id" : "EAP7-113~/deployment=jboss-ejb-in-ear.ear/subdeployment=jboss-ejb-in-ear-web.war"
+}
+]
