@@ -501,7 +501,7 @@ class VMWareSystem(MgmtSystemAPIBase):
 
     def clone_vm(self, source, destination, resourcepool=None, datastore=None, power_on=True,
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
-                 allowed_datastores=None, cpu=None, ram=None):
+                 allowed_datastores=None, cpu=None, ram=None, **kwargs):
         try:
             if mobs.VirtualMachine.get(self.api, name=destination).name == destination:
                 raise Exception("VM already present!")
