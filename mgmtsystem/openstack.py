@@ -449,8 +449,11 @@ class OpenstackSystem(MgmtSystemAPIBase):
         power_on = kwargs.pop("power_on", True)
         nics = []
         timeout = kwargs.pop('timeout', 900)
+
         if 'flavour_name' in kwargs:
             flavour = self.api.flavors.find(name=kwargs['flavour_name'])
+        elif 'instance_type' in kwargs:
+            flavour = self.api.flavors.find(name=kwargs['instance_type'])
         elif 'flavour_id' in kwargs:
             flavour = self.api.flavors.find(id=kwargs['flavour_id'])
         else:
