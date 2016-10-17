@@ -404,7 +404,13 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
 
     # Get external IP (ephemeral)
     def current_ip_address(self, vm_name):
-        return self.vm_status(vm_name)['natIP']
+        zones = self._compute.zones().list(project=self._project).execute()
+        for zone in zones.get('items', []):
+            zone_name = zone.get('name', None)
+            for vm in self._get_zone_instances(zone_name).get('items', []):
+                if vm['name'] == vm_name:
+                    access_configs = vm.get('networkInterfaces')[0].get('accessConfigs')[0]
+                    return access_configs.get('natIP')
 
     def disconnect(self):
         """Disconnect from the GCE
