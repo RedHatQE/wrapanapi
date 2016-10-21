@@ -304,6 +304,9 @@ class RHEVMSystem(MgmtSystemAPIBase):
             )
         return result
 
+    def get_vm_guid(self, vm_name):
+        return self._get_vm(vm_name).get_id()
+
     def list_host(self, **kwargs):
         host_list = self.api.hosts.list(**kwargs)
         return [host.name for host in host_list]
