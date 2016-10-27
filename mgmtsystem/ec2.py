@@ -431,3 +431,28 @@ class EC2System(MgmtSystemAPIBase):
             key.set_contents_from_file(f)
         self.logger.info("Success: uploading file completed")
         return True
+
+    def get_all_disassociated_addresses(self):
+        return [addr for addr in self.api.get_all_addresses() if not addr.instance_id]
+
+    def release_vpc_address(self, alloc_id):
+        self.logger.info(" Releasing EC2 VPC EIP {}".format(str(alloc_id)))
+        try:
+            self.api.release_address(allocation_id=alloc_id)
+            return True
+
+        except ActionTimedOutError:
+            return False
+
+    def release_address(self, address):
+        self.logger.info(" Releasing EC2-CLASSIC EIP {}".format(address))
+        try:
+            self.api.release_address(public_ip=address)
+            return True
+
+        except ActionTimedOutError:
+            return False
+
+    def get_all_unattached_volumes(self):
+        return [volume for volume in self.api.get_all_volumes() if not
+                volume.attach_data.status]
