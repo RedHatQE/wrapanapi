@@ -12,6 +12,7 @@ from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
 
+from exceptions import VMInstanceNotFound
 from lxml import etree
 from wait_for import wait_for
 
@@ -68,16 +69,20 @@ class AzureSystem(MgmtSystemAPIBase):
         Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" | Select-AzureRmSubscription
         """.format(self.ui_username, self.ui_password, self.subscription_id, self.tenant_id))
 
-    def run_script(self, script, ignore_error=False):
+    def run_script(self, script, ignore_error=False, tries=3):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
-        self.logger.info(" Running PowerShell script:\n{}\n{}".format(self.pre_script, script))
-        result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
+        while tries > 0:
+            self.logger.info(" Running PowerShell script:\n{}\n{}".format(self.pre_script, script))
+            result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
+            if result.status_code == 0:
+                self.logger.info("run_script Script Complete")
+                return result.std_out.strip()
+            self.logger.error("Script returned {}!: {}".format(result.status_code, result.std_err))
+            tries -= 1
         if result.status_code != 0 and not ignore_error:
             raise self.PowerShellScriptError("Script returned {}!: {}"
-                .format(result.status_code, result.std_err))
-        self.logger.info("run_script Script Complete")
-        return result.std_out.strip()
+                                         .format(result.status_code, result.std_err))
 
     def start_vm(self, vm_name, resource_group=None):
         if self.is_vm_stopped(vm_name, resource_group or self.resource_group):
@@ -277,6 +282,10 @@ class AzureSystem(MgmtSystemAPIBase):
         data = self.clean_azure_xml(azure_data)
         statusValue = json.loads(etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='StatusesText']/text()")[0])
+        # If script runs completely but the result isn't the one we need - better to show Azure
+        # message
+        if statusValue[0]['DisplayStatus'] == 'Provisioning failed':
+            raise VMInstanceNotFound(statusValue[0]['Message'])
         powerStatus = statusValue[1]
         powerDisplayStatus = powerStatus['DisplayStatus']
         self.logger.info("Returned Status was {}".format(powerDisplayStatus))
