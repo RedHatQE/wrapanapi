@@ -6,6 +6,7 @@ Used to communicate with providers without using CFME facilities
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager
+from .exceptions import VMInstanceNotFound
 
 from wait_for import wait_for, TimedOutError
 
@@ -353,6 +354,13 @@ class MgmtSystemAPIBase(object):
     def get_meta_value(self, instance, key):
         raise NotImplementedError(
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+
+    def get_vm_guid(self, vm_name):
+        for vm in self.all_vms():
+            if vm.name == vm_name:
+                return vm.uuid
+        else:
+            raise VMInstanceNotFound(vm_name)
 
 
 class ContainerMgmtSystemAPIBase(MgmtSystemAPIBase):

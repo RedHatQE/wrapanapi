@@ -295,6 +295,13 @@ class VMWareSystem(MgmtSystemAPIBase):
             )
         return result
 
+    def get_vm_guid(self, vm_name):
+        vm = self._get_vm(vm_name)
+        try:
+            return str(vm.summary.config.uuid)
+        except AttributeError:
+            return None
+
     def get_vm_name_from_ip(self, ip):
         """ Gets the name of a vm from its IP.
 
