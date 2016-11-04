@@ -818,6 +818,13 @@ class HawkularMetric(HawkularService):
                                                              metric_enum.metric_type,
                                                              metric_enum.sub_type)
 
+    @staticmethod
+    def _metric_id_jms(feed_id, server_id, jms_name, metric_enum):
+        if not isinstance(metric_enum, MetricEnum):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnum' Enum class")
+        return "MI~R~[{}/{}~/subsystem=messaging-activemq/server=default/{}]~MT~{}~{}"\
+            .format(feed_id, server_id, jms_name, metric_enum.metric_type, metric_enum.sub_type)
+
     def list_availability_feed(self, feed_id, **kwargs):
         """Returns list of DataPoint of a feed
         Args:
@@ -895,6 +902,28 @@ class HawkularMetric(HawkularService):
         metric_id = self._metric_id_guage_server(feed_id=feed_id, server_id=server_id,
                                                  metric_enum=metric_enum)
         return self.list_gauge(metric_id=metric_id, **kwargs)
+
+    def list_jms(self, feed_id, server_id, name, metric_enum, **kwargs):
+        """Returns list of `NumericBucketPoint` of server metric
+            Args:
+                feed_id: feed id of the server
+                server_id: server id
+                name: name of the JMS queue/topic
+                metric_enum: Any one of *SVR_* ``Enum`` value from ``MetricEnumGauge``
+                kwargs: Refer ``list_gauge``
+            """
+        if not isinstance(metric_enum, MetricEnum):
+            raise KeyError("'metric_enum' should be a type of 'MetricEnum' Enum class")
+        jms_type = "topic"
+        if "Topic" not in metric_enum.metric_type:
+            jms_type = "queue"
+        metric_id = self._metric_id_jms(feed_id=feed_id, server_id=server_id,
+                                        jms_name="jms-{}={}".format(jms_type, name),
+                                        metric_enum=metric_enum)
+        if isinstance(metric_enum, MetricEnumGauge):
+            return self.list_gauge(metric_id=metric_id, **kwargs)
+        elif isinstance(metric_enum, MetricEnumCounter):
+            return self.list_counter(metric_id=metric_id, **kwargs)
 
     def list_gauge(self, metric_id, **kwargs):
         """Returns list of `NumericBucketPoint` of a metric
@@ -1305,6 +1334,18 @@ class MetricEnumGauge(MetricEnum):
     DS_POOL_TOTAL_CREATION_TIME = ("Datasource Pool Metrics", "Total Creation Time")
     DS_POOL_TOTAL_GET_TIME = ("Datasource Pool Metrics", "Total Get Time")
     DS_POOL_WAIT_COUNT = ("Datasource Pool Metrics", "Wait Count")
+    JMS_QUEUE_CONSUMER_COUNT = ("JMS Queue Metrics", "Consumer Count")
+    JMS_QUEUE_DELIVERING_COUNT = ("JMS Queue Metrics", "Delivering Count")
+    JMS_QUEUE_MESSAGE_COUNT = ("JMS Queue Metrics", "Message Count")
+    JMS_QUEUE_SCHEDULED_COUNT = ("JMS Queue Metrics", "Scheduled Count")
+    JMS_TOPIC_DELIVERING_COUNT = ("JMS Topic Metrics", "Delivering Count")
+    JMS_TOPIC_DURABLE_MESSAGE_COUNT = ("JMS Topic Metrics", "Durable Message Count")
+    JMS_TOPIC_DURABLE_SUBSCRIPTION_COUNT = ("JMS Topic Metrics", "Durable Subscription Count")
+    JMS_TOPIC_MESSAGE_COUNT = ("JMS Topic Metrics", "Message Count")
+    JMS_TOPIC_NON_DURABLE_MESSAGE_COUNT = ("JMS Topic Metrics", "Non-Durable Message Count")
+    JMS_TOPIC_NON_DURABLE_SUBSCRIPTION_COUNT = \
+        ("JMS Topic Metrics", "Non-Durable Subscription Count")
+    JMS_TOPIC_SUBSCRIPTION_COUNT = ("JMS Topic Metrics", "Subscription Count")
     SVR_MEM_HEAP_COMMITTED = ("WildFly Memory Metrics", "Heap Committed")
     SVR_MEM_HEAP_MAX = ("WildFly Memory Metrics", "Heap Max")
     SVR_MEM_HEAP_USED = ("WildFly Memory Metrics", "Heap Used")
@@ -1322,6 +1363,8 @@ class MetricEnumCounter(MetricEnum):
     DEP_UTM_EXPIRED_SESSIONS = ("Undertow Metrics", "Expired Sessions")
     DEP_UTM_REJECTED_SESSIONS = ("Undertow Metrics", "Rejected Sessions")
     DEP_UTM_SESSIONS_CREATED = ("Undertow Metrics", "Sessions Created")
+    JMS_QUEUE_MESSAGES_ADDED = ("JMS Queue Metrics", "Messages Added")
+    JMS_TOPIC_MESSAGES_ADDED = ("JMS Topic Metrics", "Messages Added")
     SVR_MEM_ACCUMULATED_GC_DURATION = ("WildFly Memory Metrics", "Accumulated GC Duration")
     SVR_TXN_NUMBER_OF_ABORTED_TRANSACTIONS = \
         ("Transactions Metrics", "Number of Aborted Transactions")
