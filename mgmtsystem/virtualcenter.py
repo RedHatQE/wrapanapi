@@ -11,7 +11,7 @@ except AttributeError:
     pass
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from distutils.version import LooseVersion
 from functools import partial
 import operator
@@ -420,9 +420,11 @@ class VMWareSystem(MgmtSystemAPIBase):
         return self._get_vm(vm_name, force=True).runtime.powerState
 
     def vm_creation_time(self, vm_name):
-        # psphere turns date strings in datetime for us
         vm = self._get_vm(vm_name)
-        return vm.runtime.bootTime
+        vcenter_time_now = self.api.si.CurrentTime()
+        vm_uptime = vm.summary.quickStats.uptimeSeconds
+        vm_delta = timedelta(seconds=int(vm_uptime))
+        return vcenter_time_now - vm_delta
 
     def get_vm_host_name(self, vm_name):
         vm = self._get_vm(vm_name)
