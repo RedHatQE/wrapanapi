@@ -107,6 +107,17 @@ class EC2System(MgmtSystemAPIBase):
         instance = self._get_instance(instance_id)
         return instance.state
 
+    def vm_type(self, instance_id):
+        """Returns the instance type of the requested instance
+            e.g. m1.medium, m3.medium etc..
+
+                Args:
+                    instance_id: ID of the instance to inspect
+                Returns: Instance type.
+        """
+        instance = self._get_instance(instance_id)
+        return instance.instance_type
+
     def vm_creation_time(self, instance_id):
         instance = self._get_instance(instance_id)
         # Example instance.launch_time: 2014-08-13T22:09:40.000Z
