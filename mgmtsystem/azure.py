@@ -146,7 +146,6 @@ class AzureSystem(MgmtSystemAPIBase):
         raise NotImplementedError('NIE - create_vm not implemented.')
 
     def delete_vm(self, vm_name, resource_group=None):
-        vhd_endpoint = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
         self.logger.info("Begin delete_vm {}".format(vm_name))
         self.run_script(
             """
@@ -156,7 +155,10 @@ class AzureSystem(MgmtSystemAPIBase):
             Remove-AzureRmPublicIpAddress -Name \"{vm}\" -ResourceGroupName \"{rg}\" -Force
             }}
             """.format(rg=resource_group or self.resource_group, vm=vm_name), True)
-        self.remove_blob_image(vhd_endpoint)
+
+        vhd_endpoint = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
+        vhd_name = os.path.split(urlparse.urlparse(vhd_endpoint).path)[1]
+        self.remove_blob_image(vhd_name)
 
     def list_vm(self):
         self.logger.info("Attempting to List Azure VMs")
@@ -406,20 +408,22 @@ class AzureSystem(MgmtSystemAPIBase):
                        template_blob=template_blob,
                        storage_blob=storage_blob))
 
-    def remove_blob_image(self, vm_vhd):
-        vhd_name = os.path.split(urlparse.urlparse(vm_vhd).path)[1]
+    def remove_blob_image(self, vm_vhd, container=None):
+        if not container:
+            container = self.storage_blob
+
         self.run_script(
             """
             Invoke-Command -scriptblock {{
             $sourceContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
                             -StorageAccountKey \"{storage_key}\"
             $blobRemove = Remove-AzureStorageBlob -Blob \"{vhd_name}\" `
-                        -Context $sourceContext -Container \"{storage_blob}\"
+                        -Context $sourceContext -Container \"{container}\"
             }}
-            """.format(vhd_name=vhd_name,
+            """.format(vhd_name=vm_vhd,
                        storage_account=self.storage_account,
                        storage_key=self.storage_key,
-                       storage_blob=self.storage_blob), True)
+                       container=container), True)
 
     def list_blob_images(self, container):
         azure_data = self.run_script(
