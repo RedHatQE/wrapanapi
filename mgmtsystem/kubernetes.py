@@ -41,13 +41,15 @@ Service = namedtuple('Service', ['name', 'project_name', 'portal_ip', 'session_a
 class Kubernetes(ContainerMgmtSystemAPIBase):
 
     _stats_available = {
-        'num_project': lambda self: len(self.list_project()),
+        'num_container': lambda self: len(self.list_container()),
+        'num_pod': lambda self: len(self.list_container_group()),
         'num_service': lambda self: len(self.list_service()),
         'num_replication_controller':
             lambda self: len(self.list_replication_controller()),
-        'num_pod': lambda self: len(self.list_container_group()),
-        'num_container': lambda self: len(self.list_container()),
+        'num_image': lambda self: len(self.list_image()),
         'num_node': lambda self: len(self.list_node()),
+        'num_image_registry': lambda self: len(self.list_image_registry()),
+        'num_project': lambda self: len(self.list_project()),
     }
 
     def __init__(self, hostname, protocol="https", port=6443, entry='api/v1', **kwargs):
