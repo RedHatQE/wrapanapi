@@ -147,6 +147,7 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def delete_vm(self, vm_name, resource_group=None):
         self.logger.info("Begin delete_vm {}".format(vm_name))
+        vhd_endpoint = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
         self.run_script(
             """
             Invoke-Command -scriptblock {{
@@ -156,7 +157,6 @@ class AzureSystem(MgmtSystemAPIBase):
             }}
             """.format(rg=resource_group or self.resource_group, vm=vm_name), True)
 
-        vhd_endpoint = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
         vhd_name = os.path.split(urlparse.urlparse(vhd_endpoint).path)[1]
         self.remove_blob_image(vhd_name)
 
