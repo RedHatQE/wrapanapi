@@ -61,7 +61,7 @@ class Openshift(Kubernetes):
         for entity_j in entities_j:
             meta, spec = entity_j['metadata'], entity_j['spec']
             entity = Service(
-                meta['name'], meta['namespace'], spec['portalIP'], spec['sessionAffinity'])
+                meta['name'], meta['namespace'], spec['clusterIP'], spec['sessionAffinity'])
             entities.append(entity)
         return entities
 
