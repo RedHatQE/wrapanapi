@@ -73,7 +73,11 @@ class AzureSystem(MgmtSystemAPIBase):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
         while tries > 0:
-            self.logger.info(" Running PowerShell script:\n{}\n{}".format(self.pre_script, script))
+            if '\n' not in script:
+                # Save space when no newline in the script
+                self.logger.info(" Running PowerShell script: {}".format(script))
+            else:
+                self.logger.info(" Running PowerShell script:\n{}".format(script))
             result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
             if result.status_code == 0:
                 self.logger.info("run_script Script Complete")
