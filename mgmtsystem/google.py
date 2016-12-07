@@ -14,6 +14,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 import os
 import httplib2
+import iso8601
 import random
 import time
 
@@ -130,7 +131,16 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
             instance = self._instances.get(
                 project=self._project, zone=self._zone, instance=instance_name).execute()
             return instance
-        except Exception:
+        except Exception as e:
+            self.logger.error(e)
+            self.logger.info("Searching instance {} in all other zones".format(instance_name))
+            zones = self._compute.zones().list(project=self._project).execute()
+            for zone in zones.get('items', []):
+                zone_name = zone.get('name', None)
+                for instance in self._get_zone_instances(zone_name).get('items', []):
+                    if instance['name'] == instance_name:
+                        return instance
+            self.logger.error("Instance {} not found in any of the zones".format(instance_name))
             raise VMInstanceNotFound(instance_name)
 
     def get_image_by_name(self, image_name):
@@ -491,3 +501,9 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
                         vm.get('networkInterfaces')[0].get('networkIP'),
                     ))
         return result
+
+    def vm_creation_time(self, istance_name):
+        instance = self._find_instance_by_name(istance_name)
+        vm_time_stamp = instance['creationTimestamp']
+        creation_time = (iso8601.parse_date(vm_time_stamp)).replace(tzinfo=None)
+        return creation_time
