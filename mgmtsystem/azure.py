@@ -40,7 +40,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.host = kwargs["powershell_host"]
         self.provisioning = kwargs['provisioning']
         self.resource_group = kwargs['provisioning']['resource_group']
-        self.storage_blob = kwargs['provisioning']['storage_blob']
+        self.storage_container = kwargs['provisioning']['storage_container']
         self.username = kwargs["username"]
         self.password = kwargs["password"]
         self.ui_username = kwargs["ui_username"]
@@ -241,11 +241,11 @@ class AzureSystem(MgmtSystemAPIBase):
             Invoke-Command -scriptblock {{
             $storageContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
                             -StorageAccountKey \"{storage_key}\"
-            Get-AzureStorageBlob -Name \"{storage_blob}\" `
+            Get-AzureStorageBlob -Name \"{storage_container}\" `
                             -Context $storageContext -Blob \"{vhd_blob}\" | convertto-xml -as String
             }}
             """.format(storage_account=self.storage_account,
-                       storage_blob=self.storage_blob,
+                       storage_container=self.storage_container,
                        storage_key=self.storage_key,
                        vhd_blob=vhd_name), True)
         vhd_last_modified = etree.parse(StringIO(self.clean_azure_xml(data))).getroot().xpath(
@@ -351,7 +351,7 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
         self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
-            vm_settings['template_blob'], vm_settings['storage_blob'])
+            vm_settings['template_container'], vm_settings['storage_container'])
         self.run_script(
             """
             Invoke-Command -scriptblock {{
@@ -371,7 +371,7 @@ class AzureSystem(MgmtSystemAPIBase):
                 -PublicIpAddressId $PIp.Id -Force
             $VirtualMachine = New-AzureRmVMConfig -VMName \"{vm_name}\" -VMSize \"{vm_size}\"
             $VirtualMachine = Add-AzureRmVMNetworkInterface -VM $VirtualMachine -Id $Interface.Id
-            $OSDiskUri = $StorageAccount.PrimaryEndpoints.Blob.ToString() + \"{storage_blob}\" `
+            $OSDiskUri = $StorageAccount.PrimaryEndpoints.Blob.ToString() + \"{storage_cont}\" `
                 + "/" + \"{vm_name}.vhd\"
             $VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -Name \"{vm_name}\" `
                 -VhdUri $OSDiskUri -CreateOption attach -Linux
@@ -389,10 +389,15 @@ class AzureSystem(MgmtSystemAPIBase):
                        vm_size=vm_settings['vm_size'],
                        av_set=vm_settings['av_set'],
                        storage_account=vm_settings['storage_account'],
-                       storage_blob=vm_settings['storage_blob']))
+                       storage_cont=vm_settings['storage_container']))
         self.wait_vm_running(vm_name, vm_settings['resource_group'])
 
-    def copy_blob_image(self, template, vm_name, storage_account, template_blob, storage_blob):
+    def copy_blob_image(self,
+                        template,
+                        vm_name,
+                        storage_account,
+                        template_container,
+                        storage_container):
         self.run_script(
             """
             Invoke-Command -scriptblock {{
@@ -400,21 +405,21 @@ class AzureSystem(MgmtSystemAPIBase):
                             -StorageAccountKey \"{storage_key}\"
             $destContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
                             -StorageAccountKey \"{storage_key}\"
-            $blobCopy = Start-AzureStorageBlobCopy -DestContainer \"{storage_blob}\" `
+            $blobCopy = Start-AzureStorageBlobCopy -DestContainer \"{storage_container}\" `
                         -DestContext $destContext -DestBlob \"{vm_name}.vhd\" `
                         -SrcBlob \"{source_name}.vhd\" `
-                        -Context $sourceContext -SrcContainer \"{template_blob}\"
+                        -Context $sourceContext -SrcContainer \"{template_container}\"
             }}
             """.format(source_name=template.split("/")[-1],
                        vm_name=vm_name,
                        storage_account=storage_account,
                        storage_key=self.storage_key,
-                       template_blob=template_blob,
-                       storage_blob=storage_blob))
+                       template_container=template_container,
+                       storage_container=storage_container))
 
     def remove_blob_image(self, vm_vhd, container=None):
         if not container:
-            container = self.storage_blob
+            container = self.storage_container
 
         self.run_script(
             """
