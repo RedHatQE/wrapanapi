@@ -342,6 +342,13 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
             }
         }
 
+        if kwargs.get('ssh_key', None):
+            ssh_keys = {
+                'key': 'ssh-keys',
+                'value': kwargs.get('ssh_key', None)
+            }
+            config['metadata']['items'].append(ssh_keys)
+
         operation = self._instances.insert(
             project=self._project, zone=self._zone, body=config).execute()
         wait_for(lambda: self._nested_operation_wait(operation['name']), delay=0.5,
