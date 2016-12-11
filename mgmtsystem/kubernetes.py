@@ -46,6 +46,8 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         'num_service': lambda self: len(self.list_service()),
         'num_replication_controller':
             lambda self: len(self.list_replication_controller()),
+        'num_replication_controller_labels':
+            lambda self: len(self.list_replication_controller_labels()),
         'num_image': lambda self: len(self.list_image()),
         'num_node': lambda self: len(self.list_node()),
         'num_image_registry': lambda self: len(self.list_image_registry()),
@@ -126,6 +128,15 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
             entity = ReplicationController(
                 meta['name'], meta['namespace'], spec['replicas'], status['replicas'])
             entities.append(entity)
+        return entities
+
+    def list_replication_controller_labels(self):
+        """Returns list of replication controller labels"""
+        entities = {}
+        for label in self.api.get('replicationcontroller')[1]['items']:
+            entities[label['metadata']['name']] = {
+                'name': str(label['metadata']['labels'])
+            }
         return entities
 
     def list_image(self):
