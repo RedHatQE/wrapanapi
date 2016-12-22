@@ -6,7 +6,7 @@ ovirt-engine-sdk-python<4.0.0
 psphere
 python-cinderclient
 python-keystoneclient
-python-novaclient
+python-novaclient<7.0.0
 python-heatclient
 pywinrm
 requests
