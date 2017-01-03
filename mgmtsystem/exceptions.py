@@ -7,6 +7,12 @@ class ActionTimedOutError(Exception):
     pass
 
 
+class ForwardingRuleNotFound(Exception):
+    """Raised if a Forwarding Rule for loadbalancers not found."""
+    def __init__(self, forwarding_rule_name):
+        self.vm_name = forwarding_rule_name
+
+
 class ImageNotFoundError(Exception):
     pass
 

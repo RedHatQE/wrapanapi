@@ -8,7 +8,8 @@ from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
 from apiclient import errors
 from base import MgmtSystemAPIBase, VMInfo
-from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported
+from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
+    ForwardingRuleNotFound
 from json import dumps as json_dumps
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
@@ -94,6 +95,7 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
         self._compute = build('compute', 'v1', http=http_auth)
         self._storage = build('storage', 'v1', http=http_auth)
         self._instances = self._compute.instances()
+        self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
 
     def _get_zone_instances(self, zone):
@@ -101,6 +103,12 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
 
     def _get_all_buckets(self):
         return self._buckets.list(project=self._project).execute()
+
+    def _get_all_forwarding_rules(self):
+        results = []
+        results.extend(self._forwarding_rules.list(project=self._project, region=self._zone).
+                       execute().get('items', []))
+        return results
 
     def _get_all_images(self):
         images = self._compute.images()
@@ -122,6 +130,10 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
         buckets = self._get_all_buckets()
         return [bucket.get('name') for bucket in buckets.get('items', [])]
 
+    def list_forwarding_rules(self):
+        rules = self._get_all_forwarding_rules()
+        return [forwarding_rule.get('name') for forwarding_rule in rules]
+
     def list_image(self):
         images = self._get_all_images()
         return [image.get('name') for image in images]
@@ -142,6 +154,15 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
                         return instance
             self.logger.error("Instance {} not found in any of the zones".format(instance_name))
             raise VMInstanceNotFound(instance_name)
+
+    def _find_forwarding_rule_by_name(self, forwarding_rule_name):
+        try:
+            forwarding_rule = self._forwarding_rules.get(
+                project=self._project, zone=self._zone,
+                forwardingRule=forwarding_rule_name).execute()
+            return forwarding_rule
+        except Exception:
+            raise ForwardingRuleNotFound
 
     def get_image_by_name(self, image_name):
         try:
@@ -439,6 +460,13 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
     def does_vm_exist(self, instance_name):
         try:
             self._find_instance_by_name(instance_name)
+            return True
+        except Exception:
+            return False
+
+    def does_forwarding_rule_exist(self, forwarding_rule_name):
+        try:
+            self._find_forwarding_rule_by_name(forwarding_rule_name)
             return True
         except Exception:
             return False
