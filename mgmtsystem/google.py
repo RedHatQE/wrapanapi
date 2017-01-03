@@ -8,7 +8,8 @@ from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
 from apiclient import errors
 from base import MgmtSystemAPIBase, VMInfo
-from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, ForwardingRuleNotFound
+from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
+    ForwardingRuleNotFound
 from json import dumps as json_dumps
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
@@ -104,7 +105,8 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
 
     def _get_all_forwarding_rules(self):
         results = []
-        results.extend(self._forwarding_rules.list(project=self._project, region=self._zone).execute().get('items', []))
+        results.extend(self._forwarding_rules.list(project=self._project, region=self._zone).
+                       execute().get('items', []))
         return results
 
     def _get_all_images(self):
@@ -146,7 +148,8 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
     def _find_forwarding_rule_by_name(self, forwarding_rule_name):
         try:
             forwarding_rule = self._forwarding_rules.get(
-                project=self._project, zone=self._zone, forwardingRule=forwarding_rule_name).execute()
+                project=self._project, zone=self._zone,
+                forwardingRule=forwarding_rule_name).execute()
             return forwarding_rule
         except Exception:
             raise ForwardingRuleNotFound
