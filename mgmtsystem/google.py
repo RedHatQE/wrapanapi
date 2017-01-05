@@ -537,8 +537,13 @@ class GoogleCloudSystem(MgmtSystemAPIBase):
                     ))
         return result
 
-    def vm_creation_time(self, istance_name):
-        instance = self._find_instance_by_name(istance_name)
+    def vm_creation_time(self, instance_name):
+        instance = self._find_instance_by_name(instance_name)
         vm_time_stamp = instance['creationTimestamp']
         creation_time = (iso8601.parse_date(vm_time_stamp)).replace(tzinfo=None)
         return creation_time
+
+    def vm_type(self, instance_name):
+        instance = self._find_instance_by_name(instance_name)
+        if instance.get('machineType', None):
+            return instance['machineType'].split('/')[-1]
