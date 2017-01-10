@@ -24,13 +24,15 @@ openshift:
 """
 
 Route = namedtuple('Route', ['name', 'project_name'])
+Template = namedtuple('Template', ['name', 'project_name'])
 
 
 class Openshift(Kubernetes):
 
     _stats_available = Kubernetes._stats_available.copy()
     _stats_available.update({
-        'num_route': lambda self: len(self.list_route())
+        'num_route': lambda self: len(self.list_route()),
+        'num_template': lambda self: len(self.list_template())
     })
 
     def __init__(self,
@@ -86,5 +88,15 @@ class Openshift(Kubernetes):
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Project(meta['name'])
+            entities.append(entity)
+        return entities
+
+    def list_template(self):
+        """Returns list of templates"""
+        entities = []
+        entities_j = self.o_api.get('template')[1]['items']
+        for entity_j in entities_j:
+            meta = entity_j['metadata']
+            entity = Template(meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
