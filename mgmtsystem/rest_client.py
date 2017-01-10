@@ -38,7 +38,7 @@ class ContainerClient(object):
         else:
             raise RestClientException('Invalid auth object')
 
-    def get(self, entity_type, name=None, namespace=None):
+    def get(self, entity_type, name=None, namespace=None, convert=None):
         """Sends a request to fetch an entity of specific type
 
         Fetches a single entity if its name is provided or all of given type if name is ommited.
@@ -46,6 +46,8 @@ class ContainerClient(object):
         Note:
             Some entities are tied to namespaces (projects).
             To fetch these by name, namespace has to be provided as well.
+
+            convert: The convert method to use for the json content (e.g. eval_strings).
 
         Return:
             Tuple containing status code and json response with requested entity/entities.
@@ -56,7 +58,10 @@ class ContainerClient(object):
                 path = os.path.join('namespaces/{}'.format(namespace), path)
             path = os.path.join(path, '{}'.format(name))
         r = self.raw_get(path)
-        return (r.status_code, r.json() if r.ok else None)
+        json_content = r.json() if r.ok else None
+        if json_content and convert:
+            json_content = convert(json_content)
+        return (r.status_code, json_content)
 
     def get_json(self, path, headers=None, params=None):
         r = self.raw_get(path, headers, params)
