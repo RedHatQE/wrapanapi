@@ -1,10 +1,15 @@
 # coding: utf-8
+from collections import namedtuple
+from ironicclient import client as iclient
 from keystoneclient.v2_0 import client as oskclient
 from novaclient import client as osclient
 from novaclient.client import HTTPClient
 from requests.exceptions import Timeout
 
 from base import MgmtSystemAPIBase
+
+
+Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
 
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -58,6 +63,7 @@ class OpenstackInfraSystem(MgmtSystemAPIBase):
         self._api = None
         self._kapi = None
         self._capi = None
+        self._iapi = None
 
     @property
     def api(self):
@@ -89,6 +95,18 @@ class OpenstackInfraSystem(MgmtSystemAPIBase):
                                           auth_url=self.auth_url,
                                           insecure=True)
         return self._kapi
+
+    @property
+    def iapi(self):
+        if not self._iapi:
+            self._iapi = iclient.get_client(
+                1,
+                os_auth_url=self.auth_url,
+                os_username=self.username,
+                os_password=self.password,
+                os_project_name=self.tenant,
+                insecure=True)
+        return self._iapi
 
     @property
     def nodes(self):
@@ -155,6 +173,23 @@ class OpenstackInfraSystem(MgmtSystemAPIBase):
 
     def list_host(self):
         return [node.name for node in self.nodes]
+
+    def list_node(self):
+        """Query Ironic for the node info. Where possible, obtain the name from nova."""
+        nodes = self.nodes
+        result = []
+        for i_node in self.iapi.node.list():
+            selected_nova_node = None
+            for nova_node in nodes:
+                if getattr(nova_node, 'OS-EXT-SRV-ATTR:hypervisor_hostname', None) == i_node.uuid:
+                    selected_nova_node = nova_node
+                    break
+            if selected_nova_node:
+                name = selected_nova_node.name
+            else:
+                name = None
+            result.append(Node(i_node.uuid, name, i_node.power_state, i_node.provision_state))
+        return result
 
     def info(self):
         raise NotImplementedError('info not implemented.')
