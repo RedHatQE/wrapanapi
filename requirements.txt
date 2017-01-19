@@ -5,6 +5,7 @@ google-api-python-client
 ovirt-engine-sdk-python<4.0.0
 psphere
 python-cinderclient
+python-ironicclient
 python-keystoneclient
 python-novaclient<7.0.0
 python-heatclient
