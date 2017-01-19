@@ -179,15 +179,20 @@ class OpenstackInfraSystem(MgmtSystemAPIBase):
         nodes = self.nodes
         result = []
         for i_node in self.iapi.node.list():
-            selected_nova_node = None
-            for nova_node in nodes:
-                if getattr(nova_node, 'OS-EXT-SRV-ATTR:hypervisor_hostname', None) == i_node.uuid:
-                    selected_nova_node = nova_node
-                    break
-            if selected_nova_node:
-                name = selected_nova_node.name
+            if i_node.name:
+                name = i_node.name
             else:
-                name = None
+                # Sometimes Ironic does not show the names, pull them from Nova if possible.
+                selected_nova_node = None
+                for nova_node in nodes:
+                    if getattr(
+                            nova_node, 'OS-EXT-SRV-ATTR:hypervisor_hostname', None) == i_node.uuid:
+                        selected_nova_node = nova_node
+                        break
+                if selected_nova_node:
+                    name = selected_nova_node.name
+                else:
+                    name = None
             result.append(Node(i_node.uuid, name, i_node.power_state, i_node.provision_state))
         return result
 
