@@ -126,7 +126,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         finally:
             script = """
             $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-            Remove-SCVirtualMachine -VM $VM -Force
+            Remove-SCVirtualMachine -VM $VM
             """.format(vm_name=vm_name)
             self.logger.info(" Deleting SCVMM VM `{}`".format(vm_name))
             self.run_script(script)
@@ -146,6 +146,12 @@ class SCVMMSystem(MgmtSystemAPIBase):
         data = self.run_script(
             "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
             "Select name | ConvertTo-Xml -as String")
+        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+
+    def list_hosts(self, **kwargs):
+        data = self.run_script(
+            "Get-SCVMHost -VMMServer $scvmm_server |"
+            "Select Name | Where-Object {$_.Name -like 'qeblade*'}| ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def all_vms(self, **kwargs):
@@ -303,6 +309,17 @@ class SCVMMSystem(MgmtSystemAPIBase):
         self.logger.info("Updating SCVMM VM \"{vm_name}\" using Read-SCVirtualMachine"
             .format(vm_name=vm_name))
         self.run_script(script)
+
+    def update_scvmm_vmhost(self):
+        # This forces SCVMM to update VM properties on the host if Host has lost some VMs
+        hosts = self.list_hosts()
+        for host in hosts:
+            script = """
+            $sc_host = Get-SCVMHost -VMMServer $scvmm_server
+            Read-SCVirtualMachine -VMHost {}
+            """.format(host)
+            self.logger.info("Updating SCVMM Host using Read-SCVirtualMachine")
+            self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
