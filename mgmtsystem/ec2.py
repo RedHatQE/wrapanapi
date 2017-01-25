@@ -4,6 +4,11 @@ from datetime import datetime
 import boto
 from boto.ec2 import EC2Connection, get_region
 from boto.cloudformation import CloudFormationConnection
+from boto.sqs import connection
+from boto import sqs
+from boto.ec2 import elb
+from boto import cloudformation
+from boto.ec2.elb import ELBConnection
 import tzlocal
 import re
 from wait_for import wait_for
@@ -15,6 +20,12 @@ from exceptions import (
     MultipleImagesError, ImageNotFoundError
 )
 
+
+def _regions(regionmodule, regionname):
+    for region in regionmodule.regions():
+        if region.name == regionname:
+            return region
+    return None
 
 class EC2System(MgmtSystemAPIBase):
     """EC2 Management System, powered by boto
@@ -55,10 +66,16 @@ class EC2System(MgmtSystemAPIBase):
         username = kwargs.get('username')
         password = kwargs.get('password')
 
+        regionname = kwargs.get('region')
         region = get_region(kwargs.get('region'))
         self.api = EC2Connection(username, password, region=region)
+        self.sqs_connection = connection.SQSConnection(username, password, region=_regions(
+            regionmodule=sqs, regionname=regionname))
+        self.elb_connection = ELBConnection(username, password, region=_regions(
+            regionmodule=elb, regionname=regionname))
         self.s3_connection = boto.connect_s3(username, password)
-        self.stackapi = CloudFormationConnection(username, password)
+        self.stackapi = CloudFormationConnection(username, password, region=_regions(
+            regionmodule=cloudformation, regionname=regionname))
         self.kwargs = kwargs
 
     def disconnect(self):
@@ -467,3 +484,29 @@ class EC2System(MgmtSystemAPIBase):
     def get_all_unattached_volumes(self):
         return [volume for volume in self.api.get_all_volumes() if not
                 volume.attach_data.status]
+
+    def delete_sqs_queue(self, queue_name):
+        self.logger.info(" Deleting SQS queue {}".format(queue_name))
+        try:
+            queue = self.sqs_connection.get_queue(queue_name=queue_name)
+            if queue:
+                self.sqs_connection.delete_queue(queue=queue)
+                return True
+            else:
+                return False
+
+        except ActionTimedOutError:
+            return False
+
+    def get_all_unused_loadbalancers(self):
+        return [loadbalancer for loadbalancer in self.elb_connection.get_all_load_balancers() if
+                not loadbalancer.instances]
+
+    def delete_loadbalancer(self, loadbalancer):
+        self.logger.info(" Deleting Elastic Load Balancer {}".format(loadbalancer.name))
+        try:
+            self.elb_connection.delete_load_balancer(loadbalancer.name)
+            return True
+
+        except ActionTimedOutError:
+            return False
