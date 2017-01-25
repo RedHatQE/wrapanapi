@@ -126,7 +126,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         finally:
             script = """
             $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-            Remove-SCVirtualMachine -VM $VM -Force
+            Remove-SCVirtualMachine -VM $VM
             """.format(vm_name=vm_name)
             self.logger.info(" Deleting SCVMM VM `{}`".format(vm_name))
             self.run_script(script)
@@ -146,6 +146,11 @@ class SCVMMSystem(MgmtSystemAPIBase):
         data = self.run_script(
             "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
             "Select name | ConvertTo-Xml -as String")
+        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+
+    def list_hosts(self, **kwargs):
+        data = self.run_script(
+            "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def all_vms(self, **kwargs):
@@ -304,6 +309,15 @@ class SCVMMSystem(MgmtSystemAPIBase):
             .format(vm_name=vm_name))
         self.run_script(script)
 
+    def update_scvmm_vmhost(self, host):
+        # This forces SCVMM to update VM properties on the host if Host has lost some VMs
+        script = """
+        $sc_host = Get-SCVMHost -VMMServer $scvmm_server
+        Read-SCVirtualMachine -VMHost \"{}\"
+        """.format(host)
+        self.logger.info("Updating \"{}\" Host using Read-SCVirtualMachine".format(host))
+        self.run_script(script)
+
     def mark_as_template(self, vm_name, library, library_share):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
         script = """
@@ -327,6 +341,13 @@ class SCVMMSystem(MgmtSystemAPIBase):
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
             "ft -HideTableHeaders".format(vm_name))
         return data.translate(None, '{}')
+
+    def get_vms_vmhost(self, vm_name):
+        data = self.run_script(
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server|"
+            "select VmHost | ConvertTo-Xml -as String".format(vm_name))
+        return etree.parse(StringIO(data)).getroot().xpath(
+            "./Object/Property[@Name='VMHost']/text()")
 
     def get_ip_address(self, vm_name, **kwargs):
         # Forcing an update to account for any delayed status changes
