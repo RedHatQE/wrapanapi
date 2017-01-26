@@ -100,3 +100,10 @@ class Openshift(Kubernetes):
             entity = Template(meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
+    
+    def list_image_openshift(self):
+        entities = []
+        entities_j = self.o_api.get('image')[1]['items']
+        for entity_j in entities_j:
+            entities.append(entity_j['metadata'])
+        return entities
