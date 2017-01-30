@@ -1,6 +1,8 @@
 import requests
 import os
 import json
+import six
+
 from exceptions import RestClientException
 
 requests.packages.urllib3.disable_warnings()
@@ -33,7 +35,7 @@ class ContainerClient(object):
         self.verify = verify
         if type(auth) in (list, set, tuple):
             self.auth = auth
-        elif type(auth) is str:
+        elif isinstance(auth, six.text_type):
             self.auth = BearerTokenAuth(auth)
         else:
             raise RestClientException('Invalid auth object')
