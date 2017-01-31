@@ -629,3 +629,38 @@ class VMWareSystem(MgmtSystemAPIBase):
             'ram': vm.config.hardware.memoryMB,
             'cpu': vm.config.hardware.numCPU,
         }
+
+    def usage_and_quota(self):
+        installed_ram = 0
+        installed_cpu = 0
+        used_ram = 0
+        used_cpu = 0
+        for host in mobs.HostSystem.all(self.api):
+            installed_ram += host.systemResources.config.memoryAllocation.limit
+            installed_cpu += host.summary.hardware.numCpuCores
+
+        property_spec = self.api.create('PropertySpec')
+        property_spec.all = False
+        property_spec.pathSet = ['name', 'config.template']
+        property_spec.type = 'VirtualMachine'
+        pfs = self.api.get_search_filter_spec(self.api.si.content.rootFolder, property_spec)
+        object_contents = self.api.si.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        for vm in object_contents:
+            vm_props = {p.name: p.val for p in vm.propSet}
+            if vm_props.get('config.template'):
+                continue
+            if vm.obj.summary.runtime.powerState.lower() != 'poweredon':
+                continue
+            used_ram += vm.obj.summary.config.memorySizeMB
+            used_cpu += vm.obj.summary.config.numCpu
+
+        return {
+            # RAM
+            'ram_used': used_ram,
+            'ram_total': installed_ram,
+            'ram_limit': None,
+            # CPU
+            'cpu_used': used_cpu,
+            'cpu_total': installed_cpu,
+            'cpu_limit': None,
+        }

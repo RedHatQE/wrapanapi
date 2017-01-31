@@ -832,3 +832,22 @@ class OpenstackSystem(MgmtSystemAPIBase):
         flavor_id = vm.flavor['id']
         flavor = self.api.flavors.find(id=flavor_id)
         return {'ram': flavor.ram, 'cpu': flavor.vcpus}
+
+    def usage_and_quota(self):
+        data = self.api.limits.get().to_dict()['absolute']
+        host_cpus = 0
+        host_ram = 0
+        for hypervisor in self.api.hypervisors.list():
+            host_cpus += hypervisor.vcpus
+            host_ram += hypervisor.memory_mb
+        # -1 == no limit
+        return {
+            # RAM
+            'ram_used': data['totalRAMUsed'],
+            'ram_total': host_ram,
+            'ram_limit': data['maxTotalRAMSize'] if data['maxTotalRAMSize'] >= 0 else None,
+            # CPU
+            'cpu_used': data['totalCoresUsed'],
+            'cpu_total': host_cpus,
+            'cpu_limit': data['maxTotalCores'] if data['maxTotalCores'] >= 0 else None,
+        }
