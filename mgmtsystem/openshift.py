@@ -67,8 +67,8 @@ class Openshift(Kubernetes):
             entities.append(entity)
         return entities
 
-    def list_image_registry(self):
-        """Returns list of image registries (image streams)"""
+    def list_docker_registry(self):
+        """Returns IP and port of the docker registry"""
         entities = []
         entities_j = self.o_api.get('imagestream')[1]['items']
         for entity_j in entities_j:
