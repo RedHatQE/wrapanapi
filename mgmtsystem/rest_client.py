@@ -35,7 +35,7 @@ class ContainerClient(object):
         self.verify = verify
         if type(auth) in (list, set, tuple):
             self.auth = auth
-        elif isinstance(auth, six.text_type):
+        elif isinstance(auth, six.string_types):
             self.auth = BearerTokenAuth(auth)
         else:
             raise RestClientException('Invalid auth object')
