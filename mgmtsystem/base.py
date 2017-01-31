@@ -362,6 +362,10 @@ class MgmtSystemAPIBase(object):
         else:
             raise VMInstanceNotFound(vm_name)
 
+    def vm_hardware_configuration(self, vm_name):
+        raise NotImplementedError(
+            'Provider {} does not implement vm_hardware_configuration'.format(type(self).__name__))
+
 
 class ContainerMgmtSystemAPIBase(MgmtSystemAPIBase):
     """Base interface class for Container Management Systems

@@ -826,3 +826,9 @@ class OpenstackSystem(MgmtSystemAPIBase):
                 return data
         except KeyError:
             raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
+
+    def vm_hardware_configuration(self, vm_name):
+        vm = self._find_instance_by_name(vm_name)
+        flavor_id = vm.flavor['id']
+        flavor = self.api.flavors.find(id=flavor_id)
+        return {'ram': flavor.ram, 'cpu': flavor.vcpus}

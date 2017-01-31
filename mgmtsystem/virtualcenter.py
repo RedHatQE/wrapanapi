@@ -622,3 +622,10 @@ class VMWareSystem(MgmtSystemAPIBase):
         status, t = wait_for(self._task_wait, [task], fail_condition=None)
 
         return status == 'success'
+
+    def vm_hardware_configuration(self, vm_name):
+        vm = self._get_vm(vm_name)
+        return {
+            'ram': vm.config.hardware.memoryMB,
+            'cpu': vm.config.hardware.numCPU,
+        }

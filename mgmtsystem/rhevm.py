@@ -506,3 +506,11 @@ class RHEVMSystem(MgmtSystemAPIBase):
         wait_for(
             lambda: not self.does_template_exist(template_name),
             num_sec=15 * 60, delay=20)
+
+    def vm_hardware_configuration(self, vm_name):
+        vm = self._get_vm(vm_name)
+        cpu = vm.get_cpu()
+        return {
+            'ram': vm.get_memory() / 1024 / 1024,
+            'cpu': cpu.topology.cores * cpu.topology.sockets,
+        }
