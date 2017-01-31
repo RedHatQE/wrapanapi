@@ -40,6 +40,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
         self.user = kwargs["username"]
         self.password = kwargs["password"]
         self.domain = kwargs["domain"]
+        self.provisioning = kwargs["provisioning"]
         self.api = winrm.Session(self.host, auth=(self.user, self.password))
 
     @property
@@ -271,13 +272,20 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def deploy_template(self, template, host_group, vm_name=None, **kwargs):
         timeout = kwargs.pop('timeout', 900)
+        vm_cpu = max(kwargs.get('cpu', 0), self.provisioning['cpu'])
+        vm_ram = max(kwargs.get('ram', 0), self.provisioning['ram'])
         script = """
         $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
         $vm_host_group = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
         $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_host_group
         Update-SCVMConfiguration -VMConfiguration $vmc
-        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
-        """.format(template=template, vm_name=vm_name, host_group=host_group)
+        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc `
+            -CPUCount "{vm_cpu}" -MemoryMB "{vm_ram}"
+        """.format(template=template,
+                vm_name=vm_name,
+                host_group=host_group,
+                vm_cpu=vm_cpu,
+                vm_ram=vm_ram)
         self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
             .format(vm_name, template, host_group))
         self.run_script(script)
