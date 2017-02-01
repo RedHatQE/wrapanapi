@@ -366,6 +366,10 @@ class MgmtSystemAPIBase(object):
         raise NotImplementedError(
             'Provider {} does not implement vm_hardware_configuration'.format(type(self).__name__))
 
+    def usage_and_quota(self):
+        raise NotImplementedError(
+            'Provider {} does not implement usage_and_quota'.format(type(self).__name__))
+
 
 class ContainerMgmtSystemAPIBase(MgmtSystemAPIBase):
     """Base interface class for Container Management Systems

@@ -514,3 +514,32 @@ class RHEVMSystem(MgmtSystemAPIBase):
             'ram': vm.get_memory() / 1024 / 1024,
             'cpu': cpu.topology.cores * cpu.topology.sockets,
         }
+
+    def usage_and_quota(self):
+        host_ram = 0
+        host_cpu = 0
+        used_ram = 0
+        used_cpu = 0
+        for host in self.api.hosts.list():
+            host_ram += host.get_memory() / 1024 / 1024
+            topology = host.get_cpu().get_topology()
+            host_cpu += topology.cores * topology.sockets
+
+        for vm in self.api.vms.list():
+            if vm.get_status().state != 'up':
+                continue
+
+            used_ram += vm.get_memory() / 1024 / 1024
+            topology = vm.get_cpu().get_topology()
+            used_cpu += topology.cores * topology.sockets
+
+        return {
+            # RAM
+            'ram_used': used_ram,
+            'ram_limit': host_ram,
+            'ram_total': host_ram,
+            # CPU
+            'cpu_used': used_cpu,
+            'cpu_total': host_cpu,
+            'cpu_limit': None,
+        }
