@@ -442,9 +442,15 @@ class OpenstackSystem(MgmtSystemAPIBase):
             flavour_id: UUID of the flavour to use.
             vm_name: A name to use for the vm.
             network_name: The name of the network if it is a multi network setup (Havanna).
+            ram: Override flavour RAM (creates a new flavour if none suitable found)
+            cpu: Override flavour VCPU (creates a new flavour if none suitable found)
 
-        Note: If assign_floating_ip kwarg is present, then :py:meth:`OpenstackSystem.create_vm` will
+        Note:
+            If assign_floating_ip kwarg is present, then :py:meth:`OpenstackSystem.create_vm` will
             attempt to register a floating IP address from the pool specified in the arg.
+
+            When overriding the ram and cpu, you have to pass a flavour anyway. When a new flavour
+            is created from the ram/cpu, other values are taken from that given flavour.
         """
         power_on = kwargs.pop("power_on", True)
         nics = []
@@ -458,6 +464,55 @@ class OpenstackSystem(MgmtSystemAPIBase):
             flavour = self.api.flavors.find(id=kwargs['flavour_id'])
         else:
             flavour = self.api.flavors.find(name='m1.tiny')
+        ram = kwargs.pop('ram', None)
+        cpu = kwargs.pop('cpu', None)
+        if ram or cpu:
+            # Find or create a new flavour usable for provisioning
+            # Keep the parameters from the original flavour
+            self.logger.info(
+                'RAM/CPU override of flavour %s: RAM %r MB, CPU: %r cores', flavour.name, ram, cpu)
+            ram = ram or flavour.ram
+            cpu = cpu or flavour.vcpus
+            disk = flavour.disk
+            ephemeral = flavour.ephemeral
+            swap = flavour.swap
+            rxtx_factor = flavour.rxtx_factor
+            is_public = flavour.is_public
+            try:
+                new_flavour = self.api.flavors.find(
+                    ram=ram, vcpus=cpu,
+                    disk=disk, ephemeral=ephemeral, swap=swap,
+                    rxtx_factor=rxtx_factor, is_public=is_public)
+            except os_exceptions.NotFound:
+                # The requested flavor was not found, create a custom one
+                self.logger.info('No suitable flavour found, creating a new one.')
+                base_flavour_name = '{}-{}M-{}C'.format(flavour.name, ram, cpu)
+                flavour_name = base_flavour_name
+                counter = 0
+                new_flavour = None
+                if not swap:
+                    # Protect against swap empty string
+                    swap = 0
+                while new_flavour is None:
+                    try:
+                        new_flavour = self.api.flavors.create(
+                            name=flavour_name,
+                            ram=ram, vcpus=cpu,
+                            disk=disk, ephemeral=ephemeral, swap=swap,
+                            rxtx_factor=rxtx_factor, is_public=is_public)
+                    except os_exceptions.Conflict:
+                        self.logger.info(
+                            'Name %s is already taken, changing the name', flavour_name)
+                        counter += 1
+                        flavour_name = base_flavour_name + '_{}'.format(counter)
+                    else:
+                        self.logger.info(
+                            'Created a flavour %r with id %r', new_flavour.name, new_flavour.id)
+                        flavour = new_flavour
+            else:
+                self.logger.info('Found a flavour %s', new_flavour.name)
+                flavour = new_flavour
+
         if 'vm_name' not in kwargs:
             vm_name = 'new_instance_name'
         else:
