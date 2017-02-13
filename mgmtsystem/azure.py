@@ -41,6 +41,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.provisioning = kwargs['provisioning']
         self.resource_group = kwargs['provisioning']['resource_group']
         self.storage_container = kwargs['provisioning']['storage_container']
+        self.template_container = kwargs['provisioning']['template_container']
         self.username = kwargs["username"]
         self.password = kwargs["password"]
         self.ui_username = kwargs["ui_username"]
@@ -201,29 +202,24 @@ class AzureSystem(MgmtSystemAPIBase):
             convertto-xml -as String;
             }}
             """.format(rg=resource_group or self.resource_group))
-        data = self.clean_azure_xml(azure_data)
-        name_list = etree.parse(StringIO(data)).getroot().xpath(
+        return etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
             "./Object/Property[@Name='DeploymentName']/text()")
-        return name_list
 
     def list_template(self):
         self.logger.info("Attempting to List Azure VHDs in templates directory")
         azure_data = self.run_script(
             """
             Invoke-Command -scriptblock {{
-            $myStorage = New-AzureStorageContext -StorageAccountName \"{}\" |
-            -StorageAccountKey '\"{}\"';
-            Get-AzureStorageBlob -Container templates -Context $myStorage | Select Name;
+            $myStorage = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                -StorageAccountKey \"{storage_key}\";
+            Get-AzureStorageBlob -Container \"{template_container}\" -Context $myStorage |
+                convertto-xml -as String;
             }}
-            """.format(self.storage_account, self.storage_key))
-        lines = iter(azure_data.splitlines())
-        templates = []
-        for line in lines:
-            if ".vhd" in line:
-                vhd = line.split(" ")
-                templates.append(str(vhd[2])[:-4])
-        templates.append(str('Microsoft.Compute/Images/templates/tmpl-osDisk'))
-        return templates
+            """.format(storage_account=self.storage_account,
+                       template_container=self.template_container,
+                       storage_key=self.storage_key))
+        return etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
+            "./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
         raise NotImplementedError('list_flavor not implemented.')
@@ -378,7 +374,7 @@ class AzureSystem(MgmtSystemAPIBase):
             New-AzureRmVM -ResourceGroupName \"{resource_group}\" -Location \"{region}\" `
                 -VM $VirtualMachine
             }}
-            """.format(source_name=template.split("/")[-1],
+            """.format(source_name=template,
                        vm_name=vm_name,
                        resource_group=vm_settings['resource_group'],
                        virtual_net=vm_settings['virtual_net'],
@@ -407,7 +403,7 @@ class AzureSystem(MgmtSystemAPIBase):
                             -StorageAccountKey \"{storage_key}\"
             $blobCopy = Start-AzureStorageBlobCopy -DestContainer \"{storage_container}\" `
                         -DestContext $destContext -DestBlob \"{vm_name}.vhd\" `
-                        -SrcBlob \"{source_name}.vhd\" `
+                        -SrcBlob \"{source_name}\" `
                         -Context $sourceContext -SrcContainer \"{template_container}\"
             }}
             """.format(source_name=template.split("/")[-1],
