@@ -139,7 +139,7 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         return entities
     
     def list_replication_controller_selector(self):
-        """Returns list of replication controller selectors"""
+        """Returns list of replication controller selectors - only applicable to rc"""
         entities = []
         entities_j = self.api.get('replicationcontroller')[1]['items']
         for entity_j in entities_j:
