@@ -131,7 +131,7 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         return entities
 
     def list_replication_controller_label(self):
-        """Returns list of replication controller labels"""
+        """Returns list of replication controller labels - applicable to all objects"""
         entities = []
         entities_j = self.api.get('replicationcontroller')[1]['items']
         for entity_j in entities_j:
