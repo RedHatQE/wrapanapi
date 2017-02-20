@@ -137,7 +137,7 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
         for entity_j in entities_j:
             entities.append(entity_j['metadata']['labels'])
         return entities
-    
+
     def list_replication_controller_selector(self):
         """Returns list of replication controller selectors - only applicable to rc"""
         entities = []
