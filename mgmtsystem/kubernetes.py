@@ -130,13 +130,20 @@ class Kubernetes(ContainerMgmtSystemAPIBase):
             entities.append(entity)
         return entities
 
-    def list_replication_controller_labels(self):
-        """Returns list of replication controller labels"""
-        entities = {}
-        for label in self.api.get('replicationcontroller')[1]['items']:
-            entities[label['metadata']['name']] = {
-                'name': str(label['metadata']['labels'])
-            }
+    def list_replication_controller_label(self):
+        """Returns list of replication controller labels - applicable to all objects"""
+        entities = []
+        entities_j = self.api.get('replicationcontroller')[1]['items']
+        for entity_j in entities_j:
+            entities.append(entity_j['metadata']['labels'])
+        return entities
+
+    def list_replication_controller_selector(self):
+        """Returns list of replication controller selectors - only applicable to rc"""
+        entities = []
+        entities_j = self.api.get('replicationcontroller')[1]['items']
+        for entity_j in entities_j:
+            entities.append(entity_j['spec']['selector'])
         return entities
 
     def list_image(self):
