@@ -169,9 +169,9 @@ class AzureSystem(MgmtSystemAPIBase):
         self.logger.info("Attempting to List Azure VMs")
         azure_data = self.run_script("Get-AzureRmVm | convertto-xml -as String")
         data = self.clean_azure_xml(azure_data)
-        nameList = etree.parse(StringIO(data)).getroot().xpath(
+        vm_list = etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='Name']/text()")
-        return nameList
+        return vm_list
 
     def capture_vm(self, vm_name, resource_group, container, image_name):
         self.logger.info("Attempting to Capture Azure VM {}".format(vm_name))
@@ -220,6 +220,13 @@ class AzureSystem(MgmtSystemAPIBase):
                        storage_key=self.storage_key))
         return etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
             "./Object/Property[@Name='Name']/text()")
+
+    def list_load_balancer(self):
+        self.logger.info("Attempting to List Azure Load Balancers")
+        azure_data = self.run_script("Get-AzureRmLoadBalancer | convertto-xml -as String")
+        lb_list = etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
+            "./Object/Property[@Name='Name']/text()")
+        return lb_list
 
     def list_flavor(self):
         raise NotImplementedError('list_flavor not implemented.')
@@ -330,6 +337,9 @@ class AzureSystem(MgmtSystemAPIBase):
 
     def does_vm_exist(self, vm_name):
         return vm_name in self.list_vm()
+
+    def does_load_balancer_exist(self, lb_name):
+        return lb_name in self.list_load_balancer()
 
     def stack_exist(self, stack_name):
         return stack_name in self.list_stack()
