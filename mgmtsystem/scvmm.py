@@ -272,20 +272,21 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def deploy_template(self, template, host_group, vm_name=None, **kwargs):
         timeout = kwargs.pop('timeout', 900)
-        vm_cpu = max(kwargs.get('cpu', 0), self.provisioning['cpu'])
-        vm_ram = max(kwargs.get('ram', 0), self.provisioning['ram'])
+        vm_cpu = kwargs.get('cpu', 0)
+        vm_ram = kwargs.get('ram', 0)
         script = """
         $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
         $vm_host_group = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
         $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_host_group
         Update-SCVMConfiguration -VMConfiguration $vmc
-        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc `
-            -CPUCount "{vm_cpu}" -MemoryMB "{vm_ram}"
-        """.format(template=template,
-                vm_name=vm_name,
-                host_group=host_group,
-                vm_cpu=vm_cpu,
-                vm_ram=vm_ram)
+        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc""".format(
+            template=template,
+            vm_name=vm_name,
+            host_group=host_group)
+        if vm_cpu:
+            script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
+        if vm_ram:
+            script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
         self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
             .format(vm_name, template, host_group))
         self.run_script(script)
