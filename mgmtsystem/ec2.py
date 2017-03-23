@@ -27,6 +27,7 @@ def _regions(regionmodule, regionname):
             return region
     return None
 
+
 class EC2System(MgmtSystemAPIBase):
     """EC2 Management System, powered by boto
 
@@ -461,7 +462,10 @@ class EC2System(MgmtSystemAPIBase):
         return True
 
     def get_all_disassociated_addresses(self):
-        return [addr for addr in self.api.get_all_addresses() if not addr.instance_id]
+        return [
+            addr for addr
+            in self.api.get_all_addresses()
+            if not addr.instance_id and not addr.network_interface_id]
 
     def release_vpc_address(self, alloc_id):
         self.logger.info(" Releasing EC2 VPC EIP {}".format(str(alloc_id)))
@@ -499,8 +503,10 @@ class EC2System(MgmtSystemAPIBase):
             return False
 
     def get_all_unused_loadbalancers(self):
-        return [loadbalancer for loadbalancer in self.elb_connection.get_all_load_balancers() if
-                not loadbalancer.instances]
+        return [
+            loadbalancer for loadbalancer
+            in self.elb_connection.get_all_load_balancers()
+            if not loadbalancer.instances]
 
     def delete_loadbalancer(self, loadbalancer):
         self.logger.info(" Deleting Elastic Load Balancer {}".format(loadbalancer.name))
@@ -510,3 +516,6 @@ class EC2System(MgmtSystemAPIBase):
 
         except ActionTimedOutError:
             return False
+
+    def get_all_unused_network_interfaces(self):
+        return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
