@@ -691,12 +691,15 @@ class HawkularInventory(HawkularService):
         return operations
 
     def list_server_datasource(self, feed_id=None):
-        """Returns list of datasources.
+        """Returns list of datasources (both XA and non XA).
 
          Args:
              feed_id: Feed id of the datasource (optional)
         """
         resources = self.list_resource(feed_id=feed_id, resource_type_id='Datasource')
+        resources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='XA Datasource'))
         datasources = []
         if resources:
             for resource in resources:

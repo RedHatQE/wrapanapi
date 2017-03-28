@@ -1,0 +1,12 @@
+{
+  "path": "/t;28026b36-8fe4-4332-84c8-524e173a68bf/f;c22fb9d6-0ffc-42cd-bf5b-e1d046398fe5/r;WildfyServerTwo~~/r;WildfyServerTwo~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleXADS/d;configuration",
+  "value" : {
+    "Username" : "sa",
+    "Driver Name" : "h2",
+    "JNDI Name" : "java:jboss/datasources/ExampleXADS",
+    "Connection URL" : "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+    "Enabled" : "true",
+    "Password" : "sa"
+  },
+  "name" : "configuration"
+}
