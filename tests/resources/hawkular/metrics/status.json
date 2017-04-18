@@ -1,0 +1,6 @@
+{
+	"MetricsService":"STARTED",
+	"Implementation-Version":"0.26.0.Final",
+	"Built-From-Git-SHA1":"fe3ef3ccc36a0c85bcdbf3e96aae8d36a636f7f2",
+	"Cassandra":"up"
+}

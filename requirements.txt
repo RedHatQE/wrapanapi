@@ -17,6 +17,7 @@ wait_for
 websocket_client
 dateparser
 boto3
+packaging
 ###
 # Libraries with compiled components, and their related devel packages
 ###
