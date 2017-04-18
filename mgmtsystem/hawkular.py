@@ -2,6 +2,7 @@ from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 from urllib import quote as urlquote
+from packaging import version
 from enum import Enum
 from websocket_client import HawkularWebsocketClient
 
@@ -181,10 +182,11 @@ class Hawkular(MgmtSystemAPIBase):
                                          entry="hawkular")
         self._alert = HawkularAlert(hostname=hostname, port=port, auth=self.auth,
                                     protocol=protocol, tenant_id=self.tenant_id)
-        self._inventory = HawkularInventory(hostname=hostname, port=port, auth=self.auth,
-                                            protocol=protocol, tenant_id=self.tenant_id)
         self._metric = HawkularMetric(hostname=hostname, port=port, auth=self.auth,
                                       protocol=protocol, tenant_id=self.tenant_id)
+        self._inventory = HawkularInventory(hostname=hostname, port=port, auth=self.auth,
+                                    protocol=protocol, tenant_id=self.tenant_id,
+                                    entry=self._get_inventory_entry())
         self._operation = HawkularOperation(hostname=self.hostname, port=self.port,
                                             username=self.username, password=self.password,
                                             tenant_id=self.tenant_id,
@@ -214,8 +216,13 @@ class Hawkular(MgmtSystemAPIBase):
     def operation(self):
         return self._operation
 
-    def _check_inv_version(self, version):
-        return version in self._get_inv_json('status')['Implementation-Version']
+    def _get_inventory_entry(self):
+        return "hawkular/metrics" if self._metrics_older("0.27.0.Final") else "hawkular/inventory"
+
+    def _metrics_older(self, metrics_version):
+        return version.parse(
+            self.metric._get("status")
+            ['Implementation-Version']) >= version.parse(metrics_version)
 
     def info(self):
         raise NotImplementedError('info not implemented.')
@@ -469,10 +476,10 @@ class HawkularAlert(HawkularService):
 
 
 class HawkularInventory(HawkularService):
-    def __init__(self, hostname, port, protocol, auth, tenant_id):
+    def __init__(self, hostname, port, protocol, auth, tenant_id, entry):
         """Creates hawkular inventory service instance. For args refer 'HawkularService'"""
         HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
-                                 auth=auth, tenant_id=tenant_id, entry="hawkular/inventory")
+                                 auth=auth, tenant_id=tenant_id, entry=entry)
 
     _stats_available = {
         'num_server': lambda self: len(self.list_server()),
