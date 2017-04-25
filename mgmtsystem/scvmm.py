@@ -110,7 +110,7 @@ class SCVMMSystem(MgmtSystemAPIBase):
             self.stop_vm(vm_name)
             self.wait_vm_stopped(vm_name)
         script = """
-        Get-SCVirtualMachine -Name "{vm_name}" | Set-SCVirtualMachine -Name "{vm_new_name}"
+            Get-SCVirtualMachine -Name "{vm_name}" | Set-SCVirtualMachine -Name "{vm_new_name}"
         """.format(vm_name=vm_name, vm_new_name=vm_new_name)
         self.logger.info(" Renaming SCVMM VM `{}` to  `{}`"
             .format(vm_name, vm_new_name))
@@ -126,19 +126,23 @@ class SCVMMSystem(MgmtSystemAPIBase):
             self.logger.exception(e)
         finally:
             script = """
-            $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-            Remove-SCVirtualMachine -VM $VM
+                $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
+                Remove-SCVirtualMachine -VM $VM
             """.format(vm_name=vm_name)
-            self.logger.info(" Deleting SCVMM VM `{}`".format(vm_name))
+            self.logger.info("Deleting SCVMM VM {}".format(vm_name))
             self.run_script(script)
 
     def delete_template(self, template):
-        script = """
-        $Template = Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server
-        Remove-SCVMTemplate -VMTemplate $Template -Force
-        """.format(template)
-        self.logger.info(" Removing SCVMM VM `{}`".format(template))
-        self.run_script(script)
+        if self.does_template_exist(template):
+            script = """
+                $Template = Get-SCVMTemplate -Name \"{template}\" -VMMServer $scvmm_server
+                Remove-SCVMTemplate -VMTemplate $Template -Force
+            """.format(template=template)
+            self.logger.info("Removing SCVMM VM Template {}".format(template))
+            self.run_script(script)
+            self.update_scvmm_library()
+        else:
+            self.logger.info("Template {} does not exist in SCVMM".format(template))
 
     def restart_vm(self, vm_name):
         self._do_vm(vm_name, "Reset")
@@ -275,11 +279,12 @@ class SCVMMSystem(MgmtSystemAPIBase):
         vm_cpu = kwargs.get('cpu', 0)
         vm_ram = kwargs.get('ram', 0)
         script = """
-        $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
-        $vm_host_group = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
-        $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_host_group
-        Update-SCVMConfiguration -VMConfiguration $vmc
-        New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc""".format(
+            $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
+            $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
+            $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
+            Update-SCVMConfiguration -VMConfiguration $vmc
+            New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
+        """.format(
             template=template,
             vm_name=vm_name,
             host_group=host_group)
@@ -311,8 +316,8 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def update_scvmm_virtualmachine(self, vm_name):
         # This forces SCVMM to update a VM that was changed directly in Hyper-V using Invoke-Command
         script = """
-        $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
-        Read-SCVirtualMachine -VM $vm
+            $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
+            Read-SCVirtualMachine -VM $vm
          """.format(vm_name=vm_name)
         self.logger.info("Updating SCVMM VM \"{vm_name}\" using Read-SCVirtualMachine"
             .format(vm_name=vm_name))
@@ -320,11 +325,20 @@ class SCVMMSystem(MgmtSystemAPIBase):
 
     def update_scvmm_vmhost(self, host):
         # This forces SCVMM to update VM properties on the host if Host has lost some VMs
-        script = """
-        $sc_host = Get-SCVMHost -VMMServer $scvmm_server
-        Read-SCVirtualMachine -VMHost \"{}\"
-        """.format(host)
         self.logger.info("Updating \"{}\" Host using Read-SCVirtualMachine".format(host))
+        script = """
+            $sc_host = Get-SCVMHost -VMMServer $scvmm_server
+            Read-SCVirtualMachine -VMHost \"{}\"
+        """.format(host)
+        self.run_script(script)
+
+    def update_scvmm_library(self):
+        # This forces SCVMM to update Library after a template change instead of waiting on timeout
+        self.logger.info("Updating SCVMM Library")
+        script = """
+            $lib = Get-SCLibraryShare | where {$_.name -eq 'MSSCVMMLibrary'}
+            Read-SCLibraryShare $lib[0]
+        """
         self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
@@ -332,10 +346,11 @@ class SCVMMSystem(MgmtSystemAPIBase):
         script = """
         $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
         New-SCVMTemplate -Name \"{vm_name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
-         """.format(vm_name=vm_name, ls=library, lp=library_share)
+        """.format(vm_name=vm_name, ls=library, lp=library_share)
         self.logger.info("Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
             .format(vm_name=vm_name))
         self.run_script(script)
+        self.update_scvmm_library()
 
     @contextmanager
     def with_vm(self, *args, **kwargs):
@@ -371,9 +386,9 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def disconnect_dvd_drives(self, vm_name):
         number_dvds_disconnected = 0
         script = """\
-        $VM = Get-SCVirtualMachine -Name "{}"
-        $DVDDrive = Get-SCVirtualDVDDrive -VM $VM
-        $DVDDrive[0] | Remove-SCVirtualDVDDrive
+            $VM = Get-SCVirtualMachine -Name "{}"
+            $DVDDrive = Get-SCVirtualDVDDrive -VM $VM
+            $DVDDrive[0] | Remove-SCVirtualDVDDrive
         """.format(vm_name)
         while self.data(vm_name).VirtualDVDDrives is not None:
             self.run_script(script)
