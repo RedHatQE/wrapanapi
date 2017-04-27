@@ -8,6 +8,10 @@ from websocket_client import HawkularWebsocketClient
 
 import re
 import sys
+import json
+import gzip
+from StringIO import StringIO
+import base64
 
 """
 Related yaml structures:
@@ -65,6 +69,19 @@ CANONICAL_PATH_NAME_MAPPING = {
     '/rl;': 'relationship_id',
     '/rt;': 'resource_type_id',
     '/t;': 'tenant_id',
+}
+
+
+METRICS_PATH_NAME_MAPPING = {
+    '.d.': 'data_id',
+    '.e.': 'environment_id',
+    '.m.': 'metric_id',
+    '.mp.': 'metadata_pack_id',
+    '.mt.': 'metric_type_id',
+    '.ot.': 'operation_type_id',
+    '.r.': 'resource_id',
+    '.rl.': 'relationship_id',
+    '.rt.': 'resource_type_id'
 }
 
 
@@ -152,6 +169,89 @@ class CanonicalPath(object):
         return c_path
 
 
+class MetricsPath(object):
+    """MetricsPath class
+
+    Path is class to split canonical path to friendly values.\
+    If the path has more than one entry for a resource result will be in list
+    Example:
+        obj_p = Path('/t;28026b36-8fe4-4332-84c8-524e173a68bf\
+        /f;88db6b41-09fd-4993-8507-4a98f25c3a6b\
+        /r;Local~~/r;Local~%2Fdeployment%3Dhawkular-command-gateway-war.war')
+        obj_p.path returns raw path
+        obj_p.tenant returns tenant as `28026b36-8fe4-4332-84c8-524e173a68bf`
+        obj_p.feed returns feed as `88db6b41-09fd-4993-8507-4a98f25c3a6b`
+        obj_p.resource returns as \
+        `[u'Local~~', u'Local~%2Fdeployment%3Dhawkular-command-gateway-war.war']`
+
+    Args:
+        path:   The canonical path. Example: /t;28026b36-8fe4-4332-84c8-524e173a68bf\
+        /f;88db6b41-09fd-4993-8507-4a98f25c3a6b/r;Local~~
+
+    """
+
+    def __init__(self, path):
+        if path is None or len(path) == 0:
+            raise KeyError("MetricsPath should not be None or empty!")
+        self._path_ids = []
+        path = re.sub(r'^inventory.', '', path)
+        r_paths = re.split(r'(\.\w+\.)', path)
+        self.feed_id = r_paths[0]
+        del r_paths[0]
+        for p_index in range(0, len(r_paths), 2):
+            path_id = METRICS_PATH_NAME_MAPPING[r_paths[p_index]]
+            path_value = r_paths[p_index + 1]
+            if path_id in self._path_ids:
+                if isinstance(getattr(self, path_id), list):
+                    ex_list = getattr(self, path_id)
+                    ex_list.append(path_value)
+                    setattr(self, path_id, ex_list)
+                else:
+                    v_list = [
+                        getattr(self, path_id),
+                        path_value
+                    ]
+                    setattr(self, path_id, v_list)
+            else:
+                self._path_ids.append(path_id)
+                setattr(self, path_id, path_value)
+
+    def __iter__(self):
+        """This enables you to iterate through like it was a dictionary, just without .iteritems"""
+        for path_id in self._path_ids:
+            yield (path_id, getattr(self, path_id))
+
+    def __repr__(self):
+        return "<MetricsPath {}>".format(self.to_string)
+
+    @property
+    def to_string(self):
+        c_path = ''
+        if getattr(self, 'feed_id'):
+            c_path += "inventory.{}".format(self.feed_id)
+        if 'environment_id' in self._path_ids:
+            c_path += ".e.{}".format(self.environment_id)
+        if 'metric_id' in self._path_ids:
+            c_path += ".m.{}".format(self.metric_id)
+        if 'resource_id' in self._path_ids:
+            if isinstance(self.resource_id, list):
+                for _resource_id in self.resource_id:
+                    c_path += ".r.{}".format(_resource_id)
+            else:
+                c_path += ".r.{}".format(self.resource_id)
+        if 'metric_type_id' in self._path_ids:
+            c_path += ".mt.{}".format(self.metric_type_id)
+        if 'resource_type_id' in self._path_ids:
+            c_path += ".rt.{}".format(self.resource_type_id)
+        if 'metadata_pack_id' in self._path_ids:
+            c_path += ".mp.{}".format(self.metadata_pack_id)
+        if 'operation_type_id' in self._path_ids:
+            c_path += ".ot.{}".format(self.operation_type_id)
+        if 'relationship_id' in self._path_ids:
+            c_path += ".rl.{}".format(self.relationship_id)
+        return c_path
+
+
 class Hawkular(MgmtSystemAPIBase):
     """Hawkular management system
 
@@ -184,9 +284,7 @@ class Hawkular(MgmtSystemAPIBase):
                                     protocol=protocol, tenant_id=self.tenant_id)
         self._metric = HawkularMetric(hostname=hostname, port=port, auth=self.auth,
                                       protocol=protocol, tenant_id=self.tenant_id)
-        self._inventory = HawkularInventory(hostname=hostname, port=port, auth=self.auth,
-                                    protocol=protocol, tenant_id=self.tenant_id,
-                                    entry=self._get_inventory_entry())
+        self._inventory = self._get_inventory(hostname, port, protocol)
         self._operation = HawkularOperation(hostname=self.hostname, port=self.port,
                                             username=self.username, password=self.password,
                                             tenant_id=self.tenant_id,
@@ -216,8 +314,15 @@ class Hawkular(MgmtSystemAPIBase):
     def operation(self):
         return self._operation
 
-    def _get_inventory_entry(self):
-        return "hawkular/metrics" if self._metrics_older("0.27.0.Final") else "hawkular/inventory"
+    def _get_inventory(self, hostname, port, protocol):
+        if self._metrics_older("0.26.0.Final"):
+            return HawkularInventoryInMetrics(
+                hostname=hostname, port=port, auth=self.auth,
+                protocol=protocol, tenant_id=self.tenant_id)
+        else:
+            return HawkularInventory(
+                hostname=hostname, port=port, auth=self.auth,
+                protocol=protocol, tenant_id=self.tenant_id)
 
     def _metrics_older(self, metrics_version):
         return version.parse(
@@ -348,6 +453,11 @@ class HawkularService(object):
                                      headers={"Hawkular-Tenant": self.tenant_id,
                                               "Content-Type": "application/json"})
 
+    def _post_raw(self, path, data):
+        """runs POST request and returns result"""
+        return self._api.raw_post(path, data,
+            headers={"Hawkular-Tenant": self.tenant_id, "Content-Type": "application/json"})
+
 
 class HawkularAlert(HawkularService):
     def __init__(self, hostname, port, protocol, auth, tenant_id):
@@ -476,10 +586,10 @@ class HawkularAlert(HawkularService):
 
 
 class HawkularInventory(HawkularService):
-    def __init__(self, hostname, port, protocol, auth, tenant_id, entry):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
         """Creates hawkular inventory service instance. For args refer 'HawkularService'"""
         HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
-                                 auth=auth, tenant_id=tenant_id, entry=entry)
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/inventory")
 
     _stats_available = {
         'num_server': lambda self: len(self.list_server()),
@@ -771,6 +881,78 @@ class HawkularInventory(HawkularService):
             raise KeyError("'feed_id' and 'resource_id' are mandatory fields!")
         r = self._delete('entity/f;{}/r;{}'.format(feed_id, resource_id))
         return r
+
+
+class HawkularInventoryInMetrics(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates hawkular inventory service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/metrics")
+
+    _stats_available = {
+        'num_server': lambda self: len(self.list_server()),
+        'num_domain': lambda self: len(self.list_domain()),
+        'num_deployment': lambda self: len(self.list_server_deployment()),
+        'num_datasource': lambda self: len(self.list_server_datasource()),
+        'num_messaging': lambda self: len(self.list_messaging()),
+    }
+
+    def list_feed(self):
+        """Returns list of feeds"""
+        entities = []
+        entities_j = self._get('strings/tags/module:inventory,feed:*')
+        if entities_j and entities_j['feed']:
+            for entity_j in entities_j['feed']:
+                entities.append(Feed(entity_j, MetricsPath(entity_j)))
+        return entities
+
+    def list_resource_type(self, feed_id):
+        """Returns list of resource types.
+
+         Args:
+            feed_id: Feed id of the resource type
+        """
+        if not feed_id:
+            raise KeyError("'feed_id' is a mandatory field!")
+        entities = []
+        result_j = self._post_raw('strings/raw/query',
+            data={"fromEarliest": "true", "order": "DESC",
+                  "tags": "feed:{},type:rt".format(feed_id)})
+        if result_j.ok:
+            for entity_j in json.loads(result_j.content):
+                data_value = self._get_data_value(entity_j['data'])
+                if data_value:
+                    data = data_value['inventoryStructure']['data']
+                    entities.append(ResourceType(data['id'], data['name'], MetricsPath(entity_j['id'])))
+        return entities
+
+    def _get_data_value(self, data_node):
+        return self._decompress(self._build_from_chunks(data_node))
+
+    def _build_from_chunks(self, data_node):
+        result = ''
+
+        if not data_node:
+            return result
+
+        master_data = data_node[0]
+        # if data is not in chunks, then return the first node's value
+        if 'tags' not in master_data or 'chunks' not in master_data['tags']:
+            return self._decode(master_data['value'])
+
+        result.join(self._decode(master_data['value']))
+        # join the values in chunks
+        last_chunk = int(master_data['tags']['chunks']) - 1
+        for chunk_id in range(1, last_chunk):
+            slave_data = data_node[chunk_id]
+            result.join(self._decode(slave_data['value']))
+        return result
+
+    def _decode(self, raw):
+        return base64.b64decode(raw)
+
+    def _decompress(self, raw):
+        return json.loads(gzip.GzipFile(fileobj=StringIO(raw)).read())
 
 
 class HawkularMetric(HawkularService):
