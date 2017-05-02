@@ -454,7 +454,7 @@ class HawkularService(object):
                                               "Content-Type": "application/json"})
 
     def _post_raw(self, path, data):
-        """runs POST request and returns result"""
+        """runs POST request and returns result as JSON"""
         return self._api.raw_post(path, data,
             headers={"Hawkular-Tenant": self.tenant_id, "Content-Type": "application/json"})
 
@@ -915,16 +915,110 @@ class HawkularInventoryInMetrics(HawkularService):
         if not feed_id:
             raise KeyError("'feed_id' is a mandatory field!")
         entities = []
-        result_j = self._post_raw('strings/raw/query',
+        result = self._post_raw('strings/raw/query',
             data={"fromEarliest": "true", "order": "DESC",
                   "tags": "feed:{},type:rt".format(feed_id)})
-        if result_j.ok:
-            for entity_j in json.loads(result_j.content):
+        if result.status_code == 200:
+            for entity_j in json.loads(result.content):
                 data_value = self._get_data_value(entity_j['data'])
                 if data_value:
                     data = data_value['inventoryStructure']['data']
                     entities.append(ResourceType(data['id'], data['name'], MetricsPath(entity_j['id'])))
         return entities
+
+    def list_server(self, feed_id=None):
+        """Returns list of middleware servers.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(feed_id=feed_id, resource_type_id='WildFly Server')
+        resources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='Domain WildFly Server'))
+        servers = []
+        if resources:
+            for resource in resources:
+                resource_data = self.get_resource_data(
+                    feed_id=resource.path.feed_id,
+                    resource_id=self._get_resource_id(resource.path.resource_id))
+                server_data = resource_data.value
+                servers.append(Server(resource.id, resource.name, resource.path, server_data))
+        return servers
+
+    def list_resource(self, resource_type_id, feed_id=None):
+        """Returns list of resources.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+            resource_type_id: Resource type id
+        """
+        if not feed_id:
+            resources = []
+            for feed in self.list_feed():
+                resources.extend(self._list_resource(feed_id=feed.path.feed_id,
+                                                     resource_type_id=resource_type_id))
+            return resources
+        else:
+            return self._list_resource(feed_id=feed_id, resource_type_id=resource_type_id)
+
+    def _list_resource(self, feed_id, resource_type_id=None):
+        """Returns list of resources.
+
+         Args:
+            feed_id: Feed id of the resource
+            resource_type_id: Resource type id (optional)
+        """
+        if not feed_id:
+            raise KeyError("'feed_id' is a mandatory field!")
+        entities = []
+        if resource_type_id:
+            result = self._post_raw('strings/raw/query',
+                data={"fromEarliest": "true", "order": "DESC",
+                    "tags": "feed:{},type:r,restypes:.*\\|{}\\|.*".format(feed_id, resource_type_id)})
+        else:
+            result = self._post_raw('strings/raw/query',
+                data={"fromEarliest": "true", "order": "DESC",
+                    "tags": "feed:{},type:r".format(feed_id)})
+
+        if result.status_code == 200:
+            for entity_j in json.loads(result.content):
+                data_value = self._get_data_value(entity_j['data'])
+                if data_value:
+                    data = data_value['inventoryStructure']['data']
+                    entities.append(ResourceType(data['id'], data['name'], MetricsPath(entity_j['id'])))
+        return entities
+
+    def get_resource_data(self, feed_id, resource_id):
+        """Returns the data/configuration information about resource by provided
+
+        Args:
+            feed_id: Feed id of the resource
+            resource_id: Resource id
+         """
+        if not feed_id or not resource_id:
+            raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
+        result = self._post_raw('strings/raw/query',
+            data={"fromEarliest": "true", "order": "DESC",
+                "tags": "feed:{},type:r,id:{}".format(feed_id, resource_id)})
+        if result.status_code == 200:
+            entity_j = json.loads(result.content)
+            if entity_j:
+                try:
+                    inventory_structure = self._get_data_value(entity_j[0]['data'])['inventoryStructure']
+                    data_value = inventory_structure['children']['dataEntity'][0]['data']['value']
+                    return ResourceData(inventory_structure['data']['name'],
+                                        CanonicalPath(inventory_structure['data']['resourceTypePath']),
+                                        data_value)
+                except:
+                    raise KeyError('Resource data not found for resource {} in feed '.format(resource_id, feed_id))
+        return None
+
+    def _get_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return "{}".format('/r;'.join(resource_id))
+        else:
+            return resource_id
 
     def _get_data_value(self, data_node):
         return self._decompress(self._build_from_chunks(data_node))
@@ -936,16 +1030,16 @@ class HawkularInventoryInMetrics(HawkularService):
             return result
 
         master_data = data_node[0]
+        result = "{}{}".format(result, self._decode(master_data['value']))
         # if data is not in chunks, then return the first node's value
         if 'tags' not in master_data or 'chunks' not in master_data['tags']:
-            return self._decode(master_data['value'])
+            return result
 
-        result.join(self._decode(master_data['value']))
         # join the values in chunks
-        last_chunk = int(master_data['tags']['chunks']) - 1
+        last_chunk = int(master_data['tags']['chunks'])
         for chunk_id in range(1, last_chunk):
             slave_data = data_node[chunk_id]
-            result.join(self._decode(slave_data['value']))
+            result = "{}{}".format(result, self._decode(slave_data['value']))
         return result
 
     def _decode(self, raw):
