@@ -275,31 +275,35 @@ class SCVMMSystem(MgmtSystemAPIBase):
         return len(result) > 0
 
     def deploy_template(self, template, host_group, vm_name=None, **kwargs):
-        timeout = kwargs.pop('timeout', 900)
-        vm_cpu = kwargs.get('cpu', 0)
-        vm_ram = kwargs.get('ram', 0)
-        script = """
-            $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
-            $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
-            $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
-            Update-SCVMConfiguration -VMConfiguration $vmc
-            New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
-        """.format(
-            template=template,
-            vm_name=vm_name,
-            host_group=host_group)
-        if vm_cpu:
-            script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
-        if vm_ram:
-            script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
-        self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
-            .format(vm_name, template, host_group))
-        self.run_script(script)
-        self.enable_virtual_services(vm_name)
-        self.start_vm(vm_name)
-        self.wait_vm_running(vm_name, num_sec=timeout)
-        self.update_scvmm_virtualmachine(vm_name)
-        return vm_name
+        if not self.does_template_exist(template):
+            self.logger.warn("Template {} does not exist".format(template))
+            raise self.PowerShellScriptError("Template {} does not exist".format(template))
+        else:
+            timeout = kwargs.pop('timeout', 900)
+            vm_cpu = kwargs.get('cpu', 0)
+            vm_ram = kwargs.get('ram', 0)
+            script = """
+                $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
+                $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
+                $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
+                Update-SCVMConfiguration -VMConfiguration $vmc
+                New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
+            """.format(
+                template=template,
+                vm_name=vm_name,
+                host_group=host_group)
+            if vm_cpu:
+                script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
+            if vm_ram:
+                script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
+            self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
+                .format(vm_name, template, host_group))
+            self.run_script(script)
+            self.enable_virtual_services(vm_name)
+            self.start_vm(vm_name)
+            self.wait_vm_running(vm_name, num_sec=timeout)
+            self.update_scvmm_virtualmachine(vm_name)
+            return vm_name
 
     def enable_virtual_services(self, vm_name):
         # Make sure you double bracket any Invoke_Command calls.
