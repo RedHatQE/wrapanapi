@@ -12,7 +12,7 @@ from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
 
-from exceptions import VMInstanceNotFound
+from exceptions import VMInstanceNotFound, ActionTimedOutError
 from lxml import etree
 from wait_for import wait_for
 
@@ -66,8 +66,9 @@ class AzureSystem(MgmtSystemAPIBase):
         $myazurename = "{}"
         $myazurepwd = ConvertTo-SecureString "{}" -AsPlainText -Force
         $azcreds = New-Object System.Management.Automation.PSCredential ($myazurename, $myazurepwd)
-        Login-AzureRMAccount -Credential $azcreds
-        Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" | Select-AzureRmSubscription
+        Login-AzureRMAccount -Credential $azcreds | Out-Null
+        Get-AzureRmSubscription -SubscriptionId \"{}\" -TenantId \"{}\" |
+        Select-AzureRmSubscription | Out-Null
         """.format(self.ui_username, self.ui_password, self.subscription_id, self.tenant_id))
 
     def run_script(self, script, ignore_error=False, tries=3):
@@ -193,23 +194,85 @@ class AzureSystem(MgmtSystemAPIBase):
         else:
             raise RuntimeError("image {} isn't found in container {}".format(image_name, container))
 
-    def list_stack(self, resource_group=None):
+    def list_stack(self, resource_group=None, days_old=0):
         self.logger.info("Attempting to List Azure Orchestration Deployment Stacks")
         azure_data = self.run_script(
             """
             Invoke-Command -scriptblock {{
             Get-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" |
+            Where-Object {{$_.Timestamp -lt (Get-Date).AddDays(-{day})}}|
             convertto-xml -as String;
             }}
-            """.format(rg=resource_group or self.resource_group))
+            """.format(rg=resource_group or self.resource_group, day=days_old))
         return etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
             "./Object/Property[@Name='DeploymentName']/text()")
+
+    def list_stack_resources(self, stack_name):
+        self.logger.info("Checking Stack {} resources ".format(stack_name))
+        azure_data = self.run_script(
+            """
+                $Stack = "{st_name}"
+                $list = @{{}}
+                foreach ($stack_item in $Stack){{
+                    $stack_name = $stack_item.ToString()
+                    $list.add($stack_name, @{{}})
+                    $res_list = (Get-AzureRmResourceGroupDeploymentOperation -DeploymentName `
+                    $stack_name -ResourceGroupName \"{rg}\").Properties.TargetResource.id
+                    foreach ($res_type in $res_list){{
+                        if ($res_type -like "*virtualmachine*"){{
+                            if(-not $list.item($stack_name).ContainsKey("vms")){{
+                                $list.item($stack_name).add("vms",@{{}})}}
+                            $vm_name = $res_type -split '/' | Select-Object -Last 1
+                            $cur_vm = Get-AzureRmVM -ResourceGroupName \"{rg}\" -Name $vm_name `
+                            -ErrorAction SilentlyContinue
+                            if(!$cur_cur){{$vm_exists = "false"}}
+                            else{{$vm_exists = "true"}}
+                            $list.Item($stack_name).item("vms").add($vm_name, $vm_exists)
+                            Clear-Variable -Name cur_vm
+                        }}
+                        elseif ($res_type -like "*networkinterface*"){{
+                            if(-not $list.item($stack_name).ContainsKey("nics")){{
+                                $list.item($stack_name).add("nics",@{{}})}}
+                            $nic_name = $res_type -split '/' | Select-Object -Last 1
+                            $cur_nic = Get-AzureRmNetworkInterface -Name $nic_name `
+                            -ResourceGroupName \"{rg}\" -ErrorAction SilentlyContinue
+                            if(!$cur_nic){{$nic_exists = "false"}}
+                            else{{$nic_exists = "true"}}
+                            $list.Item($stack_name).item("nics").add($nic_name, $nic_exists)
+                            Clear-Variable -Name cur_nic
+                        }}
+                        elseif($res_type -like "*publicIpAddresses*"){{
+                            if(-not $list.item($stack_name).ContainsKey("pips")){{
+                                $list.item($stack_name).add("pips",@{{}})}}
+                            $pip_name = $res_type -split '/' | Select-Object -Last 1
+                            $cur_pip = Get-AzureRmPublicIpAddress -Name $pip_name `
+                            -ResourceGroupName \"{rg}\" -ErrorAction SilentlyContinue
+                            if(!$cur_pip){{$pip_exists = "false"}}
+                            else{{$pip_exists = "true"}}
+                            $list.Item($stack_name).item("pips").add($pip_name, $pip_exists)
+                            Clear-Variable -Name cur_pip
+                        }}
+                    }}
+                }}
+                $list | ConvertTo-Json -Depth 3
+            """.format(rg=self.resource_group, st_name=stack_name))
+
+        return json.loads(azure_data)
+
+    def is_stack_empty(self, stack_name):
+        stack_res_list = self.list_stack_resources(stack_name)
+        for res_type in stack_res_list[stack_name]:
+            for res_name in stack_res_list[stack_name][res_type]:
+                if stack_res_list[stack_name][res_type][res_name] == "true":
+                    return False
+                else:
+                    return True
 
     def list_template(self):
         self.logger.info("Attempting to List Azure VHDs in templates directory")
         azure_data = self.run_script(
             """
-            Invoke-Command -scriptblock {{
+                Invoke-Command -scriptblock {{
             $myStorage = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
                 -StorageAccountKey \"{storage_key}\";
             Get-AzureStorageBlob -Container \"{template_container}\" -Context $myStorage |
@@ -355,6 +418,19 @@ class AzureSystem(MgmtSystemAPIBase):
             """.format(rg=resource_group or self.resource_group, stack=stack_name))
         return True
 
+    def delete_stack_by_date(self, days_old, resource_group=None):
+        self.logger.info("Removes a Deployment Stack resource older than {} days".format(days_old))
+        self.run_script(
+            """
+                $Stack = Get-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\"|
+                Where-Object {{$_.Timestamp -lt (Get-Date).AddDays(\"{days}\")}}|
+                Select DeploymentName
+                foreach ($st_name in $Stack) {{
+                Remove-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" `
+                -Name $st_name.DeploymentName -Force}}
+            """.format(rg=resource_group or self.resource_group, days=days_old))
+        return True
+
     def deploy_template(self, template, vm_name=None, **vm_settings):
         self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
             vm_settings['template_container'], vm_settings['storage_container'])
@@ -440,6 +516,30 @@ class AzureSystem(MgmtSystemAPIBase):
                        storage_key=self.storage_key,
                        container=container), True)
 
+    def remove_nics_by_search(self, nic_template):
+        """
+        Used for clean_up jobs to remove NIC that are not attached to any test VM
+        """
+        self.logger.info("Removing NICs with \"{}\" name template".format(nic_template))
+        nic_list = self.list_free_nics(nic_template)
+        for nic_name in nic_list:
+            self.run_script(
+                """
+                    Remove-AzureRmNetworkInterface -Name \"{}\" -ResourceGroupName {} -Force
+                """.format(nic_name, self.resource_group), ignore_error=True)
+
+    def remove_pips_by_search(self, pip_template):
+        """
+        Used for clean_up jobs to remove public IPs that are not associated to any NIC
+        """
+        self.logger.info("Removing Public IPs with \"{}\" name template".format(pip_template))
+        pip_list = self.list_free_pip(pip_template)
+        for piname in pip_list:
+            self.run_script(
+                """
+                    Remove-AzureRmPublicIpAddress -Name \"{}\" -ResourceGroupName {} -Force
+                """.format(piname, self.resource_group), ignore_error=True)
+
     def list_blob_images(self, container):
         azure_data = self.run_script(
             'New-AzureStorageContext -StorageAccountName "{acc_name}"'
@@ -483,6 +583,36 @@ class AzureSystem(MgmtSystemAPIBase):
         data = self.clean_azure_xml(azure_data)
         return etree.parse(StringIO(data)).getroot().xpath(
             "./Object/Property[@Name='IpAddress']/text()")
+
+    def list_free_nics(self, nic_template):
+        try:
+            azure_data = self.run_script(
+                """
+                Get-AzureRmNetworkInterface -ResourceGroupName {}|
+                Where-Object {{$_.VirtualMachineText -eq "null" -and $_.Name -like "{}"}}|
+                convertto-xml -as String
+                """.format(self.resource_group, nic_template))
+            data = self.clean_azure_xml(azure_data)
+            nic_list = etree.parse(StringIO(data)).getroot().xpath(
+                "./Object/Property[@Name='Name']/text()")
+            return nic_list
+        except ActionTimedOutError:
+            return False
+
+    def list_free_pip(self, pip_template):
+        try:
+            azure_data = self.run_script(
+                """
+                    Get-AzureRmPublicIpAddress -ResourceGroupName {}|
+                    Where-Object {{$_.Name -like "{}" -and $_.IpConfigurationText -eq "null"}}|
+                    convertto-xml -as String
+                """.format(self.resource_group, pip_template))
+            data = self.clean_azure_xml(azure_data)
+            pip_list = etree.parse(StringIO(data)).getroot().xpath(
+                "./Object/Property[@Name='Name']/text()")
+            return pip_list
+        except ActionTimedOutError:
+            return False
 
     def get_ip_address(self, vm_name, resource_group=None, **kwargs):
         current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
