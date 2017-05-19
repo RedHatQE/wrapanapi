@@ -349,11 +349,10 @@ class AzureSystem(MgmtSystemAPIBase):
     def vm_status(self, vm_name, resource_group=None):
         self.logger.info("Attempting to Retrieve Azure VM Status {}".format(vm_name))
         azure_data = self.run_script(
-            "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" -Status | convertto-xml -as String"
-            .format(resource_group or self.resource_group, vm_name))
-        data = self.clean_azure_xml(azure_data)
-        statusValue = json.loads(etree.parse(StringIO(data)).getroot().xpath(
-            "./Object/Property[@Name='StatusesText']/text()")[0])
+            'Get-AzureRmVm -ResourceGroup "{}" -Name "{}" -Status|Select -ExpandProperty Statuses|'
+            'Select -Property Code, DisplayStatus, Message, Time|'
+            'convertto-json'.format(resource_group or self.resource_group, vm_name))
+        statusValue = json.loads(azure_data)
         # If script runs completely but the result isn't the one we need - better to show Azure
         # message
         if statusValue[0]['DisplayStatus'] == 'Provisioning failed':
