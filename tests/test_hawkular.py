@@ -149,7 +149,7 @@ def test_list_resource_type(provider):
             assert res_type.path
     assert len(res_types) > 0, "No resource type is listed for any of feeds"
 
-
+'''
 def test_list_server(provider):
     """ Checks whether any server is listed and has attributes"""
     servers = provider.inventory.list_server()
@@ -243,7 +243,7 @@ def test_delete_resource(provider, datasource):
     # skip deleted verification for mocked provider
     if os.getenv('HAWKULAR_HOSTNAME'):
         assert not r_data
-
+'''
 
 def _read_resource_data(provider, resource):
     return provider.inventory.get_config_data(feed_id=resource.path.feed_id,
@@ -266,7 +266,7 @@ def _delete_resource(provider, resource):
     return provider.inventory.delete_resource(feed_id=resource.path.feed_id,
                     resource_id=resource.path.resource_id)
 
-
+'''
 def test_list_server_datasource(provider):
     """ Checks whether any datasource is listed and has attributes """
     found = False
@@ -348,3 +348,4 @@ def test_list_event(provider):
         assert event.dataId
         assert event.category
         assert event.text
+'''
