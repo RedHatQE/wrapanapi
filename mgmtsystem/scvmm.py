@@ -3,14 +3,13 @@
 
 Used to communicate with providers without using CFME facilities
 """
-import winrm
 import re
+import winrm
 from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
-from textwrap import dedent
-
 from lxml import etree
+from textwrap import dedent
 from wait_for import wait_for
 
 from base import MgmtSystemAPIBase, VMInfo
@@ -267,12 +266,12 @@ class SCVMMSystem(MgmtSystemAPIBase):
     def does_vm_exist(self, vm_name):
         result = self.run_script("Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
             .format(vm_name)).strip()
-        return len(result) > 0
+        return bool(result)
 
     def does_template_exist(self, template):
         result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
             .format(template)).strip()
-        return len(result) > 0
+        return bool(result)
 
     def deploy_template(self, template, host_group, vm_name=None, **kwargs):
         if not self.does_template_exist(template):
