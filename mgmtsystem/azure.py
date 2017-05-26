@@ -415,6 +415,7 @@ class AzureSystem(MgmtSystemAPIBase):
             -DeploymentName \"{stack}\" -Force
             }}
             """.format(rg=resource_group or self.resource_group, stack=stack_name))
+        self.delete_vm(stack_name, resource_group or self.resource_group)
         return True
 
     def delete_stack_by_date(self, days_old, resource_group=None):
