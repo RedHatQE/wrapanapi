@@ -9,8 +9,8 @@ from boto import sqs
 from boto.ec2 import elb
 from boto import cloudformation
 from boto.ec2.elb import ELBConnection
-from boto.s3.connection import S3Connection, Location
 import boto3
+from botocore.client import Config
 import tzlocal
 import re
 from wait_for import wait_for
@@ -28,6 +28,7 @@ def _regions(regionmodule, regionname):
         if region.name == regionname:
             return region
     return None
+
 
 class EC2System(MgmtSystemAPIBase):
     """EC2 Management System, powered by boto
@@ -76,7 +77,8 @@ class EC2System(MgmtSystemAPIBase):
         self.elb_connection = ELBConnection(username, password, region=_regions(
             regionmodule=elb, regionname=regionname))
         self.s3_connection = boto3.resource('s3', aws_access_key_id=username,
-                                          aws_secret_access_key=password, region_name=regionname)
+            aws_secret_access_key=password, region_name=regionname, config=Config(
+                signature_version='s3v4'))
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
         self.kwargs = kwargs
@@ -458,11 +460,10 @@ class EC2System(MgmtSystemAPIBase):
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
         bucket = self.s3_connection.Bucket(bucket_name)
         self.logger.info("uploading file {} to bucket: {}".format(file_path, bucket_name))
-        with open(file_path) as f:
+        with open(file_path):
             bucket.upload_file(file_path, file_name)
         self.logger.info("Success: uploading file completed")
         return True
-
 
     def get_all_disassociated_addresses(self):
         return [
