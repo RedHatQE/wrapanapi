@@ -14,6 +14,7 @@ from botocore.client import Config
 import tzlocal
 import re
 from wait_for import wait_for
+import os
 
 from base import MgmtSystemAPIBase
 from exceptions import (
@@ -454,16 +455,27 @@ class EC2System(MgmtSystemAPIBase):
 
     def create_s3_bucket(self, bucket_name):
         self.logger.info("Creating bucket: {}".format(bucket_name))
-        return self.s3_connection.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={
+        try:
+            self.s3_connection.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={
             'LocationConstraint': self.kwargs.get('region')})
+            return True
+        except:
+            self.logger.error("Bucket was not successfully created.")
+            return False
 
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
         bucket = self.s3_connection.Bucket(bucket_name)
         self.logger.info("uploading file {} to bucket: {}".format(file_path, bucket_name))
-        with open(file_path):
-            bucket.upload_file(file_path, file_name)
-        self.logger.info("Success: uploading file completed")
-        return True
+        if os.path.isfile(file_path):
+            try:
+                bucket.upload_file(file_path, file_name)
+                return True
+            except:
+                self.logger.error("File was not successfully uploaded.")
+                return False
+        else:
+            self.logger.error("File to upload does not exist.")
+            return False
 
     def get_all_disassociated_addresses(self):
         return [
