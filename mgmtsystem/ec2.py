@@ -457,10 +457,11 @@ class EC2System(MgmtSystemAPIBase):
         self.logger.info("Creating bucket: {}".format(bucket_name))
         try:
             self.s3_connection.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={
-            'LocationConstraint': self.kwargs.get('region')})
+                'LocationConstraint': self.kwargs.get('region')})
+            self.logger.info("Success: Bucket was successfully created.")
             return True
-        except:
-            self.logger.error("Bucket was not successfully created.")
+        except Exception:
+            self.logger.exception("Error: Bucket was not successfully created.")
             return False
 
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
@@ -469,12 +470,13 @@ class EC2System(MgmtSystemAPIBase):
         if os.path.isfile(file_path):
             try:
                 bucket.upload_file(file_path, file_name)
+                self.logger.info("Success: uploading file completed")
                 return True
-            except:
-                self.logger.error("File was not successfully uploaded.")
+            except Exception:
+                self.logger.exception("Error: File was not successfully uploaded.")
                 return False
         else:
-            self.logger.error("File to upload does not exist.")
+            self.logger.error("Error: File to upload does not exist.")
             return False
 
     def get_all_disassociated_addresses(self):
