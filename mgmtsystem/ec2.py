@@ -9,9 +9,12 @@ from boto import sqs
 from boto.ec2 import elb
 from boto import cloudformation
 from boto.ec2.elb import ELBConnection
+import boto3
+from botocore.client import Config
 import tzlocal
 import re
 from wait_for import wait_for
+import os
 
 from base import MgmtSystemAPIBase
 from exceptions import (
@@ -74,7 +77,9 @@ class EC2System(MgmtSystemAPIBase):
             regionmodule=sqs, regionname=regionname))
         self.elb_connection = ELBConnection(username, password, region=_regions(
             regionmodule=elb, regionname=regionname))
-        self.s3_connection = boto.connect_s3(username, password)
+        self.s3_connection = boto3.resource('s3', aws_access_key_id=username,
+            aws_secret_access_key=password, region_name=regionname, config=Config(
+                signature_version='s3v4'))
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
         self.kwargs = kwargs
@@ -450,16 +455,29 @@ class EC2System(MgmtSystemAPIBase):
 
     def create_s3_bucket(self, bucket_name):
         self.logger.info("Creating bucket: {}".format(bucket_name))
-        self.s3_connection.create_bucket(bucket_name)
+        try:
+            self.s3_connection.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={
+                'LocationConstraint': self.kwargs.get('region')})
+            self.logger.info("Success: Bucket was successfully created.")
+            return True
+        except Exception:
+            self.logger.exception("Error: Bucket was not successfully created.")
+            return False
 
-    def upload_file_to_s3_bucket(self, bucket_name, file_path, key_name):
-        bucket = self.s3_connection.get_bucket(bucket_name)
+    def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
+        bucket = self.s3_connection.Bucket(bucket_name)
         self.logger.info("uploading file {} to bucket: {}".format(file_path, bucket_name))
-        key = boto.s3.key.Key(bucket, key_name)
-        with open(file_path) as f:
-            key.set_contents_from_file(f)
-        self.logger.info("Success: uploading file completed")
-        return True
+        if os.path.isfile(file_path):
+            try:
+                bucket.upload_file(file_path, file_name)
+                self.logger.info("Success: uploading file completed")
+                return True
+            except Exception:
+                self.logger.exception("Error: File was not successfully uploaded.")
+                return False
+        else:
+            self.logger.error("Error: File to upload does not exist.")
+            return False
 
     def get_all_disassociated_addresses(self):
         return [

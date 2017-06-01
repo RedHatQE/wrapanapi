@@ -16,7 +16,7 @@ tzlocal
 wait_for
 websocket_client
 dateparser
-
+boto3
 ###
 # Libraries with compiled components, and their related devel packages
 ###
