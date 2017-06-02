@@ -556,32 +556,32 @@ class EC2System(MgmtSystemAPIBase):
                     }
                 }
             ])
-            image_id = result.get("ImageID")
-            return image_id
+            task_id = result.get("ImportTaskId")
+            return task_id
 
         except Exception:
             self.logger.exception("Import of {} image failed.".format(s3key))
             return False
 
-    def get_import_image_status(self, task_id):
+    def get_import_image_task(self, task_id):
         result = self.ec2_connection.describe_import_image_tasks(ImportTaskIds=[task_id])
-        result_tasks = result.get("ImportImageTasks")
-        result_status = result_tasks[0].get("Status")
-        return result_status
+        result_task = result.get("ImportImageTasks")
+        return result_task[0]
 
-    def is_image_import_completed(self, task_id):
-        result_status = self.get_import_image_status(task_id)
+    def get_image_id_if_import_completed(self, task_id):
+        result = self.get_import_image_task(task_id)
+        result_status = result.get("Status")
         if result_status == 'completed':
-            return True
+            return result.get("ImageId")
         else:
             return False
 
-    def copy_image(self, source_region, source_image, image_name):
-        self.logger.info(" Copying image {} from region {} to region {} with image name {}".format(
-            source_image, source_region, self.kwargs.get('region'), image_name))
+    def copy_image(self, source_region, source_image, image_id):
+        self.logger.info(" Copying image {} from region {} to region {} with image id {}".format(
+            source_image, source_region, self.kwargs.get('region'), image_id))
         try:
             self.ec2_connection.copy_image(SourceRegion=source_region, SourceImageId=source_image,
-                                       Name=image_name)
+                                       Name=image_id)
             return True
 
         except Exception:
