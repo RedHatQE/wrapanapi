@@ -80,6 +80,9 @@ class EC2System(MgmtSystemAPIBase):
         self.s3_connection = boto3.resource('s3', aws_access_key_id=username,
             aws_secret_access_key=password, region_name=regionname, config=Config(
                 signature_version='s3v4'))
+        self.ec2_connection = boto3.client('ec2', aws_access_key_id=username,
+            aws_secret_access_key=password, region_name=regionname,
+                config=Config(signature_version='s3v4'))
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
         self.kwargs = kwargs
@@ -473,7 +476,7 @@ class EC2System(MgmtSystemAPIBase):
                 self.logger.info("Success: uploading file completed")
                 return True
             except Exception:
-                self.logger.exception("Error: File was not successfully uploaded.")
+                self.logger.exception("File upload failed.")
                 return False
         else:
             self.logger.error("Error: File to upload does not exist.")
@@ -537,3 +540,50 @@ class EC2System(MgmtSystemAPIBase):
 
     def get_all_unused_network_interfaces(self):
         return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
+
+    def import_image(self, s3bucket, s3key, format="vhd", description=None):
+        self.logger.info(" Importing image {} from {} bucket with description {} in {} started "
+                         "successfully."
+                         "format".format(s3key, s3bucket, description, format))
+        try:
+            result = self.ec2_connection.import_image(DiskContainers=[
+                {
+                    'Description': description if description is not None else s3key,
+                    'Format': format,
+                    'UserBucket': {
+                        'S3Bucket': s3bucket,
+                        'S3Key': s3key
+                    }
+                }
+            ])
+            image_id = result.get("ImageID")
+            return image_id
+
+        except Exception:
+            self.logger.exception("Import of {} image failed.".format(s3key))
+            return False
+
+    def get_import_image_status(self, task_id):
+        result = self.ec2_connection.describe_import_image_tasks(ImportTaskIds=[task_id])
+        result_tasks = result.get("ImportImageTasks")
+        result_status = result_tasks[0].get("Status")
+        return result_status
+
+    def is_image_import_completed(self, task_id):
+        result_status = self.get_import_image_status(task_id)
+        if result_status == 'completed':
+            return True
+        else:
+            return False
+
+    def copy_image(self, source_region, source_image, image_name):
+        self.logger.info(" Copying image {} from region {} to region {} with image name {}".format(
+            source_image, source_region, self.kwargs.get('region'), image_name))
+        try:
+            self.ec2_connection.copy_image(SourceRegion=source_region, SourceImageId=source_image,
+                                       Name=image_name)
+            return True
+
+        except Exception:
+            self.logger.exception("Copy of {} image failed.".format(source_image))
+            return False
