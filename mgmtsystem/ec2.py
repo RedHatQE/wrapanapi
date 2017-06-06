@@ -542,9 +542,8 @@ class EC2System(MgmtSystemAPIBase):
         return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
 
     def import_image(self, s3bucket, s3key, format="vhd", description=None):
-        self.logger.info(" Importing image {} from {} bucket with description {} in {} started "
-                         "successfully."
-                         "format".format(s3key, s3bucket, description, format))
+        self.logger.info(" Importing image %s from %s bucket with description %s in %s started "
+            "successfully.", s3key, s3bucket, description, format)
         try:
             result = self.ec2_connection.import_image(DiskContainers=[
                 {
@@ -577,8 +576,8 @@ class EC2System(MgmtSystemAPIBase):
             return False
 
     def copy_image(self, source_region, source_image, image_id):
-        self.logger.info(" Copying image {} from region {} to region {} with image id {}".format(
-            source_image, source_region, self.kwargs.get('region'), image_id))
+        self.logger.info(" Copying image %s from region %s to region %s with image id %s",
+            source_image, source_region, self.kwargs.get('region'), image_id)
         try:
             self.ec2_connection.copy_image(SourceRegion=source_region, SourceImageId=source_image,
                                        Name=image_id)
