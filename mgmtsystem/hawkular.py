@@ -2,11 +2,17 @@ from base import MgmtSystemAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 from urllib import quote as urlquote
+from urllib import unquote as urlunquote
+from packaging import version
 from enum import Enum
 from websocket_client import HawkularWebsocketClient
 
 import re
 import sys
+import json
+import gzip
+from StringIO import StringIO
+import base64
 
 """
 Related yaml structures:
@@ -32,6 +38,7 @@ Feed = namedtuple('Feed', ['id', 'path'])
 ResourceType = namedtuple('ResourceType', ['id', 'name', 'path'])
 Resource = namedtuple('Resource', ['id', 'name', 'path'])
 ResourceData = namedtuple('ResourceData', ['name', 'path', 'value'])
+ResourceWithData = namedtuple('Resource', ['id', 'name', 'path', 'data'])
 Server = namedtuple('Server', ['id', 'name', 'path', 'data'])
 ServerGroup = namedtuple('ServerGroup', ['id', 'name', 'path', 'data'])
 Domain = namedtuple('Domain', ['id', 'name', 'path', 'data'])
@@ -181,10 +188,9 @@ class Hawkular(MgmtSystemAPIBase):
                                          entry="hawkular")
         self._alert = HawkularAlert(hostname=hostname, port=port, auth=self.auth,
                                     protocol=protocol, tenant_id=self.tenant_id)
-        self._inventory = HawkularInventory(hostname=hostname, port=port, auth=self.auth,
-                                            protocol=protocol, tenant_id=self.tenant_id)
         self._metric = HawkularMetric(hostname=hostname, port=port, auth=self.auth,
                                       protocol=protocol, tenant_id=self.tenant_id)
+        self._inventory = self._get_inventory(hostname, port, protocol)
         self._operation = HawkularOperation(hostname=self.hostname, port=self.port,
                                             username=self.username, password=self.password,
                                             tenant_id=self.tenant_id,
@@ -214,8 +220,19 @@ class Hawkular(MgmtSystemAPIBase):
     def operation(self):
         return self._operation
 
-    def _check_inv_version(self, version):
-        return version in self._get_inv_json('status')['Implementation-Version']
+    def _get_inventory(self, hostname, port, protocol):
+        cls = HawkularInventoryInMetrics\
+            if self._metrics_older("0.26.1.Final") else HawkularInventory
+        kwargs = dict(
+            hostname=hostname, port=port, auth=self.auth,
+            protocol=protocol, tenant_id=self.tenant_id
+        )
+        return cls(**kwargs)
+
+    def _metrics_older(self, metrics_version):
+        return version.parse(
+            self.metric._get("status")
+            ['Implementation-Version']) >= version.parse(metrics_version)
 
     def info(self):
         raise NotImplementedError('info not implemented.')
@@ -340,6 +357,11 @@ class HawkularService(object):
         return self._api.post_status(path, data,
                                      headers={"Hawkular-Tenant": self.tenant_id,
                                               "Content-Type": "application/json"})
+
+    def _post_raw(self, path, data):
+        """runs POST request and returns result as JSON"""
+        return self._api.raw_post(path, data,
+            headers={"Hawkular-Tenant": self.tenant_id, "Content-Type": "application/json"})
 
 
 class HawkularAlert(HawkularService):
@@ -764,6 +786,400 @@ class HawkularInventory(HawkularService):
             raise KeyError("'feed_id' and 'resource_id' are mandatory fields!")
         r = self._delete('entity/f;{}/r;{}'.format(feed_id, resource_id))
         return r
+
+
+class HawkularInventoryInMetrics(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates hawkular inventory service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/metrics")
+
+    _stats_available = {
+        'num_server': lambda self: len(self.list_server()),
+        'num_domain': lambda self: len(self.list_domain()),
+        'num_deployment': lambda self: len(self.list_server_deployment()),
+        'num_datasource': lambda self: len(self.list_server_datasource()),
+        'num_messaging': lambda self: len(self.list_messaging()),
+    }
+
+    def list_feed(self):
+        """Returns list of feeds"""
+        entities = []
+        entities_j = self._get('strings/tags/module:inventory,feed:*')
+        if entities_j and entities_j['feed']:
+            for entity_j in entities_j['feed']:
+                entities.append(Feed(entity_j, CanonicalPath('/f;{}'.format(entity_j))))
+        return entities
+
+    def list_server(self, feed_id=None):
+        """Returns list of middleware servers.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        servers = self.list_resource(feed_id=feed_id,
+                                    resource_type_id='WildFly Server',
+                                    cls=Server,
+                                    include_data=True)
+        servers.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='Domain WildFly Server',
+            cls=Server,
+            list_children=True,
+            include_data=True))
+        return servers
+
+    def list_domain(self, feed_id=None):
+        """Returns list of middleware domains.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        domains = self.list_resource(feed_id=feed_id,
+                                    resource_type_id='Domain Host',
+                                    cls=Domain,
+                                    list_children=True,
+                                    include_data=True)
+        return domains
+
+    def list_server_group(self, feed_id):
+        """Returns list of middleware domain's server groups.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        server_groups = self.list_resource(feed_id=feed_id,
+                                       resource_type_id='Domain Server Group',
+                                       cls=ServerGroup,
+                                       list_children=True,
+                                       include_data=True)
+        return server_groups
+
+    def list_server_deployment(self, feed_id=None):
+        """Returns list of server deployments.
+
+        Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        deployments = self.list_resource(feed_id=feed_id,
+                                       resource_type_id='Deployment',
+                                       cls=Deployment,
+                                       list_children=True)
+        deployments.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='SubDeployment',
+            cls=Deployment,
+            list_children=True))
+        return deployments
+
+    def list_messaging(self, feed_id=None):
+        """Returns list of massagings (JMS Queue and JMS Topic).
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        messagings = self.list_resource(feed_id=feed_id,
+                                       resource_type_id='JMS Queue',
+                                       cls=Messaging,
+                                       list_children=True)
+        messagings.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='JMS Topic',
+            cls=Messaging,
+            list_children=True))
+        return messagings
+
+    def list_server_datasource(self, feed_id=None):
+        """Returns list of datasources (both XA and non XA).
+
+         Args:
+             feed_id: Feed id of the datasource (optional)
+        """
+        datasources = self.list_resource(feed_id=feed_id,
+                                       resource_type_id='Datasource',
+                                       cls=Datasource,
+                                       list_children=True)
+        datasources.extend(self.list_resource(
+            feed_id=feed_id,
+            resource_type_id='XA Datasource',
+            cls=Datasource,
+            list_children=True))
+        return datasources
+
+    def list_resource(self, resource_type_id, cls, feed_id=None,
+                      list_children=False, include_data=False):
+        """Returns list of resources.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+            resource_type_id: Resource type id
+            cls: the class of resource
+            list_children: whether recursively list child resources (optional)
+            include_data: whether to include data value of resource (optional)
+        """
+        results = []
+        resources = []
+        if not feed_id:
+            for feed in self.list_feed():
+                resources.extend(self._list_resource(feed_id=feed.path.feed_id,
+                                                     resource_type_id=resource_type_id,
+                                                     list_children=list_children,
+                                                     include_data=include_data))
+        else:
+            resources = self._list_resource(feed_id=feed_id, resource_type_id=resource_type_id,
+                                       list_children=list_children,
+                                       include_data=include_data)
+        for resource in resources:
+            kwargs = dict(
+                id=resource.id, name=resource.name, path=resource.path
+            )
+            if include_data:
+                kwargs.update(data=resource.data)
+            results.append(cls(**kwargs))
+        return results
+
+    def _list_resource(self, feed_id, resource_type_id=None,
+                       list_children=False, include_data=False):
+        """Returns list of resources.
+
+         Args:
+            feed_id: Feed id of the resource
+            resource_type_id: Resource type id (optional)
+            list_children: whether recursively list child resources (optional)
+            include_data: whether to include data value of resource (optional)
+        """
+        if not feed_id:
+            raise KeyError("'feed_id' is a mandatory field!")
+        entities = []
+
+        data = {"fromEarliest": "true", "order": "DESC"}
+        if resource_type_id:
+            data["tags"] = "feed:{},type:r,restypes:.*\\|{}\\|.*"\
+                .format(feed_id, resource_type_id)
+        else:
+            data["tags"] = "feed:{},type:r".format(feed_id)
+        result = self._post_raw('strings/raw/query', data=data)
+
+        if result.status_code != 200:
+            return entities
+
+        for entity_j in json.loads(result.content):
+            entity_value = self._get_data_value(entity_j['data'])
+            if entity_value:
+                types_index = self._filter_types_index(entity_value['typesIndex'],
+                                                       resource_type_id)
+                entity_data = entity_value['inventoryStructure']['data']
+                parent_resource_id = entity_data['id']
+                if not list_children:
+                    # return only parent resource
+                    entities.append(ResourceWithData(entity_data['id'], entity_data['name'],
+                                                     self._get_canonical_path(
+                                                         types_index, entity_data['id'],
+                                                         entity_data['resourceTypePath'],
+                                                         parent_resource_id),
+                                                     self._get_child_data_value(
+                                                         include_data,
+                                                         entity_value['inventoryStructure'])))
+                else:
+                    # recursivelly search in child resources
+                    entities.extend(self._list_child_resource(
+                        entity_value['inventoryStructure']['children']['resource'],
+                        include_data,
+                        resource_type_id,
+                        types_index,
+                        parent_resource_id))
+        return entities
+
+    def _list_child_resource(self, children_j, include_data,
+                             resource_type_id,
+                             types_index,
+                             parent_resource_id):
+        """Returns list of child resources by recursively searching.
+
+         Args:
+            children_j: list of children json objects
+            include_data: whether to include data value of resource
+            resource_type_id: Resource type id
+            types_index: list of typesIndex from inventory
+            parent_resource_id: Id of parent resource
+        """
+        entities = []
+        for child_j in children_j:
+            child_data = child_j['data']
+            if child_data['name'].startswith('{} ['.format(resource_type_id)):
+                # chose those children which name starts with provided resource type id
+                entities.append(ResourceWithData(child_data['id'], child_data['name'],
+                                                 self._get_canonical_path(
+                                                     types_index,
+                                                     child_data['id'],
+                                                     child_data['resourceTypePath'],
+                                                     parent_resource_id),
+                                                 self._get_child_data_value(include_data, child_j)))
+            elif 'resource' in child_j['children']:
+                # otherwise recursively search in children resources
+                entities.extend(self._list_child_resource(
+                    child_j['children']['resource'],
+                    include_data,
+                    resource_type_id,
+                    types_index,
+                    parent_resource_id))
+        return entities
+
+    def get_config_data(self, feed_id, resource_id):
+        """Returns the data/configuration information about resource by provided
+
+        Args:
+            feed_id: Feed id of the resource
+            resource_id: Resource id
+         """
+        if not feed_id or not resource_id:
+            raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
+        result = self._post_raw('strings/raw/query',
+            data={"fromEarliest": "true", "order": "DESC",
+                "tags": "feed:{},type:r,id:{}".format(
+                    feed_id, self._get_parent_resource_id(resource_id))})
+        if result.status_code == 200:
+            entity_j = json.loads(result.content)
+            if entity_j:
+                try:
+                    inventory_j = self._get_data_value(
+                        entity_j[0]['data'])['inventoryStructure']
+                    if inventory_j['data']['id'] in self._decode_resource_id(
+                            self._get_child_resource_id(resource_id)):
+                        data_value = self._get_child_data_value(True, inventory_j)
+                        return ResourceData(inventory_j['data']['name'],
+                                            CanonicalPath(
+                                                inventory_j['data']['resourceTypePath']),
+                                            data_value)
+                    for resource_j in inventory_j['children']['resource']:
+                        if resource_j['data']['id'] in self._decode_resource_id(
+                                self._get_resource_id(resource_id)):
+                            data_value = self._get_child_data_value(True, resource_j)
+                            return ResourceData(resource_j['data']['name'],
+                                                CanonicalPath(
+                                                    resource_j['data']['resourceTypePath']),
+                                                data_value)
+                except:
+                    raise KeyError('Resource data not found for resource {} in feed '.format(
+                        resource_id, feed_id))
+        return None
+
+    def _filter_types_index(self, types_index, resource_type_id):
+        """Return values of index type which is belongs to provided resource id
+
+        Args:
+            types_index: all index types of inventory
+            resource_id: Resource id
+        """
+        entities = []
+        if resource_type_id in types_index:
+            entities.extend(types_index[resource_type_id])
+        return entities
+
+    def _get_canonical_path(self, types_index, data_id, resource_type_path, parent_resource_id):
+        """Generated the canonical path by given parameters.
+
+        Args:
+            types_index: index types for particular resource
+            data_id: ['data']['id'] field of child resource
+            resource_type_path: the path of resource type
+            parent_resource_id: id of parent Resource
+        """
+        resource_id = ''
+        data_id = self._encode_resource_id(data_id)
+        for index in types_index:
+            if index.endswith(data_id):
+                """ take full resource_id if it is listed in index types,
+                    otherwise resource itself is the parent resource
+                """
+                resource_id = index
+                break
+        # format resource id to be used in canonical path
+        if resource_id:
+            if resource_id.startswith('r;'):
+                resource_id = '/{}'.format(resource_id)
+            else:
+                resource_id = '/r;{}'.format(resource_id)
+        """
+            build canonical path based on resource type path,
+            parent resource id and appropriate resource id of provided data_id
+        """
+        return CanonicalPath('{}/r;{}{}'.format(resource_type_path,
+                                                parent_resource_id,
+                                                resource_id))
+
+    def _get_child_data_value(self, include_data, child_j):
+        """
+        Returns ['data']['value'] of first sub-child's data entity, if it exists
+        """
+        data_value = None
+        if include_data:
+            try:
+                data_value = child_j['children']['dataEntity'][0]['data']['value']
+            except:
+                raise KeyError('Data value not found for {}'.format(child_j))
+        return data_value
+
+    def _encode_resource_id(self, resource_id):
+        """
+        URL quotes the provided resource id
+        """
+        return urlquote(resource_id, safe='~')
+
+    def _decode_resource_id(self, resource_id):
+        """
+        URL unquotes the provided quoted resource id
+        """
+        return urlunquote(resource_id)
+
+    def _get_parent_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return resource_id[0]
+        else:
+            return resource_id
+
+    def _get_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return "{}".format('/r;'.join(resource_id))
+        else:
+            return resource_id
+
+    def _get_child_resource_id(self, resource_id):
+        if isinstance(resource_id, list):
+            return resource_id[len(resource_id) - 1]
+        else:
+            return resource_id
+
+    def _get_data_value(self, data_node):
+        return self._decompress(self._build_from_chunks(data_node))
+
+    def _build_from_chunks(self, data_node):
+        """
+        Builds the whole data from several chunks.
+        """
+        result = ''
+
+        if not data_node:
+            return ''
+
+        master_data = data_node[0]
+        result = "{}{}".format(result, self._decode(master_data['value']))
+        # if data is not in chunks, then return the first node's value
+        if 'tags' not in master_data or 'chunks' not in master_data['tags']:
+            return result
+
+        # join the values in chunks
+        last_chunk = int(master_data['tags']['chunks'])
+        for chunk_id in range(1, last_chunk):
+            slave_data = data_node[chunk_id]
+            result = "{}{}".format(result, self._decode(slave_data['value']))
+        return result
+
+    def _decode(self, raw):
+        return base64.b64decode(raw)
+
+    def _decompress(self, raw):
+        return json.loads(gzip.GzipFile(fileobj=StringIO(raw)).read())
 
 
 class HawkularMetric(HawkularService):

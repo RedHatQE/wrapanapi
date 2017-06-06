@@ -168,7 +168,7 @@ def test_list_domain(provider):
         assert domain.id
         assert domain.name
         assert domain.path
-        assert domain.data['Local Host Name']
+        assert domain.data
     assert len(domains) > 0, "No domain is listed for any of feeds"
 
 
@@ -182,7 +182,7 @@ def test_list_server_group(provider):
             assert server_group.name
             assert server_group.path
             assert server_group.data
-        assert len(server_group) > 0, "No server group is listed for any of feeds"
+        assert len(server_groups) > 0, "No server group is listed for any of feeds"
 
 
 def test_list_server_deployment(provider):
@@ -286,7 +286,6 @@ def test_path(provider):
     feeds = provider.inventory.list_feed()
     for feed in feeds:
         assert feed.path
-        assert feed.path.tenant_id
         assert feed.path.feed_id
     servers = provider.inventory.list_server()
     for server in servers:
