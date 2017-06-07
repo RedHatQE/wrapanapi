@@ -412,7 +412,7 @@ class AzureSystem(MgmtSystemAPIBase):
             """
             Invoke-Command -scriptblock {{
             Remove-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" `
-            -DeploymentName \"{stack}\" -Force
+            -DeploymentName \"{stack}\"
             }}
             """.format(rg=resource_group or self.resource_group, stack=stack_name))
         return True
@@ -426,7 +426,7 @@ class AzureSystem(MgmtSystemAPIBase):
                 Select DeploymentName
                 foreach ($st_name in $Stack) {{
                 Remove-AzureRmResourceGroupDeployment -ResourceGroupName \"{rg}\" `
-                -Name $st_name.DeploymentName -Force}}
+                -Name $st_name.DeploymentName}}
             """.format(rg=resource_group or self.resource_group, days=days_old))
         return True
 
