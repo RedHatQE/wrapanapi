@@ -417,7 +417,10 @@ class VMWareSystem(MgmtSystemAPIBase):
         pass
 
     def vm_status(self, vm_name):
-        return self._get_vm(vm_name, force=True).runtime.powerState
+        if self.does_vm_exist(vm_name):
+            return self._get_vm(vm_name, force=True).runtime.powerState
+        else:
+            return None
 
     def vm_creation_time(self, vm_name):
         vm = self._get_vm(vm_name)
@@ -445,21 +448,34 @@ class VMWareSystem(MgmtSystemAPIBase):
         return self.vm_status(vm_name) in {self.POWERED_ON, self.POWERED_OFF, self.SUSPENDED}
 
     def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) == self.POWERED_ON
+        status = self.vm_status(vm_name)
+        if status is not None:
+            return status == self.POWERED_ON
+        else:
+            # VM didn't exist
+            return False
 
     def wait_vm_running(self, vm_name, num_sec=240):
         self.logger.info(" Waiting for vSphere VM %s to change status to ON" % vm_name)
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
 
     def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) == self.POWERED_OFF
+        status = self.vm_status(vm_name)
+        if status is not None:
+            return status == self.POWERED_OFF
+        else:
+            return False
 
     def wait_vm_stopped(self, vm_name, num_sec=240):
         self.logger.info(" Waiting for vSphere VM %s to change status to OFF" % vm_name)
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
     def is_vm_suspended(self, vm_name):
-        return self.vm_status(vm_name) == self.SUSPENDED
+        status = self.vm_status(vm_name)
+        if status is not None:
+            return status == self.SUSPENDED
+        else:
+            return False
 
     def wait_vm_suspended(self, vm_name, num_sec=360):
         self.logger.info(" Waiting for vSphere VM %s to change status to SUSPENDED" % vm_name)
