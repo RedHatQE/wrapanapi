@@ -482,6 +482,13 @@ class EC2System(MgmtSystemAPIBase):
             self.logger.error("Error: File to upload does not exist.")
             return False
 
+    def object_exists_in_bucket(self, bucket_name, object_key):
+        bucket = self.s3_connection.Bucket(name=bucket_name)
+        for object in bucket.objects.all():
+            if object.key == object_key:
+                return True
+        return False
+
     def get_all_disassociated_addresses(self):
         return [
             addr for addr
