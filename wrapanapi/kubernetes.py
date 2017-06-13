@@ -1,5 +1,5 @@
 from collections import namedtuple
-from base import ContainerMgmtSystemAPIBase
+from base import ContainerWrapanapiAPIBase
 from rest_client import ContainerClient
 
 """
@@ -38,7 +38,7 @@ ReplicationController = namedtuple(
 Service = namedtuple('Service', ['name', 'project_name', 'portal_ip', 'session_affinity'])
 
 
-class Kubernetes(ContainerMgmtSystemAPIBase):
+class Kubernetes(ContainerWrapanapiAPIBase):
 
     _stats_available = {
         'num_container': lambda self: len(self.list_container()),

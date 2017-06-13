@@ -9,11 +9,11 @@ from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
 from ovirtsdk.xml import params
 from wait_for import wait_for, TimedOutError
 
-from base import MgmtSystemAPIBase, VMInfo
+from base import WrapanapiAPIBase, VMInfo
 from exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
-class RHEVMSystem(MgmtSystemAPIBase):
+class RHEVMSystem(WrapanapiAPIBase):
     """
     Client to RHEVM API
 

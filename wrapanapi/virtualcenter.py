@@ -23,7 +23,7 @@ from psphere.errors import ObjectNotFoundError
 from suds import WebFault
 from wait_for import wait_for, TimedOutError
 
-from base import MgmtSystemAPIBase, VMInfo
+from base import WrapanapiAPIBase, VMInfo
 from exceptions import VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP, HostNotRemoved
 
 
@@ -99,7 +99,7 @@ class _PsphereClient(Client):
         return f
 
 
-class VMWareSystem(MgmtSystemAPIBase):
+class VMWareSystem(WrapanapiAPIBase):
     """Client to Vsphere API
 
     Args:

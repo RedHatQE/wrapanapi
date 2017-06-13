@@ -5,10 +5,10 @@ from urlparse import urlparse
 
 import os
 import pytest
-from mgmtsystem import hawkular
+from wrapanapi import hawkular
 from mock import patch
 from random import sample
-from mgmtsystem.hawkular import CanonicalPath
+from wrapanapi.hawkular import CanonicalPath
 
 
 def fake_urlopen(c_client, url, headers, params):
@@ -66,13 +66,13 @@ def provider():
     the filesystem.
     """
     if not os.getenv('HAWKULAR_HOSTNAME'):
-        patcher = patch('mgmtsystem.rest_client.ContainerClient.get_json', fake_urlopen)
+        patcher = patch('wrapanapi.rest_client.ContainerClient.get_json', fake_urlopen)
         patcher.start()
-        patcher = patch('mgmtsystem.rest_client.ContainerClient.delete_status', fake_urldelete)
+        patcher = patch('wrapanapi.rest_client.ContainerClient.delete_status', fake_urldelete)
         patcher.start()
-        patcher = patch('mgmtsystem.rest_client.ContainerClient.post_status', fake_urlpost)
+        patcher = patch('wrapanapi.rest_client.ContainerClient.post_status', fake_urlpost)
         patcher.start()
-        patcher = patch('mgmtsystem.rest_client.ContainerClient.put_status', fake_urlput)
+        patcher = patch('wrapanapi.rest_client.ContainerClient.put_status', fake_urlput)
         patcher.start()
 
     hwk = hawkular.Hawkular(

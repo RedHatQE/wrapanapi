@@ -2,7 +2,7 @@
 """Unit tests for Openstack client."""
 import pytest
 
-from mgmtsystem import exceptions, openstack
+from wrapanapi import exceptions, openstack
 
 
 @pytest.fixture(scope="function")

@@ -22,7 +22,7 @@ import time
 import tzlocal
 from wait_for import wait_for
 
-from base import MgmtSystemAPIBase, VMInfo
+from base import WrapanapiAPIBase, VMInfo
 from exceptions import (
     NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
     ActionTimedOutError, VMError
@@ -52,7 +52,7 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackSystem(MgmtSystemAPIBase):
+class OpenstackSystem(WrapanapiAPIBase):
     """Openstack management system
 
     Uses novaclient.
@@ -255,7 +255,7 @@ class OpenstackSystem(MgmtSystemAPIBase):
         """Retrieve Instance status.
 
         Raises:
-            :py:class:`mgmtsystem.exceptions.VMError
+            :py:class:`wrapanapi.exceptions.VMError
         """
         inst = self._find_instance_by_name(vm_name)
         if inst.status != "ERROR":

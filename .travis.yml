@@ -4,6 +4,6 @@ python:
 install:
   - "pip install -U pip setuptools"
   - "pip install -Ur requirements-test.txt"
-script: "py.test tests/ -v --cov mgmtsystem"
+script: "py.test tests/ -v --cov wrapanapi"
 after_success:
     - coveralls
