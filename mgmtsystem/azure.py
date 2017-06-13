@@ -175,7 +175,7 @@ class AzureSystem(MgmtSystemAPIBase):
         self.logger.info("Attempting to List Azure VMs")
         azure_data = self.run_script(
             """
-                Get-AzureRmVm -ResourceGroupName \"{rg}\" | convertto-xml -as String)
+                Get-AzureRmVm -ResourceGroupName \"{rg}\" | convertto-xml -as String
             """.format(rg=resource_group or self.resource_group))
         vm_list = etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
             "./Object/Property[@Name='Name']/text()")
