@@ -1,4 +1,4 @@
-from base import MgmtSystemAPIBase
+from base import WrapanapiAPIBase
 from collections import namedtuple
 from rest_client import ContainerClient
 from urllib import quote as urlquote
@@ -158,7 +158,7 @@ class CanonicalPath(object):
         return c_path
 
 
-class Hawkular(MgmtSystemAPIBase):
+class Hawkular(WrapanapiAPIBase):
     """Hawkular management system
 
     Hawkular REST API method calls.

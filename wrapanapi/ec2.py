@@ -16,7 +16,7 @@ import re
 from wait_for import wait_for
 import os
 
-from base import MgmtSystemAPIBase
+from base import WrapanapiAPIBase
 from exceptions import (
     ActionTimedOutError, ActionNotSupported,
     MultipleInstancesError, VMInstanceNotFound,
@@ -31,7 +31,7 @@ def _regions(regionmodule, regionname):
     return None
 
 
-class EC2System(MgmtSystemAPIBase):
+class EC2System(WrapanapiAPIBase):
     """EC2 Management System, powered by boto
 
     Wraps the EC2 API and mimics the behavior of other implementors of

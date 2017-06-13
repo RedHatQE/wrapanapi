@@ -14,7 +14,7 @@ from wait_for import wait_for, TimedOutError
 VMInfo = namedtuple("VMInfo", ["uuid", "name", "power_state", "ip"])
 
 
-class MgmtSystemAPIBase(object):
+class WrapanapiAPIBase(object):
     """Base interface class for Management Systems
 
     Interface notes:
@@ -28,7 +28,7 @@ class MgmtSystemAPIBase(object):
     __metaclass__ = ABCMeta
     STEADY_WAIT_MINS = 3
 
-    # Flags to indicate whether or not this MgmtSystem can suspend/pause,
+    # Flags to indicate whether or not this Wrapanapi can suspend/pause,
     can_suspend = True
     can_pause = False
 
@@ -371,7 +371,7 @@ class MgmtSystemAPIBase(object):
             'Provider {} does not implement usage_and_quota'.format(type(self).__name__))
 
 
-class ContainerMgmtSystemAPIBase(MgmtSystemAPIBase):
+class ContainerWrapanapiAPIBase(WrapanapiAPIBase):
     """Base interface class for Container Management Systems
 
     Interface notes:

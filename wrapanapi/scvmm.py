@@ -12,10 +12,10 @@ from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
 
-from base import MgmtSystemAPIBase, VMInfo
+from base import WrapanapiAPIBase, VMInfo
 
 
-class SCVMMSystem(MgmtSystemAPIBase):
+class SCVMMSystem(WrapanapiAPIBase):
     """This class is used to connect to M$ SCVMM
 
     It still has some drawback, the main one is that pywinrm does not support domains with simple

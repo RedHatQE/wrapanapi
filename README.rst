@@ -14,12 +14,12 @@
    :align: left
    :target: https://travis-ci.org/ManageIQ/wrapanapi
 
-mgmtsystem
+wrapanapi
 ==========
 
 Introduction
 ------------
-mgmtsystem is a simple virtualization client with support (in varying degrees) for the following
+wrapanapi is a simple virtualization client with support (in varying degrees) for the following
 
 * Red Hat Enterprize Virtualization (RHEV)
 * Red Hat Openstack (RHOS)
@@ -48,7 +48,7 @@ Each management system is invoked usually with a hostname and some credentials
 
 .. code-block:: python
 
-  from mgmtsystem.virtualcenter import VMWareSystem
+  from wrapanapi.virtualcenter import VMWareSystem
   
   system = VMWareSystem(hostname='10.0.0.0', username="root", password="password")
   system.list_vm()
@@ -60,9 +60,9 @@ it doesn't support. This behaviour may change in the future as more and more div
 
 .. code-block:: python
 
-  from base import MgmtSystemAPIBase
+  from base import WrapanapiAPIBase
 
-  class RHEVMSystem(MgmtSystemAPIBase):
+  class RHEVMSystem(WrapanapiAPIBase):
   
     _stats_available = {
       'num_vm': lambda self: self.api.get_summary().get_vms().total,

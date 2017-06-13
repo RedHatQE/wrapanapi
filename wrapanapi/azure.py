@@ -16,10 +16,10 @@ from exceptions import VMInstanceNotFound, ActionTimedOutError
 from lxml import etree
 from wait_for import wait_for
 
-from base import MgmtSystemAPIBase
+from base import WrapanapiAPIBase
 
 
-class AzureSystem(MgmtSystemAPIBase):
+class AzureSystem(WrapanapiAPIBase):
     """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
     """
     STATE_RUNNING = "VM running"

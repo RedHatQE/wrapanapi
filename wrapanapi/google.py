@@ -7,7 +7,7 @@ Used to communicate with providers without using CFME facilities
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
 from apiclient import errors
-from base import MgmtSystemAPIBase, VMInfo
+from base import WrapanapiAPIBase, VMInfo
 from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
     ForwardingRuleNotFound
 from json import dumps as json_dumps
@@ -34,7 +34,7 @@ IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'u
                 'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
 
-class GoogleCloudSystem(MgmtSystemAPIBase):
+class GoogleCloudSystem(WrapanapiAPIBase):
     """
     Client to Google Cloud Platform API
 
