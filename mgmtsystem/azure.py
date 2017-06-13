@@ -166,11 +166,18 @@ class AzureSystem(MgmtSystemAPIBase):
         vhd_name = os.path.split(urlparse.urlparse(vhd_endpoint).path)[1]
         self.remove_blob_image(vhd_name)
 
-    def list_vm(self):
+    def list_vm(self, resource_group=None):
+        """Returns a list of VM Names inside a particular resource group.
+
+        Args:
+            resource_group - Uses value if passed, otherwise uses default.
+        """
         self.logger.info("Attempting to List Azure VMs")
-        azure_data = self.run_script("Get-AzureRmVm | convertto-xml -as String")
-        data = self.clean_azure_xml(azure_data)
-        vm_list = etree.parse(StringIO(data)).getroot().xpath(
+        azure_data = self.run_script(
+            """
+                Get-AzureRmVm -ResourceGroupName \"{rg}\" | convertto-xml -as String
+            """.format(rg=resource_group or self.resource_group))
+        vm_list = etree.parse(StringIO(self.clean_azure_xml(azure_data))).getroot().xpath(
             "./Object/Property[@Name='Name']/text()")
         return vm_list
 
