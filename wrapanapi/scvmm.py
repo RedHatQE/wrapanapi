@@ -126,7 +126,7 @@ class SCVMMSystem(WrapanapiAPIBase):
         finally:
             script = """
                 $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-                Remove-SCVirtualMachine -VM $VM
+                Remove-SCVirtualMachine -VM $VM -Force
             """.format(vm_name=vm_name)
             self.logger.info("Deleting SCVMM VM {}".format(vm_name))
             self.run_script(script)
