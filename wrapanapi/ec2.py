@@ -637,9 +637,11 @@ class EC2System(WrapanapiAPIBase):
         return self.sns_connection.list_topics()
 
     def get_arn_if_topic_exists(self, topic_name):
-        topics =  self.list_topics()
-        topic_found = [ t.get('TopicArn') for t in topics.get('Topics') if t.get('TopicArn').split(':')[-1] ==
-                         topic_name]
+        topics = self.list_topics()
+        topic_found = [
+            t.get('TopicArn')
+            for t in topics.get('Topics')
+            if t.get('TopicArn').split(':')[-1] == topic_name]
         if topic_found:
             return topic_found[0]
         else:
@@ -654,4 +656,3 @@ class EC2System(WrapanapiAPIBase):
         except Exception:
             self.logger.exception("Delete of {} topic failed.".format(arn))
             return False
-
