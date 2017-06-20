@@ -85,6 +85,7 @@ class EC2System(WrapanapiAPIBase):
                 config=Config(signature_version='s3v4'))
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
+        self.sns_connection = boto3.client('sns')
         self.kwargs = kwargs
 
     def disconnect(self):
@@ -487,6 +488,19 @@ class EC2System(WrapanapiAPIBase):
         objects = [o for o in bucket.objects.all() if o.key == object_key]
         return any(objects)
 
+
+    def delete_s3_bucket(self, bucket_name):
+        """TODO: Force delete - delete all objects and then bucket"""
+        bucket = self.s3_connection.Bucket(bucket_name)
+        self.logger.info("Trying to delete bucket {}".format(bucket_name))
+        try:
+            bucket.delete()
+            self.logger.info("Success: bucket {} was deleted.".format(bucket_name))
+            return True
+        except Exception:
+            self.logger.exception("Bucket {} deletion failed".format(bucket_name))
+            return False
+
     def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
         """Delete each of the given object_keys from the given bucket"""
         if not isinstance(object_keys, list):
@@ -617,5 +631,27 @@ class EC2System(WrapanapiAPIBase):
             return True
         except Exception:
             self.logger.exception('Deregister of image_id {} failed'.format(image_id))
+            return False
+
+    def list_topics(self):
+        return self.sns_connection.list_topics()
+
+    def get_arn_if_topic_exists(self, topic_name):
+        topics =  self.list_topics()
+        topic_found = [ t.get('TopicArn') for t in topics.get('Topics') if t.get('TopicArn').split(':')[-1] ==
+                         topic_name]
+        if topic_found:
+            return topic_found[0]
+        else:
+            return False
+
+    def delete_topic(self, arn):
+        self.logger.info(" Deleting SNS Topic {} ".format(arn))
+        try:
+            self.sns_connection.delete_topic(TopicArn=arn)
+            return True
+
+        except Exception:
+            self.logger.exception("Delete of {} topic failed.".format(arn))
             return False
 
