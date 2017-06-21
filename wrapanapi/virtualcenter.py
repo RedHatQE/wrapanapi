@@ -10,93 +10,90 @@ try:
 except AttributeError:
     pass
 
+import operator
 import re
+import time
 from datetime import datetime, timedelta
 from distutils.version import LooseVersion
 from functools import partial
-import operator
 
-import time
-from psphere import managedobjects as mobs
-from psphere.client import Client
-from psphere.errors import ObjectNotFoundError
-from suds import WebFault
+import six
 from wait_for import wait_for, TimedOutError
 
 from base import WrapanapiAPIBase, VMInfo
-from exceptions import VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP, HostNotRemoved
+from exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
+    HostNotRemoved, VMInstanceNotFound)
 
+from pyVmomi import vim, vmodl
+from pyVim.connect import SmartConnect, Disconnect
 
-class _PsphereClient(Client):
-
-    def __init__(self, *args, **kwargs):
-        self._cached_retry = dict()
-        self.logger = kwargs['logger']
-        kwargs.pop('logger')
-        super(_PsphereClient, self).__init__(*args, **kwargs)
-
-    def get_search_filter_spec(self, *args, **kwargs):
-        # A datastore traversal spec is missing from this method in psphere.
-        # psav has opened a PR to add it, but until it gets merged we'll need to come behind
-        # psphere and add it in just like his PR does
-        # https://github.com/jkinred/psphere/pull/18/files
-        pfs = super(_PsphereClient, self).get_search_filter_spec(*args, **kwargs)
-        select_sets = pfs.objectSet[0].selectSet
-        missing_ss = 'datacenter_datastore_traversal_spec'
-        ss_names = [ss.name for ss in select_sets]
-
-        if missing_ss not in ss_names:
-            self.logger.trace('Injecting %s into psphere search filter spec', missing_ss)
-            # pull out the folder traversal spec traversal specs
-            fts_ts = pfs.objectSet[0].selectSet[0]
-            # and get the select set from the traversal spec
-            fts_ss = fts_ts.selectSet[0]
-
-            # add ds selection spec to folder traversal spec
-            dsss = self.create('SelectionSpec', name=missing_ss)
-            fts_ts.selectSet.append(dsss)
-
-            # add ds traversal spec to search filter object set select spec
-            dsts = self.create('TraversalSpec')
-            dsts.name = 'datacenter_datastore_traversal_spec'
-            dsts.type = 'Datacenter'
-            dsts.path = 'datastoreFolder'
-            dsts.selectSet = [fts_ss]
-            select_sets.append(dsts)
-        else:
-            self.logger.warning(
-                "%s already in psphere search filer spec, not adding it", missing_ss)
-
-        return pfs
-
-    def __getattribute__(self, attr):
-        # fetch the attribute using parent class to avoid recursion
-        res = super(_PsphereClient, self).__getattribute__(attr)
-        # any callable (except 'login') is protected against unexpected logout
-        if callable(res) and attr not in ('login', '_login_retry_wrapper'):
-            if attr not in self._cached_retry:
-                self._cached_retry[attr] = self._login_retry_wrapper(res)
-            return self._cached_retry[attr]
-        # don't mess with non-callables - just return them
-        return res
-
-    def _login_retry_wrapper(self, o):
-        # tries to log in on failure
-        def f(*args, **kwargs):
-            try:
-                return o(*args, **kwargs)
-            except ObjectNotFoundError:
-                try:
-                    self.logout()
-                except WebFault:
-                    # Server raíses the following when we try to logout with an old session
-                    # WebFault: Server raised fault: 'The session is not authenticated.'
-                    pass
-                self.logger.debug("{} disconnected (psphere api); logging back in and trying again"
-                    .format(self.server))
-                self.login()
-                return o(*args, **kwargs)
-        return f
+SELECTION_SPECS = [
+    'resource_pool_traversal_spec',
+    'resource_pool_vm_traversal_spec',
+    'folder_traversal_spec',
+    'datacenter_host_traversal_spec',
+    'datacenter_vm_traversal_spec',
+    'compute_resource_rp_traversal_spec',
+    'compute_resource_host_traversal_spec',
+    'host_vm_traversal_spec',
+    'datacenter_datastore_traversal_spec'
+]
+TRAVERSAL_SPECS = [
+    {
+        'name': 'resource_pool_traversal_spec',
+        'type': vim.ResourcePool,
+        'path': 'resourcePool',
+        'select_indices': [0, 1]
+    },
+    {
+        'name': 'resource_pool_vm_traversal_spec',
+        'type': vim.ResourcePool,
+        'path': 'vm',
+        'select_indices': []
+    },
+    {
+        'name': 'compute_resource_rp_traversal_spec',
+        'type': vim.ComputeResource,
+        'path': 'resourcePool',
+        'select_indices': [0, 1]
+    },
+    {
+        'name': 'compute_resource_host_traversal_spec',
+        'type': vim.ComputeResource,
+        'path': 'host',
+        'select_indices': []
+    },
+    {
+        'name': 'datacenter_host_traversal_spec',
+        'type': vim.Datacenter,
+        'path': 'hostFolder',
+        'select_indices': [2]
+    },
+    {
+        'name': 'datacenter_datastore_traversal_spec',
+        'type': vim.Datacenter,
+        'path': 'datastoreFolder',
+        'select_indices': [2]
+    },
+    {
+        'name': 'datacenter_vm_traversal_spec',
+        'type': vim.Datacenter,
+        'path': 'vmFolder',
+        'select_indices': [2]
+    },
+    {
+        'name': 'host_vm_traversal_spec',
+        'type': vim.HostSystem,
+        'path': 'vm',
+        'select_indices': [2]
+    },
+    {
+        'name': 'folder_traversal_spec',
+        'type': vim.Folder,
+        'path': 'childEntity',
+        'select_indices': [2, 3, 4, 5, 6, 7, 1, 8]
+    }
+]
 
 
 class VMWareSystem(WrapanapiAPIBase):
@@ -131,58 +128,143 @@ class VMWareSystem(WrapanapiAPIBase):
         self.hostname = hostname
         self.username = username
         self.password = password
-        self._api = None
+        self._service_instance = None
+        self._content = None
         self._vm_cache = {}
         self.kwargs = kwargs
 
+    def __del__(self):
+        """Disconnect from the API when the object is deleted"""
+        # This isn't the best place for this, but this class doesn't know when it is no longer in
+        # use, and we need to do some sort of disconnect based on the pyVmomi documentation.
+        if self._service_instance:
+            Disconnect(self._service_instance)
+
     @property
-    def api(self):
-        if not self._api:
-            self._api = _PsphereClient(self.hostname, self.username, self.password,
-                logger=self.logger)
-        return self._api
+    def service_instance(self):
+        """An instance of the service"""
+        if not self._service_instance:
+            self._service_instance = SmartConnect(host=self.hostname, user=self.username,
+                                                  pwd=self.password)
+        return self._service_instance
+
+    @property
+    def content(self):
+        """The content node"""
+        if not self._content:
+            self._content = self.service_instance.RetrieveContent()
+        return self._content
 
     @property
     def version(self):
-        return LooseVersion(self.api.si.content.about.version)
+        """The product version"""
+        return LooseVersion(self.content.about.version)
 
     @property
     def default_resource_pool(self):
-        return self.kwargs.get("default_resource_pool", None)
+        return self.kwargs.get("default_resource_pool")
+
+    def _get_obj_list(self, vimtype, folder=None):
+        """Get a list of objects of type ``vimtype``"""
+        folder = folder or self.content.rootFolder
+        container = self.content.viewManager.CreateContainerView(folder, [vimtype], True)
+        return container.view
+
+    def _get_obj(self, vimtype, name, folder=None):
+        """Get an object of type ``vimtype`` with name ``name`` from Vsphere"""
+        obj = None
+        for item in self._get_obj_list(vimtype, folder):
+            if item.name == name:
+                obj = item
+                break
+        return obj
+
+    def _build_filter_spec(self, begin_entity, property_spec):
+        """Build a search spec for full inventory traversal, adapted from psphere"""
+        # Create selection specs
+        selection_specs = [vmodl.query.PropertyCollector.SelectionSpec(name=ss)
+                           for ss in SELECTION_SPECS]
+        # Create traversal specs
+        traversal_specs = []
+        for spec_values in TRAVERSAL_SPECS:
+            spec = vmodl.query.PropertyCollector.TraversalSpec()
+            spec.name = spec_values['name']
+            spec.type = spec_values['type']
+            spec.path = spec_values['path']
+            if spec_values.get('select_indices'):
+                spec.selectSet = [selection_specs[i] for i in spec_values['select_indices']]
+            traversal_specs.append(spec)
+        # Create an object spec
+        obj_spec = vmodl.query.PropertyCollector.ObjectSpec()
+        obj_spec.obj = begin_entity
+        obj_spec.selectSet = traversal_specs
+        # Create a filter spec
+        filter_spec = vmodl.query.PropertyCollector.FilterSpec()
+        filter_spec.propSet = [property_spec]
+        filter_spec.objectSet = [obj_spec]
+        return filter_spec
+
+    def _get_updated_obj(self, obj):
+        """
+        Build a filter spec based on ``obj`` and return the updated object.
+
+        :param obj: The managed object to update
+        """
+        # Set up the filter specs
+        property_spec = vmodl.query.PropertyCollector.PropertySpec(type=type(obj), all=True)
+        object_spec = vmodl.query.PropertyCollector.ObjectSpec(obj=obj)
+        filter_spec = vmodl.query.PropertyCollector.FilterSpec()
+        filter_spec.propSet = [property_spec]
+        filter_spec.objectSet = [object_spec]
+        # Get updates based on the filter
+        property_collector = self.content.propertyCollector
+        filter_ = property_collector.CreateFilter(filter_spec, True)
+        update = property_collector.WaitForUpdates(None)
+        if not update or not update.filterSet or not update.filterSet[0]:
+            self.logger.warning('No object found when updating %s', str(obj))
+            return
+        if filter_:
+            filter_.Destroy()
+        return update.filterSet[0].objectSet[0].obj
 
     def _get_vm(self, vm_name, force=False):
-        """ Returns a vm from the VI object.
+        """Returns a vm from the VI object.
 
-        Args:
-            vm_name: The name of the VM.
-            force: Ignore the cache when updating
-
-        Returns: a psphere object.
+        :param vm_name: The name of the VM
+        :param force: Ignore the cache when updating
+        :returns: a pyVmomi object.
         """
         if vm_name not in self._vm_cache or force:
-            self._vm_cache[vm_name] = mobs.VirtualMachine.get(self.api, name=vm_name)
+            vm = self._get_obj(vim.VirtualMachine, vm_name)
+            if not vm:
+                raise VMInstanceNotFound(vm_name)
+            self._vm_cache[vm_name] = vm
         else:
-            self._vm_cache[vm_name].update()
-
+            self._vm_cache[vm_name] = self._get_updated_obj(self._vm_cache[vm_name])
         return self._vm_cache[vm_name]
 
     def _get_resource_pool(self, resource_pool_name=None):
-        """ Returns a resource pool MOR for a specified name.
+        """ Returns a resource pool managed object for a specified name.
 
-        Args:
-            resource_pool_name: The name of the resource pool. If None, first one will be picked.
-        Returns: The MOR of the resource pool.
+        :param resource_pool_name: The name of the resource pool. If None, first one will be picked.
+        :returns: The managed object of the resource pool.
         """
         if resource_pool_name is not None:
-            return mobs.ResourcePool.get(self.api, name=resource_pool_name)
+            return self._get_obj(vim.ResourcePool, resource_pool_name)
         elif self.default_resource_pool is not None:
-            return mobs.ResourcePool.get(self.api, name=self.default_resource_pool)
+            return self._get_obj(vim.ResourcePool, self.default_resource_pool)
         else:
-            return mobs.ResourcePool.all(self.api)[0]
+            return self._get_obj_list(vim.ResourcePool)[0]
 
-    @staticmethod
-    def _task_wait(task):
-        task.update()
+    def _task_wait(self, task):
+        """
+        Update a task and check its state. If the task state is not ``queued``, ``running`` or
+        ``None``, then return the state. Otherwise return None.
+
+        :param task: The task whose state is being monitored
+        :returns: Task state
+        """
+        task = self._get_updated_obj(task)
         if task.info.state not in ['queued', 'running', None]:
             return task.info.state
 
@@ -196,7 +278,7 @@ class VMWareSystem(WrapanapiAPIBase):
         try:
             self._get_vm(name)
             return True
-        except Exception:
+        except VMInstanceNotFound:
             return False
 
     def current_ip_address(self, vm_name):
@@ -237,15 +319,15 @@ class VMWareSystem(WrapanapiAPIBase):
             get_template: A boolean describing if it should return template names also.
         Returns: A list of VMs.
         """
-        # Use some psphere internals to get vm propsets back directly with requested properties,
+        # Use some pyVmomi internals to get vm propsets back directly with requested properties,
         # so we skip the network overhead of returning full managed objects
-        property_spec = self.api.create('PropertySpec')
+        property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = ['name', 'config.template', 'config.uuid',
             'runtime.connectionState']
-        property_spec.type = 'VirtualMachine'
-        pfs = self.api.get_search_filter_spec(self.api.si.content.rootFolder, property_spec)
-        object_contents = self.api.si.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        property_spec.type = vim.VirtualMachine
+        pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
+        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
 
         # Ensure get_template is either True or False to match the config.template property
         get_template = bool(get_template)
@@ -259,19 +341,19 @@ class VMWareSystem(WrapanapiAPIBase):
             # content. So we just pull the value straight out of the cache.
             vm_props = {p.name: p.val for p in object_content.propSet}
             if vm_props.get('config.template') == get_template:
-                if (vm_props.get('runtime.connectionState') == "inaccessible"
-                        and inaccessible) or vm_props.get(
+                if (vm_props.get('runtime.connectionState') == "inaccessible" and
+                        inaccessible) or vm_props.get(
                             'runtime.connectionState') != "inaccessible":
                     obj_list.append(vm_props['name'])
         return obj_list
 
     def all_vms(self):
-        property_spec = self.api.create('PropertySpec')
+        property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = ['name', 'config.template']
         property_spec.type = 'VirtualMachine'
-        pfs = self.api.get_search_filter_spec(self.api.si.content.rootFolder, property_spec)
-        object_contents = self.api.si.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
+        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
         result = []
         for vm in object_contents:
             vm_props = {p.name: p.val for p in vm.propSet}
@@ -308,7 +390,7 @@ class VMWareSystem(WrapanapiAPIBase):
         Args:
             ip: The ip address of the vm.
         Returns: The vm name for the corresponding IP."""
-        vms = self.api.si.content.searchIndex.FindAllByIp(ip=ip, vmSearch=True)
+        vms = self.content.searchIndex.FindAllByIp(ip=ip, vmSearch=True)
         # As vsphere remembers the last IP a vm had, when we search we get all
         # of them. Consequently we need to store them all in a dict and then sort
         # them to find out which one has the latest boot time. I am going out on
@@ -372,8 +454,8 @@ class VMWareSystem(WrapanapiAPIBase):
         return status == 'success'
 
     def is_host_connected(self, host_name):
-        host = mobs.HostSystem.get(self.api, name=host_name)
-        return True if host.summary.runtime.connectionState == "connected" else False
+        host = self._get_obj(vim.HostSystem, name=host_name)
+        return host.summary.runtime.connectionState == "connected"
 
     def create_vm(self, vm_name):
         raise NotImplementedError('This function has not yet been implemented.')
@@ -392,23 +474,25 @@ class VMWareSystem(WrapanapiAPIBase):
         raise NotImplementedError('This function is not supported on this platform.')
 
     def list_host(self):
-        return [str(h.name) for h in mobs.HostSystem.all(self.api)]
+        return [str(h.name) for h in self._get_obj_list(vim.HostSystem)]
 
     def list_host_datastore_url(self, host_name):
-        host = mobs.HostSystem.get(self.api, name=host_name)
+        host = self._get_obj(vim.HostSystem, name=host_name)
         return [str(d.summary.url) for d in host.datastore]
 
     def list_datastore(self):
-        return [str(h.name) for h in mobs.Datastore.all(self.api) if h.host]
+        return [str(h.name) for h in self._get_obj_list(vim.Datastore) if h.host]
 
     def list_cluster(self):
-        return [str(h.name) for h in mobs.ClusterComputeResource.all(self.api)]
+        return [str(h.name) for h in self._get_obj_list(vim.ClusterComputeResource)]
 
     def list_resource_pools(self):
-        return [str(h.name) for h in mobs.ResourcePool.all(self.api)]
+        return [str(h.name) for h in self._get_obj_list(vim.ResourcePool)]
 
     def info(self):
-        return '%s %s' % (self.api.get_server_type(), self.api.get_api_version())
+        # NOTE: Can't find these two methods in either psphere or suds
+        # return '{} {}'.format(self.api.get_server_type(), self.api.get_api_version())
+        return '{} {}'.format(self.content.about.apiType, self.content.about.apiVersion)
 
     def connect(self):
         pass
@@ -421,7 +505,7 @@ class VMWareSystem(WrapanapiAPIBase):
 
     def vm_creation_time(self, vm_name):
         vm = self._get_vm(vm_name)
-        vcenter_time_now = self.api.si.CurrentTime()
+        vcenter_time_now = self.service_instance.CurrentTime()
         vm_uptime = vm.summary.quickStats.uptimeSeconds
         vm_delta = timedelta(seconds=int(vm_uptime))
         return vcenter_time_now - vm_delta
@@ -482,7 +566,7 @@ class VMWareSystem(WrapanapiAPIBase):
         # Cycle until the new named vm is found
         # That must happen or the error state can come up too
         while not self.does_vm_exist(new_vm_name):
-            task.update()
+            task = self._get_updated_obj(task)
             if task.info.state == "error":
                 return vm_name  # Old vm name if error
             time.sleep(0.5)
@@ -498,9 +582,9 @@ class VMWareSystem(WrapanapiAPIBase):
     def _pick_datastore(self, allowed_datastores):
         # Pick a datastore by space
         possible_datastores = [
-            ds for ds in mobs.Datastore.all(self.api)
-            if ds.name in allowed_datastores and ds.summary.accessible
-            and ds.summary.multipleHostAccess and ds.overallStatus != "red"]
+            ds for ds in self._get_obj_list(vim.Datastore)
+            if ds.name in allowed_datastores and ds.summary.accessible and
+            ds.summary.multipleHostAccess and ds.overallStatus != "red"]
         possible_datastores.sort(
             key=lambda ds: float(ds.summary.freeSpace) / float(ds.summary.capacity),
             reverse=True)
@@ -512,23 +596,23 @@ class VMWareSystem(WrapanapiAPIBase):
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         try:
-            if mobs.VirtualMachine.get(self.api, name=destination).name == destination:
+            if self._get_obj(vim.VirtualMachine, name=destination).name == destination:
                 raise Exception("VM already present!")
-        except ObjectNotFoundError:
+        except VMInstanceNotFound:
             pass
 
         if progress_callback is None:
             progress_callback = partial(self._progress_log_callback, self.logger,
                 source, destination)
 
-        source_template = mobs.VirtualMachine.get(self.api, name=source)
+        source_template = self._get_obj(vim.VirtualMachine, name=source)
 
-        vm_clone_spec = self.api.create("VirtualMachineCloneSpec")
-        vm_reloc_spec = self.api.create("VirtualMachineRelocateSpec")
+        vm_clone_spec = vim.VirtualMachineCloneSpec()
+        vm_reloc_spec = vim.VirtualMachineRelocateSpec()
         # DATASTORE
-        if isinstance(datastore, basestring):
-            vm_reloc_spec.datastore = mobs.Datastore.get(self.api, name=datastore)
-        elif isinstance(datastore, mobs.Datastore):
+        if isinstance(datastore, six.string_types):
+            vm_reloc_spec.datastore = self._get_obj(vim.Datastore, name=datastore)
+        elif isinstance(datastore, vim.Datastore):
             vm_reloc_spec.datastore = datastore
         elif datastore is None:
             if allowed_datastores is not None:
@@ -546,7 +630,7 @@ class VMWareSystem(WrapanapiAPIBase):
         progress_callback("Picked datastore `{}`".format(vm_reloc_spec.datastore.name))
 
         # RESOURCE POOL
-        if isinstance(resourcepool, mobs.ResourcePool):
+        if isinstance(resourcepool, vim.ResourcePool):
             vm_reloc_spec.pool = resourcepool
         else:
             vm_reloc_spec.pool = self._get_resource_pool(resourcepool)
@@ -554,9 +638,9 @@ class VMWareSystem(WrapanapiAPIBase):
 
         vm_reloc_spec.host = None
         if sparse:
-            vm_reloc_spec.transform = self.api.create('VirtualMachineRelocateTransformation').sparse
+            vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().sparse
         else:
-            vm_reloc_spec.transform = self.api.create('VirtualMachineRelocateTransformation').flat
+            vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().flat
 
         vm_clone_spec.powerOn = power_on
         vm_clone_spec.template = template
@@ -572,30 +656,31 @@ class VMWareSystem(WrapanapiAPIBase):
             folder = source_template.parent.parent.vmParent
         except AttributeError:
             folder = source_template.parent
-
         progress_callback("Picked folder `{}`".format(folder.name))
 
         task = source_template.CloneVM_Task(folder=folder, name=destination, spec=vm_clone_spec)
 
-        def _check():
+        def _check(store=[task]):
             try:
-                progress_callback("{}/{}%".format(task.info.state, task.info.progress))
+                progress_callback("{}/{}%".format(store[0].info.state, store[0].info.progress))
             except AttributeError:
                 pass
-            return task.info.state not in {"queued", "running"}
+            if store[0].info.state not in {"queued", "running"}:
+                return True
+            else:
+                store[0] = self._get_updated_obj(store[0])
+                return False
 
-        wait_for(
-            _check,
-            fail_func=task.update, num_sec=provision_timeout, delay=4
-        )
+        wait_for(_check, num_sec=provision_timeout, delay=4)
+
         if task.info.state != 'success':
-            self.logger.error('Clone VM failed: {}'.format(task.info.error.localizedMessage))
+            self.logger.error('Clone VM failed: %s', str(task.info.error.localizedMessage))
             raise VMInstanceNotCloned(source)
         else:
             return destination
 
     def mark_as_template(self, vm_name, **kwargs):
-        mobs.VirtualMachine.get(self.api, name=vm_name).MarkAsTemplate()  # Returns None
+        self._get_obj(vim.VirtualMachine, name=vm_name).MarkAsTemplate()  # Returns None
 
     def deploy_template(self, template, **kwargs):
         kwargs["power_on"] = kwargs.pop("power_on", True)
@@ -610,7 +695,7 @@ class VMWareSystem(WrapanapiAPIBase):
         return destination
 
     def remove_host_from_cluster(self, host_name):
-        host = mobs.HostSystem.get(self.api, name=host_name)
+        host = self._get_obj(vim.HostSystem, name=host_name)
         task = host.DisconnectHost_Task()
         status, t = wait_for(self._task_wait, [task])
 
@@ -635,16 +720,16 @@ class VMWareSystem(WrapanapiAPIBase):
         installed_cpu = 0
         used_ram = 0
         used_cpu = 0
-        for host in mobs.HostSystem.all(self.api):
+        for host in self._get_obj_list(vim.HostSystem):
             installed_ram += host.systemResources.config.memoryAllocation.limit
             installed_cpu += host.summary.hardware.numCpuCores
 
-        property_spec = self.api.create('PropertySpec')
+        property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = ['name', 'config.template']
         property_spec.type = 'VirtualMachine'
-        pfs = self.api.get_search_filter_spec(self.api.si.content.rootFolder, property_spec)
-        object_contents = self.api.si.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
+        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
         for vm in object_contents:
             vm_props = {p.name: p.val for p in vm.propSet}
             if vm_props.get('config.template'):

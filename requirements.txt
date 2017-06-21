@@ -3,7 +3,7 @@ enum34
 fauxfactory>=2.0.7
 google-api-python-client
 ovirt-engine-sdk-python<4.0.0
-psphere
+pyvmomi>=6.5.0.2017.5.post1
 python-cinderclient
 python-ironicclient
 python-keystoneclient
