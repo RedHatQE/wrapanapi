@@ -221,7 +221,7 @@ class VMWareSystem(WrapanapiAPIBase):
         filter_ = property_collector.CreateFilter(filter_spec, True)
         update = property_collector.WaitForUpdates(None)
         if not update or not update.filterSet or not update.filterSet[0]:
-            self.logger.warning('No object found when updating %s', str(obj))
+            self.logger.warning('No object found when updating {}'.format(str(obj)))
             return
         if filter_:
             filter_.Destroy()
@@ -416,10 +416,10 @@ class VMWareSystem(WrapanapiAPIBase):
     def start_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
         if self.is_vm_running(vm_name):
-            self.logger.info(" vSphere VM %s is already running" % vm_name)
+            self.logger.info(" vSphere VM {} is already running".format(vm_name))
             return True
         else:
-            self.logger.info(" Starting vSphere VM %s" % vm_name)
+            self.logger.info(" Starting vSphere VM {}".format(vm_name))
             vm = self._get_vm(vm_name)
             vm.PowerOnVM_Task()
             self.wait_vm_running(vm_name)
@@ -428,14 +428,14 @@ class VMWareSystem(WrapanapiAPIBase):
     def stop_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
         if self.is_vm_stopped(vm_name):
-            self.logger.info(" vSphere VM %s is already stopped" % vm_name)
+            self.logger.info("vSphere VM {} is already stopped".format(vm_name))
             return True
         else:
-            self.logger.info(" Stopping vSphere VM %s" % vm_name)
+            self.logger.info("Stopping vSphere VM {}".format(vm_name))
             vm = self._get_vm(vm_name)
             if self.is_vm_suspended(vm_name):
                 self.logger.info(
-                    " Resuming suspended VM %s before stopping." % vm_name
+                    "Resuming suspended VM {} before stopping.".format(vm_name)
                 )
                 vm.PowerOnVM_Task()
                 self.wait_vm_running(vm_name)
@@ -445,13 +445,23 @@ class VMWareSystem(WrapanapiAPIBase):
 
     def delete_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
-        self.logger.info(" Deleting vSphere VM %s" % vm_name)
+        self.logger.info("Deleting vSphere VM {}".format(vm_name))
         vm = self._get_vm(vm_name)
         self.stop_vm(vm_name)
 
         task = vm.Destroy_Task()
         status, t = wait_for(self._task_wait, [task])
         return status == 'success'
+
+    def unregister_vm(self, vm_name):
+        """Used to orphane VM - removes from inventory but leaves files on datastore
+        vm.UnregisterVm() Task returns None
+        """
+        self.wait_vm_steady(vm_name)
+        self.logger.info("Removing VM {} from the inventory".format(vm_name))
+        vm = self._get_vm(vm_name)
+        self.stop_vm(vm_name)
+        vm.UnregisterVM()
 
     def is_host_connected(self, host_name):
         host = self._get_obj(vim.HostSystem, name=host_name)
@@ -461,7 +471,7 @@ class VMWareSystem(WrapanapiAPIBase):
         raise NotImplementedError('This function has not yet been implemented.')
 
     def restart_vm(self, vm_name):
-        self.logger.info(" Restarting vSphere VM %s" % vm_name)
+        self.logger.info("Restarting vSphere VM {}".format(vm_name))
         return self.stop_vm(vm_name) and self.start_vm(vm_name)
 
     def list_vm(self, inaccessible=False):
@@ -532,26 +542,26 @@ class VMWareSystem(WrapanapiAPIBase):
         return self.vm_status(vm_name) == self.POWERED_ON
 
     def wait_vm_running(self, vm_name, num_sec=240):
-        self.logger.info(" Waiting for vSphere VM %s to change status to ON" % vm_name)
+        self.logger.info(" Waiting for vSphere VM {} to change status to ON".format(vm_name))
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
 
     def is_vm_stopped(self, vm_name):
         return self.vm_status(vm_name) == self.POWERED_OFF
 
     def wait_vm_stopped(self, vm_name, num_sec=240):
-        self.logger.info(" Waiting for vSphere VM %s to change status to OFF" % vm_name)
+        self.logger.info(" Waiting for vSphere VM {} to change status to OFF".format(vm_name))
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
     def is_vm_suspended(self, vm_name):
         return self.vm_status(vm_name) == self.SUSPENDED
 
     def wait_vm_suspended(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for vSphere VM %s to change status to SUSPENDED" % vm_name)
+        self.logger.info(" Waiting for vSphere VM {} to change status to SUSPENDED".format(vm_name))
         wait_for(self.is_vm_suspended, [vm_name], num_sec=num_sec)
 
     def suspend_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
-        self.logger.info(" Suspending vSphere VM %s" % vm_name)
+        self.logger.info(" Suspending vSphere VM {}".format(vm_name))
         vm = self._get_vm(vm_name)
         if self.is_vm_stopped(vm_name):
             raise VMInstanceNotSuspended(vm_name)
@@ -596,7 +606,7 @@ class VMWareSystem(WrapanapiAPIBase):
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         try:
-            if self._get_obj(vim.VirtualMachine, name=destination).name == destination:
+            if self._get_obj(vim.VirtualMachine, name=destination):
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
             pass
@@ -674,7 +684,7 @@ class VMWareSystem(WrapanapiAPIBase):
         wait_for(_check, num_sec=provision_timeout, delay=4)
 
         if task.info.state != 'success':
-            self.logger.error('Clone VM failed: %s', str(task.info.error.localizedMessage))
+            self.logger.error('Clone VM failed: {}'.format(str(task.info.error.localizedMessage)))
             raise VMInstanceNotCloned(source)
         else:
             return destination
