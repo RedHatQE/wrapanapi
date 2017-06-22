@@ -606,7 +606,7 @@ class VMWareSystem(WrapanapiAPIBase):
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         try:
-            if self._get_obj(vim.VirtualMachine, name=destination).name == destination:
+            if self._get_obj(vim.VirtualMachine, name=destination):
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
             pass
