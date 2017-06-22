@@ -488,7 +488,6 @@ class EC2System(WrapanapiAPIBase):
         objects = [o for o in bucket.objects.all() if o.key == object_key]
         return any(objects)
 
-
     def delete_s3_bucket(self, bucket_name):
         """TODO: Force delete - delete all objects and then bucket"""
         bucket = self.s3_connection.Bucket(bucket_name)
@@ -638,10 +637,16 @@ class EC2System(WrapanapiAPIBase):
 
     def get_arn_if_topic_exists(self, topic_name):
         topics = self.list_topics()
+
+        # There is no way to get topic_name, so it
+        # has to be parsed from ARN, which looks
+        # like this: arn:aws:sns:sa-east-1:ACCOUNT_NUM:AWSConfig_topic
+
         topic_found = [
             t.get('TopicArn')
             for t in topics.get('Topics')
-            if t.get('TopicArn').split(':')[-1] == topic_name]
+            if t.get('TopicArn').split(':')[-1] == topic_name
+        ]
         if topic_found:
             return topic_found[0]
         else:
