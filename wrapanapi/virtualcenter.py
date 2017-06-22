@@ -453,6 +453,16 @@ class VMWareSystem(WrapanapiAPIBase):
         status, t = wait_for(self._task_wait, [task])
         return status == 'success'
 
+    def unregister_vm(self, vm_name):
+        """Used to orphane VM - removes from inventory but leaves files on datastore
+        vm.UnregisterVm() Task returns None
+        """
+        self.wait_vm_steady(vm_name)
+        self.logger.info(" Removing VM  %s from the inventory" % vm_name)
+        vm = self._get_vm(vm_name)
+        self.stop_vm(vm_name)
+        vm.UnregisterVM()
+
     def is_host_connected(self, host_name):
         host = self._get_obj(vim.HostSystem, name=host_name)
         return host.summary.runtime.connectionState == "connected"
