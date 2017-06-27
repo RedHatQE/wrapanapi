@@ -595,8 +595,10 @@ class VMWareSystem(WrapanapiAPIBase):
     def clone_vm(self, source, destination, resourcepool=None, datastore=None, power_on=True,
                  sparse=False, template=False, provision_timeout=1800, progress_callback=None,
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
+        """Clone a VM"""
         try:
-            if self._get_obj(vim.VirtualMachine, name=destination).name == destination:
+            vm = self._get_obj(vim.VirtualMachine, name=destination)
+            if vm and vm.name == destination:
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
             pass
