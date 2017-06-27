@@ -606,7 +606,7 @@ class VMWareSystem(WrapanapiAPIBase):
             progress_callback = partial(self._progress_log_callback, self.logger,
                 source, destination)
 
-        source_template = self._get_obj(vim.VirtualMachine, name=source)
+        source_template = self._get_vm(source)
 
         vm_clone_spec = vim.VirtualMachineCloneSpec()
         vm_reloc_spec = vim.VirtualMachineRelocateSpec()
