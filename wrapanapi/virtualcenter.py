@@ -276,8 +276,7 @@ class VMWareSystem(WrapanapiAPIBase):
         Returns: A boolean, ``True`` if the vm exists, ``False`` if not.
         """
         try:
-            self._get_vm(name)
-            return True
+            return self._get_vm(name) is not None
         except VMInstanceNotFound:
             return False
 
