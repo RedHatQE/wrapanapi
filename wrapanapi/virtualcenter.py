@@ -664,7 +664,10 @@ class VMWareSystem(WrapanapiAPIBase):
 
         def _check(store=[task]):
             try:
-                progress_callback("{}/{}%".format(store[0].info.state, store[0].info.progress))
+                if hasattr(store[0].info, 'progress') and store[0].info.progress is not None:
+                    progress_callback("{}/{}%".format(store[0].info.state, store[0].info.progress))
+                else:
+                    progress_callback("{}".format(store[0].info.state))
             except AttributeError:
                 pass
             if store[0].info.state not in {"queued", "running"}:
@@ -676,7 +679,13 @@ class VMWareSystem(WrapanapiAPIBase):
         wait_for(_check, num_sec=provision_timeout, delay=4)
 
         if task.info.state != 'success':
-            self.logger.error('Clone VM failed: %s', str(task.info.error.localizedMessage))
+            if hasattr(task.info.error, 'localizedMessage'):
+                message = str(task.info.error.localizedMessage)
+            elif hasattr(task.info.error, 'faultMessage'):
+                message = str(task.info.error.faultMessage.message)
+            else:
+                message = 'Unknown error type: {}'.format(task.info.error)
+            self.logger.error('Clone VM failed: %s', message)
             raise VMInstanceNotCloned(source)
         else:
             return destination
