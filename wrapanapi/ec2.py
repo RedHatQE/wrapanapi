@@ -546,20 +546,21 @@ class EC2System(WrapanapiAPIBase):
     def get_all_unused_network_interfaces(self):
         return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
 
-    def import_image(self, s3bucket, s3key, format="vhd", description=None):
+    def import_image(self, s3bucket, s3key, format="vhd", description=None, name=None):
+        """Import an image, name it on import using optional arg"""
         self.logger.info(" Importing image %s from %s bucket with description %s in %s started "
             "successfully.", s3key, s3bucket, description, format)
-        try:
-            result = self.ec2_connection.import_image(DiskContainers=[
-                {
+        disk_container = {
                     'Description': description if description is not None else s3key,
                     'Format': format,
                     'UserBucket': {
                         'S3Bucket': s3bucket,
                         'S3Key': s3key
-                    }
-                }
-            ])
+                    }}
+        if name:
+            disk_container.update({'DeviceName': name})
+        try:
+            result = self.ec2_connection.import_image(DiskContainers=[disk_container])
             task_id = result.get("ImportTaskId")
             return task_id
 
