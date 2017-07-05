@@ -498,7 +498,7 @@ class EC2System(WrapanapiAPIBase):
             return True
         except Exception:
             self.logger.exception(
-                'Deleting object keys {} from Bucket "{}" failed'.format(object_kseys, bucket_name))
+                'Deleting object keys {} from Bucket "{}" failed'.format(object_keys, bucket_name))
             return False
 
     def get_all_disassociated_addresses(self):
