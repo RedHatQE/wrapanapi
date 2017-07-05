@@ -487,6 +487,20 @@ class EC2System(WrapanapiAPIBase):
         objects = [o for o in bucket.objects.all() if o.key == object_key]
         return any(objects)
 
+    def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
+        """Delete each of the given object_keys from the given bucket"""
+        if not isinstance(object_keys, list):
+            raise ValueError("object_keys argument must be a list of key strings")
+        bucket = self.s3_connection.Bucket(name=bucket_name)
+        try:
+            bucket.delete_objects(
+                Delete={'Objects': [{'Key': object_key} for object_key in object_keys]})
+            return True
+        except Exception:
+            self.logger.exception(
+                'Deleting object keys {} from Bucket "{}" failed'.format(object_kseys, bucket_name))
+            return False
+
     def get_all_disassociated_addresses(self):
         return [
             addr for addr
@@ -591,3 +605,17 @@ class EC2System(WrapanapiAPIBase):
         except Exception:
             self.logger.exception("Copy of {} image failed.".format(source_image))
             return False
+
+    def deregister_image(self, image_id, delete_snapshot=True):
+        """Deregister the given AMI ID, only valid for self owned AMI's"""
+        images = self.api.get_all_images(owners=['self'], filters={'image-type': 'machine'})
+        matching_images = [image for image in images if image.id == image_id]
+
+        try:
+            for image in matching_images:
+                image.deregister(delete_snapshot=delete_snapshot)
+            return True
+        except Exception:
+            self.logger.exception('Deregister of image_id {} failed'.format(image_id))
+            return False
+
