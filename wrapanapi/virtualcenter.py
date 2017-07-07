@@ -96,6 +96,21 @@ TRAVERSAL_SPECS = [
 ]
 
 
+def get_task_error_message(task):
+    """Depending on the error type, a different attribute may contain the error message. This
+    function will figure out the error message.
+    """
+    if hasattr(task.info.error, 'message'):
+        message = str(task.info.error.message)
+    elif hasattr(task.info.error, 'localizedMessage'):
+        message = str(task.info.error.localizedMessage)
+    elif hasattr(task.info.error, 'msg'):
+        message = str(task.info.error.msg)
+    else:
+        message = 'Unknown error type: {}'.format(task.info.error)
+    return message
+
+
 class VMWareSystem(WrapanapiAPIBase):
     """Client to Vsphere API
 
@@ -678,13 +693,7 @@ class VMWareSystem(WrapanapiAPIBase):
         wait_for(_check, num_sec=provision_timeout, delay=4)
 
         if task.info.state != 'success':
-            if hasattr(task.info.error, 'localizedMessage'):
-                message = str(task.info.error.localizedMessage)
-            elif hasattr(task.info.error, 'faultMessage'):
-                message = str(task.info.error.faultMessage.message)
-            else:
-                message = 'Unknown error type: {}'.format(task.info.error)
-            self.logger.error('Clone VM failed: %s', message)
+            self.logger.error('Clone VM failed: %s', get_task_error_message(task))
             raise VMInstanceNotCloned(source)
         else:
             return destination
@@ -711,7 +720,7 @@ class VMWareSystem(WrapanapiAPIBase):
 
         if status != 'success':
             raise HostNotRemoved("Host {} not removed: {}".format(
-                host_name, task.info.error.localizedMessage))
+                host_name, get_task_error_message(task)))
 
         task = host.Destroy_Task()
         status, t = wait_for(self._task_wait, [task], fail_condition=None)
