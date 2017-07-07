@@ -515,7 +515,7 @@ class VMWareSystem(WrapanapiAPIBase):
         pass
 
     def vm_status(self, vm_name):
-        return self._get_vm(vm_name, force=True).runtime.powerState
+        return str(self._get_vm(vm_name, force=True).runtime.powerState)
 
     def vm_creation_time(self, vm_name):
         vm = self._get_vm(vm_name)
@@ -530,9 +530,10 @@ class VMWareSystem(WrapanapiAPIBase):
 
     def get_vm_datastore_path(self, vm_name, vm_config_datastore):
         vm = self._get_vm(vm_name)
-        datastore_url = [str(datastore['url']) for datastore in vm.config.datastoreUrl
-                         if datastore['name'] in vm_config_datastore]
-        return datastore_url[0]
+        datastore_url = [str(datastore.url)
+                         for datastore in vm.config.datastoreUrl
+                         if datastore.name in vm_config_datastore]
+        return datastore_url.pop()
 
     def get_vm_config_files_path(self, vm_name):
         vm = self._get_vm(vm_name)
