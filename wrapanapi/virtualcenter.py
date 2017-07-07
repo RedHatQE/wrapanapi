@@ -500,7 +500,7 @@ class VMWareSystem(WrapanapiAPIBase):
         pass
 
     def vm_status(self, vm_name):
-        return self._get_vm(vm_name, force=True).runtime.powerState
+        return str(self._get_vm(vm_name, force=True).runtime.powerState)
 
     def vm_creation_time(self, vm_name):
         vm = self._get_vm(vm_name)
