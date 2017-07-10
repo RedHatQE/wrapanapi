@@ -8,9 +8,11 @@ import winrm
 from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
+
 from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
+import tzlocal
 
 from base import WrapanapiAPIBase, VMInfo
 
@@ -214,9 +216,10 @@ class SCVMMSystem(WrapanapiAPIBase):
         xml = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\""
             " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
-        date_time = etree.parse(StringIO(xml)).getroot().xpath(
+        xml_time = etree.parse(StringIO(xml)).getroot().xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
-        return datetime.strptime(date_time, "%m/%d/%Y %I:%M:%S %p")
+        creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
+        return tzlocal.get_localzone().fromutc(creation_time).replace(tzinfo=None)
 
     def info(self, vm_name):
         pass

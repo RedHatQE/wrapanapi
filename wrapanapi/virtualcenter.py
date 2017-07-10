@@ -18,14 +18,16 @@ from distutils.version import LooseVersion
 from functools import partial
 
 import six
+import tzlocal
 from wait_for import wait_for, TimedOutError
+from pyVmomi import vim, vmodl
+from pyVim.connect import SmartConnect, Disconnect
 
 from base import WrapanapiAPIBase, VMInfo
 from exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
-    HostNotRemoved, VMInstanceNotFound)
+    HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
 
-from pyVmomi import vim, vmodl
-from pyVim.connect import SmartConnect, Disconnect
+
 
 SELECTION_SPECS = [
     'resource_pool_traversal_spec',
@@ -518,11 +520,33 @@ class VMWareSystem(WrapanapiAPIBase):
         return str(self._get_vm(vm_name, force=True).runtime.powerState)
 
     def vm_creation_time(self, vm_name):
+        """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
+
+        The API provides no sensible way to actually get this value. The only way in which
+        vcenter API MAY have this is by filtering through events
+
+        Return tz-naive datetime object
+        """
         vm = self._get_vm(vm_name)
-        vcenter_time_now = self.service_instance.CurrentTime()
-        vm_uptime = vm.summary.quickStats.uptimeSeconds
-        vm_delta = timedelta(seconds=int(vm_uptime))
-        return vcenter_time_now - vm_delta
+
+        filter_spec = vim.event.EventFilterSpec(
+            entity=vim.event.EventFilterSpec.ByEntity(
+                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
+            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
+        collector = self.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
+        collector.SetCollectorPageSize(1000)  # max allowed value
+        events = collector.latestPage
+        collector.DestroyCollector()  # limited number of collectors allowed per client
+
+        if events:
+            creation_time = events.pop().createdTime  # datetime object
+        else:
+            # no events found for VM, fallback to last boot time
+            creation_time = vm.runtime.bootTime
+            if not creation_time:
+                raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
+        # localize and make tz-naive
+        return tzlocal.get_localzone().localize(creation_time).replace(tzinfo=None)
 
     def get_vm_host_name(self, vm_name):
         vm = self._get_vm(vm_name)

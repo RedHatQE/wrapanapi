@@ -3,21 +3,23 @@
 
 Used to communicate with providers without using CFME facilities
 """
-
+import os
+import random
+import time
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
 from apiclient import errors
+from json import dumps as json_dumps
+
+import httplib2
+import iso8601
+import tzlocal
+from oauth2client.service_account import ServiceAccountCredentials
+from wait_for import wait_for
+
 from base import WrapanapiAPIBase, VMInfo
 from exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
     ForwardingRuleNotFound
-from json import dumps as json_dumps
-from oauth2client.service_account import ServiceAccountCredentials
-from wait_for import wait_for
-import os
-import httplib2
-import iso8601
-import random
-import time
 
 # Retry transport and file IO errors.
 RETRYABLE_ERRORS = (httplib2.HttpLib2Error, IOError)
@@ -540,8 +542,8 @@ class GoogleCloudSystem(WrapanapiAPIBase):
     def vm_creation_time(self, instance_name):
         instance = self._find_instance_by_name(instance_name)
         vm_time_stamp = instance['creationTimestamp']
-        creation_time = (iso8601.parse_date(vm_time_stamp)).replace(tzinfo=None)
-        return creation_time
+        creation_time = (iso8601.parse_date(vm_time_stamp))
+        return tzlocal.get_localzone().fromutc(creation_time).replace(tzinfo=None)
 
     def vm_type(self, instance_name):
         instance = self._find_instance_by_name(instance_name)
