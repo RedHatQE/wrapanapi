@@ -7,6 +7,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
 
+import json
+import time
+import pytz
 from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
 from heatclient import client as heat_client
@@ -17,9 +20,6 @@ from novaclient.client import HTTPClient
 from novaclient.v2.floating_ips import FloatingIP
 from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
-import json
-import time
-import tzlocal
 from wait_for import wait_for
 
 from base import WrapanapiAPIBase, VMInfo
@@ -373,7 +373,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         # Example vm.created: 2014-08-14T23:29:30Z
         create_time = datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
         # create time is UTC, localize it, strip tzinfo
-        return tzlocal.get_localzone().fromutc(create_time).replace(tzinfo=None)
+        return create_time.replace(tzinfo=pytz.UTC)
 
     def is_vm_running(self, vm_name):
         return self.vm_status(vm_name) in self.states['running']

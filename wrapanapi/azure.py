@@ -12,7 +12,7 @@ from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
 
-import tzlocal
+import pytz
 from lxml import etree
 from wait_for import wait_for
 
@@ -329,7 +329,7 @@ class AzureSystem(WrapanapiAPIBase):
             raise VMCreationDateError('No LastModified date found for instance {}'.format(vm_name))
         create_time = datetime.strptime(str(vhd_last_modified), '%Y-%m-%dT%H:%M:%S %p')
         self.logger.info("VM last edit time based on vhd =  {}".format(str(create_time)))
-        return tzlocal.get_localzone().fromutc(create_time).replace(tzinfo=None)
+        return create_time.replace(tzinfo=pytz.UTC)
 
     def create_netsec_group(self, group_name, resource_group):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))

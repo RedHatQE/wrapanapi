@@ -13,12 +13,12 @@ except AttributeError:
 import operator
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from distutils.version import LooseVersion
 from functools import partial
 
 import six
-import tzlocal
+import pytz
 from wait_for import wait_for, TimedOutError
 from pyVmomi import vim, vmodl
 from pyVim.connect import SmartConnect, Disconnect
@@ -546,7 +546,7 @@ class VMWareSystem(WrapanapiAPIBase):
             if not creation_time:
                 raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
         # localize and make tz-naive
-        return tzlocal.get_localzone().localize(creation_time).replace(tzinfo=None)
+        return creation_time.replace(tzinfo=pytz.UTC)
 
     def get_vm_host_name(self, vm_name):
         vm = self._get_vm(vm_name)

@@ -13,7 +13,7 @@ from json import dumps as json_dumps
 
 import httplib2
 import iso8601
-import tzlocal
+import pytz
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
@@ -543,7 +543,7 @@ class GoogleCloudSystem(WrapanapiAPIBase):
         instance = self._find_instance_by_name(instance_name)
         vm_time_stamp = instance['creationTimestamp']
         creation_time = (iso8601.parse_date(vm_time_stamp))
-        return tzlocal.get_localzone().fromutc(creation_time).replace(tzinfo=None)
+        return creation_time.replace(tzinfo=pytz.UTC)
 
     def vm_type(self, instance_name):
         instance = self._find_instance_by_name(instance_name)

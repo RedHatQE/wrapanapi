@@ -9,10 +9,10 @@ from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
 
+import pytz
 from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
-import tzlocal
 
 from base import WrapanapiAPIBase, VMInfo
 
@@ -219,7 +219,7 @@ class SCVMMSystem(WrapanapiAPIBase):
         xml_time = etree.parse(StringIO(xml)).getroot().xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
         creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
-        return tzlocal.get_localzone().fromutc(creation_time).replace(tzinfo=None)
+        return creation_time.replace(tzinfo=pytz.UTC)
 
     def info(self, vm_name):
         pass
