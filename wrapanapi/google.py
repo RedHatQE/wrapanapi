@@ -543,7 +543,7 @@ class GoogleCloudSystem(WrapanapiAPIBase):
         instance = self._find_instance_by_name(instance_name)
         vm_time_stamp = instance['creationTimestamp']
         creation_time = (iso8601.parse_date(vm_time_stamp))
-        return creation_time.replace(tzinfo=pytz.UTC)
+        return creation_time.astimezone(pytz.UTC)
 
     def vm_type(self, instance_name):
         instance = self._find_instance_by_name(instance_name)

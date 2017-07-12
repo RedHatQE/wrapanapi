@@ -28,7 +28,6 @@ from exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundV
     HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
 
 
-
 SELECTION_SPECS = [
     'resource_pool_traversal_spec',
     'resource_pool_vm_traversal_spec',
@@ -285,6 +284,15 @@ class VMWareSystem(WrapanapiAPIBase):
         if task.info.state not in ['queued', 'running', None]:
             return task.info.state
 
+    def _task_status(self, task):
+        """Update a task and return its state, as a vim.TaskInfo.State string wrapper
+
+        :param task: The task whose state is being returned
+        :returns: vim.TaskInfo.State string or None
+        """
+        task = self._get_updated_obj(task)
+        return task.info.state
+
     def does_vm_exist(self, name):
         """ Checks if a vm exists or not.
 
@@ -466,8 +474,12 @@ class VMWareSystem(WrapanapiAPIBase):
         self.stop_vm(vm_name)
 
         task = vm.Destroy_Task()
-        status, t = wait_for(self._task_wait, [task])
-        return status == 'success'
+
+        try:
+            wait_for(lambda: self._task_status(task) == 'success', delay=1, num_sec=600)
+            return True
+        except TimedOutError:
+            return False
 
     def is_host_connected(self, host_name):
         host = self._get_obj(vim.HostSystem, name=host_name)
@@ -546,7 +558,7 @@ class VMWareSystem(WrapanapiAPIBase):
             if not creation_time:
                 raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
         # localize and make tz-naive
-        return creation_time.replace(tzinfo=pytz.UTC)
+        return creation_time.astimezone(pytz.UTC)
 
     def get_vm_host_name(self, vm_name):
         vm = self._get_vm(vm_name)

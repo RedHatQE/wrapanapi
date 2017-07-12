@@ -219,7 +219,7 @@ class SCVMMSystem(WrapanapiAPIBase):
         xml_time = etree.parse(StringIO(xml)).getroot().xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
         creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
-        return creation_time.replace(tzinfo=pytz.UTC)
+        return creation_time.astimezone(pytz.UTC)
 
     def info(self, vm_name):
         pass

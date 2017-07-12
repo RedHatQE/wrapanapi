@@ -342,7 +342,7 @@ class RHEVMSystem(WrapanapiAPIBase):
 
     def vm_creation_time(self, vm_name):
         vm = self._get_vm(vm_name)
-        return vm.get_creation_time().replace(tzinfo=pytz.UTC)
+        return vm.get_creation_time().astimezone(pytz.UTC)
 
     def in_steady_state(self, vm_name):
         return self.vm_status(vm_name) in {"up", "down", "suspended"}
