@@ -476,8 +476,8 @@ class VMWareSystem(WrapanapiAPIBase):
         task = vm.Destroy_Task()
 
         try:
-            wait_for(lambda: self._task_status(task) == 'success', delay=1, num_sec=600)
-            return True
+            wait_for(lambda: self._task_status(task) == 'success', delay=3, num_sec=600)
+            return self._task_status(task) == 'success'
         except TimedOutError:
             return False
 
