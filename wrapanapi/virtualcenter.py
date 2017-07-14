@@ -250,9 +250,16 @@ class VMWareSystem(WrapanapiAPIBase):
         :returns: a pyVmomi object.
         """
         if vm_name not in self._vm_cache or force:
-            vm = self._get_obj(vim.VirtualMachine, vm_name)
-            if not vm:
-                raise VMInstanceNotFound(vm_name)
+            try:
+                vm = self._get_obj(vim.VirtualMachine, vm_name)
+            except vmodl.fault.ManagedObjectNotFound:
+                # TODO this is happening on VMs that still exist, try a second time?
+                self.logger.exception('vmodl.fault.ManagedObjectNotFound calling _get_obj for %s'
+                                      % vm_name)
+                vm = self._get_obj(vim.VirtualMachine, vm_name)
+            finally:
+                if not vm:
+                    raise VMInstanceNotFound(vm_name)
             self._vm_cache[vm_name] = vm
         else:
             self._vm_cache[vm_name] = self._get_updated_obj(self._vm_cache[vm_name])
@@ -442,30 +449,39 @@ class VMWareSystem(WrapanapiAPIBase):
     def stop_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
         if self.is_vm_stopped(vm_name):
-            self.logger.info(" vSphere VM %s is already stopped" % vm_name)
+            self.logger.info("vSphere VM %s is already stopped" % vm_name)
             return True
         else:
-            self.logger.info(" Stopping vSphere VM %s" % vm_name)
+            self.logger.info("Stopping vSphere VM %s" % vm_name)
             vm = self._get_vm(vm_name)
             if self.is_vm_suspended(vm_name):
-                self.logger.info(
-                    " Resuming suspended VM %s before stopping." % vm_name
-                )
+                self.logger.info("Resuming suspended VM %s before stopping." % vm_name)
                 vm.PowerOnVM_Task()
                 self.wait_vm_running(vm_name)
             vm.PowerOffVM_Task()
-            self.wait_vm_stopped(vm_name)
+            try:
+                self.wait_vm_stopped(vm_name)
+            except TimedOutError:
+                return False
             return True
 
     def delete_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
-        self.logger.info(" Deleting vSphere VM %s" % vm_name)
+        self.logger.info("Deleting vSphere VM %s" % vm_name)
         vm = self._get_vm(vm_name)
-        self.stop_vm(vm_name)
+        if self.stop_vm(vm_name):
+            self.logger.debug('VM %s stopped, starting delete task' % vm_name)
+            task = vm.Destroy_Task()
+        else:
+            self.logger.error('Stop VM failed while attempting to delete VM %s' % vm_name)
+            return False
 
-        task = vm.Destroy_Task()
-        status, t = wait_for(self._task_wait, [task])
-        return status == 'success'
+        try:
+            wait_for(lambda: self._task_status(task) == 'success', delay=3, num_sec=600)
+            self.logger.debug('VM %s deleted' % vm_name)
+            return True
+        except TimedOutError:
+            return False
 
     def is_host_connected(self, host_name):
         host = self._get_obj(vim.HostSystem, name=host_name)
@@ -551,10 +567,13 @@ class VMWareSystem(WrapanapiAPIBase):
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
 
     def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) == self.POWERED_OFF
+        self.logger.debug('Checking if vm %s is stopped' % vm_name)
+        status = self.vm_status(vm_name)
+        self.logger.debug('VM %s status: %s' % (vm_name, status))
+        return status == self.POWERED_OFF
 
     def wait_vm_stopped(self, vm_name, num_sec=240):
-        self.logger.info(" Waiting for vSphere VM %s to change status to OFF" % vm_name)
+        self.logger.info("Waiting for vSphere VM %s to change status to OFF" % vm_name)
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
     def is_vm_suspended(self, vm_name):
