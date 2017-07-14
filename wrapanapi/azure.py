@@ -20,7 +20,6 @@ from base import WrapanapiAPIBase
 from exceptions import VMInstanceNotFound, ActionTimedOutError, VMCreationDateError
 
 
-
 class AzureSystem(WrapanapiAPIBase):
     """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
     """

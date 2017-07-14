@@ -224,7 +224,8 @@ class VMWareSystem(WrapanapiAPIBase):
         """
         Build a filter spec based on ``obj`` and return the updated object.
 
-        :param obj: The managed object to update
+        Args:
+             obj (pyVmomi.ManagedObject): The managed object to update, will be a specific subclass
         """
         # Set up the filter specs
         property_spec = vmodl.query.PropertyCollector.PropertySpec(type=type(obj), all=True)
@@ -246,9 +247,11 @@ class VMWareSystem(WrapanapiAPIBase):
     def _get_vm(self, vm_name, force=False):
         """Returns a vm from the VI object.
 
-        :param vm_name: The name of the VM
-        :param force: Ignore the cache when updating
-        :returns: a pyVmomi object.
+        Args:
+            vm_name (string): The name of the VM
+            force (bool): Ignore the cache when updating
+        Returns:
+             pyVmomi.vim.VirtualMachine: VM object
         """
         if vm_name not in self._vm_cache or force:
             vm = self._get_obj(vim.VirtualMachine, vm_name)
@@ -262,8 +265,11 @@ class VMWareSystem(WrapanapiAPIBase):
     def _get_resource_pool(self, resource_pool_name=None):
         """ Returns a resource pool managed object for a specified name.
 
-        :param resource_pool_name: The name of the resource pool. If None, first one will be picked.
-        :returns: The managed object of the resource pool.
+        Args:
+            resource_pool_name (string): The name of the resource pool. If None, first one will be
+        picked.
+        Returns:
+             pyVmomi.vim.ResourcePool: The managed object of the resource pool.
         """
         if resource_pool_name is not None:
             return self._get_obj(vim.ResourcePool, resource_pool_name)
@@ -277,8 +283,10 @@ class VMWareSystem(WrapanapiAPIBase):
         Update a task and check its state. If the task state is not ``queued``, ``running`` or
         ``None``, then return the state. Otherwise return None.
 
-        :param task: The task whose state is being monitored
-        :returns: Task state
+        Args:
+            task (pyVmomi.vim.Task): The task whose state is being monitored
+        Returns:
+            string: pyVmomi.vim.TaskInfo.state value if the task is not queued/running/None
         """
         task = self._get_updated_obj(task)
         if task.info.state not in ['queued', 'running', None]:
@@ -287,8 +295,10 @@ class VMWareSystem(WrapanapiAPIBase):
     def _task_status(self, task):
         """Update a task and return its state, as a vim.TaskInfo.State string wrapper
 
-        :param task: The task whose state is being returned
-        :returns: vim.TaskInfo.State string or None
+        Args:
+            task (pyVmomi.vim.Task): The task whose state is being returned
+        Returns:
+            string: pyVmomi.vim.TaskInfo.state value
         """
         task = self._get_updated_obj(task)
         return task.info.state
