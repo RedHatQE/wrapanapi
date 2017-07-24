@@ -13,19 +13,20 @@ except AttributeError:
 import operator
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from distutils.version import LooseVersion
 from functools import partial
 
 import six
+import pytz
 from wait_for import wait_for, TimedOutError
+from pyVmomi import vim, vmodl
+from pyVim.connect import SmartConnect, Disconnect
 
 from base import WrapanapiAPIBase, VMInfo
 from exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
-    HostNotRemoved, VMInstanceNotFound)
+    HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
 
-from pyVmomi import vim, vmodl
-from pyVim.connect import SmartConnect, Disconnect
 
 SELECTION_SPECS = [
     'resource_pool_traversal_spec',
@@ -223,7 +224,8 @@ class VMWareSystem(WrapanapiAPIBase):
         """
         Build a filter spec based on ``obj`` and return the updated object.
 
-        :param obj: The managed object to update
+        Args:
+             obj (pyVmomi.ManagedObject): The managed object to update, will be a specific subclass
         """
         # Set up the filter specs
         property_spec = vmodl.query.PropertyCollector.PropertySpec(type=type(obj), all=True)
@@ -245,9 +247,11 @@ class VMWareSystem(WrapanapiAPIBase):
     def _get_vm(self, vm_name, force=False):
         """Returns a vm from the VI object.
 
-        :param vm_name: The name of the VM
-        :param force: Ignore the cache when updating
-        :returns: a pyVmomi object.
+        Args:
+            vm_name (string): The name of the VM
+            force (bool): Ignore the cache when updating
+        Returns:
+             pyVmomi.vim.VirtualMachine: VM object
         """
         if vm_name not in self._vm_cache or force:
             vm = self._get_obj(vim.VirtualMachine, vm_name)
@@ -261,8 +265,11 @@ class VMWareSystem(WrapanapiAPIBase):
     def _get_resource_pool(self, resource_pool_name=None):
         """ Returns a resource pool managed object for a specified name.
 
-        :param resource_pool_name: The name of the resource pool. If None, first one will be picked.
-        :returns: The managed object of the resource pool.
+        Args:
+            resource_pool_name (string): The name of the resource pool. If None, first one will be
+        picked.
+        Returns:
+             pyVmomi.vim.ResourcePool: The managed object of the resource pool.
         """
         if resource_pool_name is not None:
             return self._get_obj(vim.ResourcePool, resource_pool_name)
@@ -276,12 +283,25 @@ class VMWareSystem(WrapanapiAPIBase):
         Update a task and check its state. If the task state is not ``queued``, ``running`` or
         ``None``, then return the state. Otherwise return None.
 
-        :param task: The task whose state is being monitored
-        :returns: Task state
+        Args:
+            task (pyVmomi.vim.Task): The task whose state is being monitored
+        Returns:
+            string: pyVmomi.vim.TaskInfo.state value if the task is not queued/running/None
         """
         task = self._get_updated_obj(task)
         if task.info.state not in ['queued', 'running', None]:
             return task.info.state
+
+    def _task_status(self, task):
+        """Update a task and return its state, as a vim.TaskInfo.State string wrapper
+
+        Args:
+            task (pyVmomi.vim.Task): The task whose state is being returned
+        Returns:
+            string: pyVmomi.vim.TaskInfo.state value
+        """
+        task = self._get_updated_obj(task)
+        return task.info.state
 
     def does_vm_exist(self, name):
         """ Checks if a vm exists or not.
@@ -464,8 +484,12 @@ class VMWareSystem(WrapanapiAPIBase):
         self.stop_vm(vm_name)
 
         task = vm.Destroy_Task()
-        status, t = wait_for(self._task_wait, [task])
-        return status == 'success'
+
+        try:
+            wait_for(lambda: self._task_status(task) == 'success', delay=3, num_sec=600)
+            return self._task_status(task) == 'success'
+        except TimedOutError:
+            return False
 
     def is_host_connected(self, host_name):
         host = self._get_obj(vim.HostSystem, name=host_name)
@@ -518,11 +542,33 @@ class VMWareSystem(WrapanapiAPIBase):
         return str(self._get_vm(vm_name, force=True).runtime.powerState)
 
     def vm_creation_time(self, vm_name):
+        """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
+
+        The API provides no sensible way to actually get this value. The only way in which
+        vcenter API MAY have this is by filtering through events
+
+        Return tz-naive datetime object
+        """
         vm = self._get_vm(vm_name)
-        vcenter_time_now = self.service_instance.CurrentTime()
-        vm_uptime = vm.summary.quickStats.uptimeSeconds
-        vm_delta = timedelta(seconds=int(vm_uptime))
-        return vcenter_time_now - vm_delta
+
+        filter_spec = vim.event.EventFilterSpec(
+            entity=vim.event.EventFilterSpec.ByEntity(
+                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
+            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
+        collector = self.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
+        collector.SetCollectorPageSize(1000)  # max allowed value
+        events = collector.latestPage
+        collector.DestroyCollector()  # limited number of collectors allowed per client
+
+        if events:
+            creation_time = events.pop().createdTime  # datetime object
+        else:
+            # no events found for VM, fallback to last boot time
+            creation_time = vm.runtime.bootTime
+            if not creation_time:
+                raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
+        # localize and make tz-naive
+        return creation_time.astimezone(pytz.UTC)
 
     def get_vm_host_name(self, vm_name):
         vm = self._get_vm(vm_name)

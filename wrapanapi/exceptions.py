@@ -81,3 +81,8 @@ class HostNotRemoved(Exception):
 
 class VMError(Exception):
     """Raised when a VM goes to the ERROR state."""
+
+
+class VMCreationDateError(Exception):
+    """Raised when we cannot determine a creation date for a VM"""
+    pass

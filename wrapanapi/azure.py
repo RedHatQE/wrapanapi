@@ -12,11 +12,12 @@ from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
 
-from exceptions import VMInstanceNotFound, ActionTimedOutError
+import pytz
 from lxml import etree
 from wait_for import wait_for
 
 from base import WrapanapiAPIBase
+from exceptions import VMInstanceNotFound, ActionTimedOutError, VMCreationDateError
 
 
 class AzureSystem(WrapanapiAPIBase):
@@ -323,9 +324,11 @@ class AzureSystem(WrapanapiAPIBase):
                        vhd_blob=vhd_name), True)
         vhd_last_modified = etree.parse(StringIO(self.clean_azure_xml(data))).getroot().xpath(
             "./Object/Property[@Name='LastModified']/text()")
-        create_time = datetime.strptime(str(vhd_last_modified), '[\'%m/%d/%Y %H:%M:%S %p +00:00\']')
-        self.logger.info("VM last edit time based on vhd =  {}".format(str(create_time)))
-        return create_time
+        if not vhd_last_modified:
+            raise VMCreationDateError('No LastModified date found for instance {}'.format(vm_name))
+        creation_time = datetime.strptime(str(vhd_last_modified), '%Y-%m-%dT%H:%M:%S %p')
+        self.logger.info("VM last edit time based on vhd =  {}".format(creation_time))
+        return creation_time.astimezone(pytz.UTC)
 
     def create_netsec_group(self, group_name, resource_group):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
