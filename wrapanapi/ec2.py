@@ -11,7 +11,7 @@ from boto import cloudformation
 from boto.ec2.elb import ELBConnection
 import boto3
 from botocore.client import Config
-import tzlocal
+import pytz
 import re
 from wait_for import wait_for
 import os
@@ -147,9 +147,9 @@ class EC2System(WrapanapiAPIBase):
     def vm_creation_time(self, instance_id):
         instance = self._get_instance(instance_id)
         # Example instance.launch_time: 2014-08-13T22:09:40.000Z
-        launch_time = datetime.strptime(instance.launch_time[:19], '%Y-%m-%dT%H:%M:%S')
-        # launch time is UTC, localize it, make it tz-naive to work with timedelta
-        return tzlocal.get_localzone().fromutc(launch_time).replace(tzinfo=None)
+        launch_time = datetime.strptime(instance.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
+        # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
+        return launch_time.replace(tzinfo=pytz.UTC)
 
     def create_vm(self):
         raise NotImplementedError('create_vm not implemented.')
