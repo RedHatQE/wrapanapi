@@ -8,6 +8,7 @@ import winrm
 import json
 import urlparse
 import os
+import tzlocal
 from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
@@ -326,9 +327,9 @@ class AzureSystem(WrapanapiAPIBase):
             "./Object/Property[@Name='LastModified']/text()")
         if not vhd_last_modified:
             raise VMCreationDateError('No LastModified date found for instance {}'.format(vm_name))
-        creation_time = datetime.strptime(str(vhd_last_modified), '%Y-%m-%dT%H:%M:%S %p')
+        creation_time = datetime.strptime(str(vhd_last_modified), '%Y-%m-%dT%H:%M:%S %p +00:00')
         self.logger.info("VM last edit time based on vhd =  {}".format(creation_time))
-        return creation_time.astimezone(pytz.UTC)
+        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
 
     def create_netsec_group(self, group_name, resource_group):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
