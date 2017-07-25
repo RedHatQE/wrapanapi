@@ -815,3 +815,90 @@ class VMWareSystem(WrapanapiAPIBase):
             'cpu_total': installed_cpu,
             'cpu_limit': None,
         }
+
+    def add_disk_to_vm(self, vm_name, capacity_in_kb, provision_type=None, unit=None):
+        """
+        Create a disk on the given datastore (by name)
+
+        Community Example used
+        https://github.com/vmware/pyvmomi-community-samples/blob/master/samples/add_disk_to_vm.py
+
+        Return task type from Task.result or Task.error
+        https://github.com/vmware/pyvmomi/blob/master/docs/vim/TaskInfo.rst
+
+        Args:
+            vm_name (string): name of the vm to add disk to
+            capacity_in_kb (int): capacity of the new drive in Kilobytes
+            provision_type (string): 'thin' or 'thick', will default to thin if invalid option
+            unit (int): The unit number of the disk to add, use to override existing disk. Will
+                search for next available unit number by default
+
+        Returns:
+            (bool, task_result): Tuple containing boolean True if task ended in success,
+                                 and the contents of task.result or task.error depending on state
+        """
+        provision_type = provision_type if provision_type in ['thick', 'thin'] else 'thin'
+        vm = self._get_vm(vm_name=vm_name)
+
+        # if passed unit matches existing device unit, match these values too
+        key = None
+        controller_key = None
+        unit_number = None
+        virtual_disk_devices = [
+            device for device
+            in vm.config.hardware.device if isinstance(device, vim.vm.device.VirtualDisk)]
+        for dev in virtual_disk_devices:
+            if unit == int(dev.unitNumber):
+                # user specified unit matching existing disk, match key too
+                key = dev.key
+            unit_number = unit or int(dev.unitNumber) + 1
+            if unit_number == 7:  # reserved
+                unit_number += 1
+            controller_key = dev.controllerKey
+
+        if not (controller_key or unit_number):
+            raise ValueError('Could not identify VirtualDisk device on given vm')
+
+        # create disk backing specification
+        backing_spec = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+        backing_spec.diskMode = 'persistent'
+        backing_spec.thinProvisioned = (provision_type == 'thin')
+
+        # create disk specification, attaching backing
+        disk_spec = vim.vm.device.VirtualDisk()
+        disk_spec.backing = backing_spec
+        disk_spec.unitNumber = unit_number
+        if key:  # only set when overriding existing disk
+            disk_spec.key = key
+        disk_spec.controllerKey = controller_key
+        disk_spec.capacityInKB = capacity_in_kb
+
+        # create device specification, attaching disk
+        device_spec = vim.vm.device.VirtualDeviceSpec()
+        device_spec.fileOperation = 'create'
+        device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+        device_spec.device = disk_spec
+
+        # create vm specification for device changes
+        vm_spec = vim.vm.ConfigSpec()
+        vm_spec.deviceChange = [device_spec]
+
+        # start vm reconfigure task
+        task = vm.ReconfigVM_Task(spec=vm_spec)
+
+        def task_complete(task_obj):
+            status = task_obj.info.state
+            return status not in ['running', 'queued']
+
+        try:
+            wait_for(task_complete, [task])
+        except TimedOutError:
+            self.logger.exception('Task did not go to success state: {}'.format(task))
+        finally:
+            if task.info.state == 'success':
+                result = (True, task.info.result)
+            elif task.info.state == 'error':
+                result = (False, task.info.error)
+            else:  # shouldn't happen
+                result = (None, None)
+            return result
