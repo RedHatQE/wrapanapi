@@ -3,12 +3,11 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from datetime import datetime
+from dateutil.parser import parse
 import winrm
 import json
 import urlparse
 import os
-import tzlocal
 from cStringIO import StringIO
 from contextlib import contextmanager
 from textwrap import dedent
@@ -307,29 +306,24 @@ class AzureSystem(WrapanapiAPIBase):
         raise NotImplementedError('list_network not implemented.')
 
     def vm_creation_time(self, vm_name, resource_group=None):
-        # There is no such parameter as vm creation time.  Using VHD date instead.
-        self.logger.info("Attempting to Retrieve Azure VM Modification Time {}".format(vm_name))
-        vm_vhd = self.get_vm_vhd(vm_name, resource_group or self.resource_group)
-        vhd_name = os.path.split(urlparse.urlparse(vm_vhd).path)[1]
-        data = self.run_script(
+        """ There is no such parameter as vm creation time.
+        Now we'll try to get latest VM activity log and it's timestamp
+        """
+        vhd_last_modified = self.run_script(
             """
             Invoke-Command -scriptblock {{
-            $storageContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
-                            -StorageAccountKey \"{storage_key}\"
-            Get-AzureStorageBlob -Name \"{storage_container}\" `
-                            -Context $storageContext -Blob \"{vhd_blob}\" | convertto-xml -as String
+            $list = Get-AzureRmLog -ResourceProvider Microsoft.Compute -DetailedOutput `
+            -StartTime (Get-Date).AddDays(-7) -MaxEvents 10000 | Where-Object ResourceId -like `
+            "*/{vm_name}"
+            $list[0].EventTimestamp.ToString("yyyy-MM-ddTHH:mm:ss tt zzz")
             }}
-            """.format(storage_account=self.storage_account,
-                       storage_container=self.storage_container,
-                       storage_key=self.storage_key,
-                       vhd_blob=vhd_name), True)
-        vhd_last_modified = etree.parse(StringIO(self.clean_azure_xml(data))).getroot().xpath(
-            "./Object/Property[@Name='LastModified']/text()")
+            """.format(vm_name=vm_name,
+                       rs_group=resource_group or self.resource_group), True)
         if not vhd_last_modified:
             raise VMCreationDateError('No LastModified date found for instance {}'.format(vm_name))
-        creation_time = datetime.strptime(str(vhd_last_modified), '%Y-%m-%dT%H:%M:%S %p +00:00')
+        creation_time = parse(str(vhd_last_modified))
         self.logger.info("VM last edit time based on vhd =  {}".format(creation_time))
-        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
+        return creation_time.astimezone(pytz.UTC)
 
     def create_netsec_group(self, group_name, resource_group):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
