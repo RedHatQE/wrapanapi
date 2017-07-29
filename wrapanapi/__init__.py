@@ -9,6 +9,6 @@ from scvmm import SCVMMSystem  # NOQA
 from azure import AzureSystem  # NOQA
 from virtualcenter import VMWareSystem  # NOQA
 from google import GoogleCloudSystem  # NOQA
-from kubernetes import Kubernetes  # NOQA
-from openshift import Openshift  # NOQA
+from wrapanapi.containers.providers.kubernetes import Kubernetes  # NOQA
+from wrapanapi.containers.providers.openshift import Openshift  # NOQA
 from hawkular import Hawkular  # NOQA

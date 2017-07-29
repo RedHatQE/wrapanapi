@@ -1,6 +1,12 @@
-from collections import namedtuple
-from kubernetes import Kubernetes, ImageRegistry, Project, Service
-from rest_client import ContainerClient
+from wrapanapi.containers.providers.kubernetes import Kubernetes
+from wrapanapi.rest_client import ContainerClient
+
+from wrapanapi.containers.route import Route
+from wrapanapi.containers.image_registry import ImageRegistry
+from wrapanapi.containers.project import Project
+from wrapanapi.containers.template import Template
+from wrapanapi.containers.image import Image
+from wrapanapi.containers.deployment_config import DeploymentConfig
 
 """
 Related yaml structures:
@@ -23,9 +29,6 @@ openshift:
     token: mytoken
 """
 
-Route = namedtuple('Route', ['name', 'project_name'])
-Template = namedtuple('Template', ['name', 'project_name'])
-
 
 class Openshift(Kubernetes):
 
@@ -45,6 +48,7 @@ class Openshift(Kubernetes):
         self.k_api = ContainerClient(hostname, self.auth, protocol, port, k_entry)
         self.o_api = ContainerClient(hostname, self.auth, protocol, port, o_entry)
         self.api = self.k_api  # default api is the kubernetes one for Kubernetes-class requests
+        self.list_image_openshift = self.list_docker_image  # For backward compatibility
 
     def list_route(self):
         """Returns list of routes"""
@@ -52,31 +56,21 @@ class Openshift(Kubernetes):
         entities_j = self.o_api.get('route')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
-            entity = Route(meta['name'], meta['namespace'])
-            entities.append(entity)
-        return entities
-
-    def list_service(self):
-        """Returns list of services"""
-        entities = []
-        entities_j = self.api.get('service')[1]['items']
-        for entity_j in entities_j:
-            meta, spec = entity_j['metadata'], entity_j['spec']
-            entity = Service(
-                meta['name'], meta['namespace'], spec['clusterIP'], spec['sessionAffinity'])
+            entity = Route(self, meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
 
     def list_docker_registry(self):
-        """Returns IP and port of the docker registry"""
+        """Returns list of docker registries"""
         entities = []
         entities_j = self.o_api.get('imagestream')[1]['items']
         for entity_j in entities_j:
             if 'dockerImageRepository' not in entity_j['status']:
                 continue
-            reg_raw = entity_j['status']['dockerImageRepository'].split('/')[0]
-            host, port = reg_raw.split(':') if ':' in reg_raw else (reg_raw, '')
-            entity = ImageRegistry(host, port)
+            meta = entity_j['metadata']
+            entity = ImageRegistry(self, meta['name'],
+                                   entity_j['status']['dockerImageRepository'],
+                                   meta['namespace'])
             if entity not in entities:
                 entities.append(entity)
         return entities
@@ -87,7 +81,7 @@ class Openshift(Kubernetes):
         entities_j = self.o_api.get('project')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
-            entity = Project(meta['name'])
+            entity = Project(self, meta['name'])
             entities.append(entity)
         return entities
 
@@ -97,13 +91,29 @@ class Openshift(Kubernetes):
         entities_j = self.o_api.get('template')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
-            entity = Template(meta['name'], meta['namespace'])
+            entity = Template(self, meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
 
-    def list_image_openshift(self):
+    def list_docker_image(self):
+        """Returns list of images (Docker registry only)"""
         entities = []
         entities_j = self.o_api.get('image')[1]['items']
         for entity_j in entities_j:
-            entities.append(entity_j['metadata'])
+            if 'dockerImageReference' not in entity_j:
+                continue
+            _, name, image_id, _ = Image.parse_docker_image_info(entity_j['dockerImageReference'])
+            entities.append(Image(self, name, image_id))
+        return entities
+
+    def list_deployment_config(self):
+        """Returns list of deployment configs"""
+        entities = []
+        entities_j = self.o_api.get('deploymentconfig')[1]['items']
+        for entity_j in entities_j:
+            meta = entity_j['metadata']
+            spec = entity_j['spec']
+            entity = DeploymentConfig(self, meta['name'], meta['namespace'],
+                                      spec['template'], spec['replicas'])
+            entities.append(entity)
         return entities

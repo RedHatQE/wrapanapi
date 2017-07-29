@@ -1,6 +1,15 @@
-from collections import namedtuple
-from base import ContainerWrapanapiAPIBase
-from rest_client import ContainerClient
+from wrapanapi.base import ContainerWrapanapiAPIBase
+from wrapanapi.rest_client import ContainerClient
+
+from wrapanapi.containers.container import Container
+from wrapanapi.containers.pod import Pod
+from wrapanapi.containers.service import Service
+from wrapanapi.containers.replicator import Replicator
+from wrapanapi.containers.image import Image
+from wrapanapi.containers.node import Node
+from wrapanapi.containers.image_registry import ImageRegistry
+from wrapanapi.containers.project import Project
+from wrapanapi.containers.volume import Volume
 
 """
 Related yaml structures:
@@ -22,20 +31,6 @@ kubernetes:
     password: secret
     token: mytoken
 """
-
-# Below are simplified representations of CFME k8s objects that should cover most of our needs
-Container = namedtuple('Container', ['name', 'cg_name', 'image'])
-Image = namedtuple('Image', ['name', 'tag', 'id'])
-# Images are equal if their ids match
-Image.__eq__ = lambda self, other: self.id == other.id
-ImageRegistry = namedtuple('ImageRegistry', ['host', 'port'])
-Project = namedtuple('Project', ['name'])
-Node = namedtuple('Node', ['name', 'ready', 'cpu', 'memory'])
-ContainerGroup = namedtuple(
-    'ContainerGroup', ['name', 'project_name', 'restart_policy', 'dns_policy'])
-ReplicationController = namedtuple(
-    'ReplicationController', ['name', 'project_name', 'replicas', 'current_replicas'])
-Service = namedtuple('Service', ['name', 'project_name', 'portal_ip', 'session_affinity'])
 
 
 class Kubernetes(ContainerWrapanapiAPIBase):
@@ -90,9 +85,10 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
+            pod = Pod(self, entity_j['metadata']['name'], entity_j['metadata']['namespace'])
             conts_j = entity_j['spec']['containers']
             for cont_j in conts_j:
-                cont = Container(cont_j['name'], entity_j['metadata']['name'], cont_j['image'])
+                cont = Container(self, cont_j['name'], pod, cont_j['image'])
                 if cont not in entities:
                     entities.append(cont)
         return entities
@@ -102,9 +98,8 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
-            meta, spec = entity_j['metadata'], entity_j['spec']
-            entity = ContainerGroup(
-                meta['name'], meta['namespace'], spec['restartPolicy'], spec['dnsPolicy'])
+            meta = entity_j['metadata']
+            entity = Pod(self, meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
 
@@ -113,9 +108,8 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities = []
         entities_j = self.api.get('service')[1]['items']
         for entity_j in entities_j:
-            meta, spec = entity_j['metadata'], entity_j['spec']
-            entity = Service(
-                meta['name'], meta['namespace'], spec['clusterIP'], spec['sessionAffinity'])
+            meta = entity_j['metadata']
+            entity = Service(self, meta['name'], meta['namespace'])
             entities.append(entity)
         return entities
 
@@ -124,50 +118,9 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities = []
         entities_j = self.api.get('replicationcontroller')[1]['items']
         for entity_j in entities_j:
-            meta, spec, status = entity_j['metadata'], entity_j['spec'], entity_j['status']
-            entity = ReplicationController(
-                meta['name'], meta['namespace'], spec['replicas'], status['replicas'])
+            meta = entity_j['metadata']
+            entity = Replicator(self, meta['name'], meta['namespace'])
             entities.append(entity)
-        return entities
-
-    def list_replication_controller_label(self):
-        """Returns list of replication controller labels - all objects"""
-        entities = []
-        entities_j = self.api.get('replicationcontroller')[1]['items']
-        for entity_j in entities_j:
-            entities.append(entity_j['metadata']['labels'])
-        return entities
-
-    def list_pod_label(self):
-        """Returns list of pod labels"""
-        entities = []
-        entities_j = self.api.get('pod')[1]['items']
-        for entity_j in entities_j:
-            entities.append(entity_j['metadata']['labels'])
-        return entities
-
-    def list_service_label(self):
-        """Returns list of service labels"""
-        entities = []
-        entities_j = self.api.get('service')[1]['items']
-        for entity_j in entities_j:
-            entities.append(entity_j['metadata']['labels'])
-        return entities
-
-    def list_node_label(self):
-        """Returns list of node labels"""
-        entities = []
-        entities_j = self.api.get('node')[1]['items']
-        for entity_j in entities_j:
-            entities.append(entity_j['metadata']['labels'])
-        return entities
-
-    def list_replication_controller_selector(self):
-        """Returns list of replication controller selectors - rc only"""
-        entities = []
-        entities_j = self.api.get('replicationcontroller')[1]['items']
-        for entity_j in entities_j:
-            entities.append(entity_j['spec']['selector'])
         return entities
 
     def list_image(self):
@@ -177,8 +130,8 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         for entity_j in entities_j:
             imgs_j = entity_j['status'].get('containerStatuses', [])
             for img_j in imgs_j:
-                _, name, tag = self._parse_image_info(img_j['image'])
-                img = Image(name, tag, img_j['imageID'])
+                _, name, _ = self._parse_image_info(img_j['image'])
+                img = Image(self, name, img_j['imageID'])
                 if img not in entities:
                     entities.append(img)
         return entities
@@ -188,11 +141,8 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities = []
         entities_j = self.api.get('node')[1]['items']
         for entity_j in entities_j:
-            meta, status = entity_j['metadata'], entity_j['status']
-            cond, cap = status['conditions'][0], status['capacity']
-            cpu = int(cap['cpu'])
-            memory = int(round(int(cap['memory'][:-2]) * 0.00000102400))  # KiB to GB
-            entity = Node(meta['name'], cond['status'], cpu, memory)
+            meta = entity_j['metadata']
+            entity = Node(self, meta['name'])
             entities.append(entity)
         return entities
 
@@ -206,8 +156,8 @@ class Kubernetes(ContainerWrapanapiAPIBase):
                 registry, _, _ = self._parse_image_info(img_j['image'])
                 if not registry:
                     continue
-                host, port = registry.split(':') if ':' in registry else (registry, '')
-                entity = ImageRegistry(host, port)
+                host, _ = registry.split(':') if ':' in registry else (registry, '')
+                entity = ImageRegistry(self, host, registry, None)
                 if entity not in entities:
                     entities.append(entity)
         return entities
@@ -218,6 +168,15 @@ class Kubernetes(ContainerWrapanapiAPIBase):
         entities_j = self.api.get('namespace')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
-            entity = Project(meta['name'])
+            entity = Project(self, meta['name'])
+            entities.append(entity)
+        return entities
+
+    def list_volume(self):
+        entities = []
+        entities_j = self.api.get('persistentvolume')[1]['items']
+        for entity_j in entities_j:
+            meta = entity_j['metadata']
+            entity = Volume(self, meta['name'])
             entities.append(entity)
         return entities
