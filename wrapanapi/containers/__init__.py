@@ -1,6 +1,7 @@
+import re
 from cached_property import cached_property
 
-from wrapanapi.exceptions import RequestFailedException
+from wrapanapi.exceptions import RequestFailedException, InvalidValueException
 
 
 class ContainersResourceBase(object):
@@ -9,8 +10,15 @@ class ContainersResourceBase(object):
     all container resources. Each resource has its own API entry and use different API
     (Kubernetes or OpenShift). Each resource has get, post, patch and delete methods which
     directed to the path of the resource.
+    The following parameters should be statically defined:
+        * RESOURCE_TYPE: (str) the resource type name in the API
+        * (optional) VALID_NAME_PATTERN: (str) the regex pattern that match a valid object name
     """
     def __init__(self, provider, name, namespace):
+        if hasattr(self, 'VALID_NAME_PATTERN') and not re.match(self.VALID_NAME_PATTERN, name):
+            raise InvalidValueException('{0} name "{1}" is invalid. {0} name must '
+                                        'match the regex "{2}"'
+                                        .format(self.RESOURCE_TYPE, name, self.VALID_NAME_PATTERN))
         self.provider = provider
         self.name = name
         self.namespace = namespace

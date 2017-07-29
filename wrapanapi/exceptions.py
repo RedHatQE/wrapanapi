@@ -17,6 +17,11 @@ class ImageNotFoundError(Exception):
     pass
 
 
+class InvalidValueException(Exception):
+    """Raises when invalid value provided. E.g. invalid OpenShift project name"""
+    pass
+
+
 class MultipleImagesError(Exception):
     pass
 
