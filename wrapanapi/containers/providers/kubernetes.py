@@ -69,7 +69,7 @@ class Kubernetes(ContainerWrapanapiAPIBase):
             localhost:5000/nginx:latest => localhost:5000, nginx, latest
         """
         registry, image_str = image_str.split('/', 1) if '/' in image_str else ('', image_str)
-        name, tag = image_str.split(':') if ':' in image_str else (image_str, '')
+        name, tag = image_str.split(':', 1) if ':' in image_str else (image_str, '')
         return registry, name, tag
 
     def info(self):
