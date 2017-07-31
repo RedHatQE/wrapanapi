@@ -152,8 +152,49 @@ class EC2System(WrapanapiAPIBase):
         # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
         return launch_time.replace(tzinfo=pytz.UTC)
 
-    def create_vm(self):
-        raise NotImplementedError('create_vm not implemented.')
+    def create_vm(self, image_id, min_count=1, max_count=1, instance_type='t1.micro', vm_name=''):
+        """
+            Creates aws instances.
+        TODO:
+            Check whether instances were really created.
+            Add additional arguments to be able to modify settings for instance creation.
+        Args:
+            image_id: ID of AMI
+            min_count: Minimal count of instances - useful only if creating thousand of instances
+            max_count: Maximal count of instances - defaults to 1
+            instance_type: Type of instances, catalog of instance types is here:
+                https://aws.amazon.com/ec2/instance-types/
+                Defaults to 't1.micro' which is the least expensive instance type
+
+            vm_name: Name of instances, can be blank
+
+        Returns:
+            List of created aws instances' IDs.
+        """
+        self.logger.info(" Creating instances[%d] with name %s,type %s and image ID: %s ",
+                         max_count, vm_name, instance_type, image_id)
+        try:
+            result = self.ec2_connection.run_instances(ImageId=image_id, MinCount=min_count,
+                MaxCount=max_count, InstanceType=instance_type, TagSpecifications=[
+                    {
+                        'ResourceType': 'instance',
+                        'Tags': [
+                            {
+                                'Key': 'Name',
+                                'Value': vm_name,
+                            },
+                        ]
+                    },
+                ]
+            )
+            instances = result.get('Instances')
+            instance_ids = []
+            for instance in instances:
+                instance_ids.append(instance.get('InstanceId'))
+            return instance_ids
+        except Exception:
+            self.logger.exception("Create of {} instance failed.".format(vm_name))
+            return None
 
     def delete_vm(self, instance_id):
         """Deletes the an instance
