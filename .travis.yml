@@ -1,9 +1,19 @@
 language: python
 python:
-  - "2.7"
+  - '2.7'
 install:
-  - "pip install -U pip setuptools"
-  - "pip install -Ur requirements-test.txt"
-script: "py.test tests/ -v --cov wrapanapi"
+  - pip install -U pip setuptools
+  - pip install -Ur requirements-test.txt
+script: py.test tests/ -v --cov wrapanapi
 after_success:
-    - coveralls
+  - coveralls
+deploy:
+  provider: pypi
+  user: mfalesni
+  password:
+    secure: gh4/LzfSimlgqzACwsNVtJYCr/4yBDiI04kir3+rWLO7QdfeFFywPNK8JZODQw68MqCZvCznEaPGQMfXanxs84/zZJzO3Yi8Ejy92eLado4gLyDFk+sANxkQkN+ryfFu/0aoALJLW0Xw66mvEkFYf3wP2Sh/IaFUOY55ju4GIt8sqlo4KsKdQf3IjC9zqs9rCSqlboCUmi8Zyomq4PTCwRXhj4+ZZ0mc0ZSrLWiCt+lq+nNfv10uWQ0zzpWFLdCBKrsUxJ1Y9EroYw7Qs4HO+Vzr9rLiMT+aH7j0IkGiMj4OLbvXD8mIzw9LLY08qCbKmrr37XDXuHBHh/YjDQ/zCS2B0ns0Xks2YLq+5nsAk7BkgHFGl29mB9h1VEPHjHdhsraYkQrYzn1QgEmYL90NWs/ugaJsICLo91v+ANqjRJN5aGsDY3ygz7GEVbIEKE9S8VBMxpWEAZy5RGyfVP68ND1sPm7/o0UzA1mPgbk2YBHbuv6NLtm2ZjY+jDM833R4RGnJimZFwbi2TxYSSFSZ0IDApOUOc9mV3xIiY8zwgY7ud4Iwhu1l+/gIAK/z25/1yXX/ZFZ74GzA0C9iXLLBvVnmOaonA/Hd+8ykGL4YApnAvRn5lfcQ+UofA9Dil+AoX3ck3ZwpCAZR55K1uieRjB1/VpBadwCX/qHtzp42y7I=
+  on:
+    tags: true
+    distributions: sdist bdist_wheel
+    repo: ManageIQ/wrapanapi
+
