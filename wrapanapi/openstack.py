@@ -373,7 +373,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         # Example vm.created: 2014-08-14T23:29:30Z
         creation_time = datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
         # create time is UTC, localize it, strip tzinfo
-        return creation_time.astimezone(pytz.UTC)
+        return creation_time.replace(tzinfo=pytz.UTC)
 
     def is_vm_running(self, vm_name):
         return self.vm_status(vm_name) in self.states['running']
