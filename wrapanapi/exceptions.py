@@ -37,6 +37,11 @@ class RestClientException(Exception):
     pass
 
 
+class RequestFailedException(Exception):
+    """Raised if some request returned unexpected status code"""
+    pass
+
+
 class NetworkNameNotFound(Exception):
     pass
 

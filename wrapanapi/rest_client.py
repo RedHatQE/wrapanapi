@@ -40,6 +40,15 @@ class ContainerClient(object):
         else:
             raise RestClientException('Invalid auth object')
 
+    def entity_path(self, entity_type, name=None, namespace=None):
+        """Processing the entity path according to the type, name and namespace"""
+        path = '{}s'.format(entity_type)
+        if namespace is not None:
+            path = os.path.join('namespaces/{}'.format(namespace), path)
+        if name is not None:
+            path = os.path.join(path, '{}'.format(name))
+        return path
+
     def get(self, entity_type, name=None, namespace=None, convert=None):
         """Sends a request to fetch an entity of specific type
 
@@ -54,12 +63,37 @@ class ContainerClient(object):
         Return:
             Tuple containing status code and json response with requested entity/entities.
         """
-        path = '{}s'.format(entity_type)
-        if name is not None:
-            if namespace is not None:
-                path = os.path.join('namespaces/{}'.format(namespace), path)
-            path = os.path.join(path, '{}'.format(name))
+        path = self.entity_path(entity_type, name, namespace)
         r = self.raw_get(path)
+        json_content = r.json() if r.ok else None
+        if json_content and convert:
+            json_content = convert(json_content)
+        return (r.status_code, json_content)
+
+    def post(self, entity_type, data, name=None, namespace=None, convert=None):
+        """Sends a POST request to an entity specified by the method parameters"""
+        path = self.entity_path(entity_type, name, namespace)
+        r = self.raw_post(path, data)
+        json_content = r.json() if r.ok else None
+        if json_content and convert:
+            json_content = convert(json_content)
+        return (r.status_code, json_content)
+
+    def patch(self, entity_type, data, name=None, namespace=None, convert=None,
+              headers={'Content-Type': 'application/strategic-merge-patch+json'}):
+        """Sends a PATCH request to an entity specified by the method parameters"""
+        path = self.entity_path(entity_type, name, namespace)
+        r = self.raw_patch(path, data, headers)
+        json_content = r.json() if r.ok else None
+        if json_content and convert:
+            json_content = convert(json_content)
+        return (r.status_code, json_content)
+
+    def delete(self, entity_type, name, namespace=None, convert=None):
+        """Sends a DELETE request to an entity specified by the method parameters
+        (In simple words - delete the entity)"""
+        path = self.entity_path(entity_type, name, namespace)
+        r = self.raw_delete(path)
         json_content = r.json() if r.ok else None
         if json_content and convert:
             json_content = convert(json_content)
@@ -96,6 +130,11 @@ class ContainerClient(object):
 
     def raw_post(self, path, data, headers=None):
         return requests.post(
+            os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
+            headers=headers, data=json.dumps(data))
+
+    def raw_patch(self, path, data, headers=None):
+        return requests.patch(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
             headers=headers, data=json.dumps(data))
 
