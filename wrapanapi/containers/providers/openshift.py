@@ -114,6 +114,7 @@ class Openshift(Kubernetes):
             meta = entity_j['metadata']
             spec = entity_j['spec']
             entity = DeploymentConfig(self, meta['name'], meta['namespace'],
-                                      spec['template'], spec['replicas'])
+                                      spec['template']['spec']['containers'][-1].get('image'),
+                                      spec['replicas'])
             entities.append(entity)
         return entities
