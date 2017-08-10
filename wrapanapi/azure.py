@@ -315,14 +315,14 @@ class AzureSystem(WrapanapiAPIBase):
             $list = Get-AzureRmLog -ResourceProvider Microsoft.Compute -DetailedOutput `
             -StartTime (Get-Date).AddDays(-7) -MaxEvents 10000 | Where-Object ResourceId -like `
             "*/{vm_name}"
-            $list[0].EventTimestamp.ToString("yyyy-MM-ddTHH:mm:ss tt zzz")
+            $list[0].EventTimestamp.ToString("yyyy-MM-ddTHH:mm:ss zzz")
             }}
             """.format(vm_name=vm_name,
                        rs_group=resource_group or self.resource_group), True)
         if not vhd_last_modified:
             raise VMCreationDateError('No LastModified date found for instance {}'.format(vm_name))
-        creation_time = parse(str(vhd_last_modified))
-        self.logger.info("VM last edit time based on vhd =  {}".format(creation_time))
+        creation_time = parse(vhd_last_modified)
+        self.logger.info("VM last edit time based on vhd: {}".format(creation_time))
         return creation_time.astimezone(pytz.UTC)
 
     def create_netsec_group(self, group_name, resource_group):
