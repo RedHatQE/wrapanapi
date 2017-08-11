@@ -85,7 +85,7 @@ class EC2System(WrapanapiAPIBase):
                 config=Config(signature_version='s3v4'))
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
-        self.sns_connection = boto3.client('sns')
+        self.sns_connection = boto3.client('sns', region_name=regionname)
         self.kwargs = kwargs
 
     def disconnect(self):
