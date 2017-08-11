@@ -580,15 +580,23 @@ class AzureSystem(WrapanapiAPIBase):
         self.delete_vm(name)
 
     def current_ip_address(self, vm_name, resource_group=None):
-        # Returns first active IPv4 IpAddress only
+        """
+        Returns first active IPv4 IpAddress of Primary VM Network Interface
+        """
+        vm_nic = self.get_network_interface(vm_name, resource_group or self.resource_group)
         azure_data = self.run_script(
-            "Get-AzureRmPublicIpAddress -ResourceGroup \"{}\" -Name \"{}\" |"
-            "convertto-xml -as String".format(resource_group or self.resource_group, vm_name))
-        data = self.clean_azure_xml(azure_data)
-        return etree.parse(StringIO(data)).getroot().xpath(
-            "./Object/Property[@Name='IpAddress']/text()")
+            """
+            $ip_config = Get-AzureRmNetworkInterface -Name {vm_nic} -ResourceGroupName {rg_name}| `
+            Select IpConfigurations
+            $ip = $ip_config.IpConfigurations |select PrivateIpAddress
+            $ip.PrivateIpAddress.ToString()
+            """.format(vm_nic=vm_nic, rg_name=resource_group or self.resource_group))
+        return azure_data
 
     def list_free_nics(self, nic_template):
+        """
+        Returns list of free Network interfaces with name matching nic_template
+        """
         try:
             azure_data = self.run_script(
                 """
@@ -604,6 +612,9 @@ class AzureSystem(WrapanapiAPIBase):
             return False
 
     def list_free_pip(self, pip_template):
+        """
+        Returns list of free public IPs matching pip_template
+        """
         try:
             azure_data = self.run_script(
                 """
@@ -633,16 +644,30 @@ class AzureSystem(WrapanapiAPIBase):
         return vhd_endpoint
 
     def get_network_interface(self, vm_name, resource_group=None):
+        """
+        Returns name of the Primary network interface attached to the Instance
+        """
         self.logger.info("Attempting to Retrieve Azure VM Network Interface {}".format(vm_name))
         azure_data = self.run_script(
-            "Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\" | convertto-xml -as String"
-            .format(resource_group or self.resource_group, vm_name))
-        data = self.clean_azure_xml(azure_data)
-        status_value = json.loads(etree.parse(StringIO(data)).getroot().xpath(
-            "./Object/Property[@Name='NetworkProfileText']/text()")[0])
-        nic_uri = status_value['NetworkInterfaces'][0]['ReferenceUri']
-        self.logger.info("Returned URI was {}".format(nic_uri))
-        return os.path.split(urlparse.urlparse(nic_uri).path)[1]
+            """
+            $nic = Get-AzureRmVm -ResourceGroup \"{}\" -Name \"{}\"
+            $nic.NetworkProfile.NetworkInterfaces| convertto-json -Depth 2
+            """.format(resource_group or self.resource_group, vm_name))
+        data = json.loads(azure_data)
+        # Returned data is either list of dicts if many NICs are attached to Instance or just a
+        # dict if only one NIC is attached. In case we have 1 NIC - Primary might be "None"
+        vm_nic = None
+        if not isinstance(data, list):
+            data = [data]
+        for nic in data:
+            if nic["Primary"] is not False:
+                vm_nic = nic["Id"]
+        # In case vm_nic is still None - handle it
+        if vm_nic is None:
+            raise Warning("Seems like vm {} doesn't have NetworkInterface".format(vm_name))
+            return None
+        self.logger.info("Returned URI was {}".format(vm_nic))
+        return os.path.split(urlparse.urlparse(vm_nic).path)[1]
 
     def remove_host_from_cluster(self, hostname):
         """I did not notice any scriptlet that lets you do this."""
