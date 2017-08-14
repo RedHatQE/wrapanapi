@@ -544,6 +544,51 @@ class AzureSystem(WrapanapiAPIBase):
                     Remove-AzureRmPublicIpAddress -Name \"{}\" -ResourceGroupName {} -Force
                 """.format(piname, self.resource_group), ignore_error=True)
 
+    def remove_unused_blobs(self):
+        """
+        Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
+        Returns list of removed disks
+        """
+        azure_data = self.run_script(
+            """
+            $storeContext = New-AzureStorageContext -StorageAccountName \"{storage_account}\" `
+                            -StorageAccountKey \"{storage_key}\"
+            $UMD = Get-AzureRmStorageAccount -Name cfmeautopay -ResourceGroupName Automation `
+            |Get-AzureStorageContainer | Get-AzureStorageBlob | Where {$_.Name -like 'test*.vhd'}
+
+            $UMVHDS = $UMD | Where {$_.ICloudBlob.Properties.LeaseStatus -eq "Unlocked"}
+            $MVHDS = Get-AzureRmDisk
+            $MVHD = $MVHDS | Where {$_.OwnerId -eq $null -and $_.Name -like "test*"}
+
+            $list = [ordered]@{
+                    "Unmanaged"=@{};
+                    "Managed"=@()  ;
+                              }
+            foreach ($vhd in $UMVHDS){
+                if ($list.item("Unmanaged").keys -notcontains $vhd.ICloudBlob.Container.Name){
+                    $list.item("Unmanaged").add($vhd.ICloudBlob.Container.Name.ToString(), @())}
+                $list.item("Unmanaged").item($vhd.ICloudBlob.Container.Name.ToString()) += `
+                $vhd.Name.ToString()
+                                    }
+
+            foreach ($disk in $MVHD){
+                $list.Item("Managed")  += $disk.Name.ToString()
+                                    }
+            #Delete Unmanaged Disks
+            $UMVHDS | Remove-AzureStorageBlob -Force
+
+            #Delete Managed Disks
+            $MVHD | Remove-AzureRmDisk -Force
+
+            $list |ConvertTo-Json -Depth 3
+            """
+        )
+        try:
+            disks_list = json.loads(azure_data)
+        except Exception as e:
+            self.logger.debug("Script returned {}: {} ".format(e, azure_data))
+        return disks_list
+
     def list_blob_images(self, container):
         azure_data = self.run_script(
             'New-AzureStorageContext -StorageAccountName "{acc_name}"'
