@@ -303,7 +303,11 @@ class EC2System(WrapanapiAPIBase):
             instance_id: ID of the instance to inspect
         Returns: Whether or not the requested instance is running
         """
-        return self.vm_status(instance_id) in self.states['running']
+        try:
+            running = self.vm_status(instance_id) in self.states['running']
+            return running
+        except:
+            return False
 
     def wait_vm_running(self, instance_id, num_sec=360):
         self.logger.info(" Waiting for EC2 instance %s to change status to running" % instance_id)
@@ -730,7 +734,7 @@ class EC2System(WrapanapiAPIBase):
                     return True
                 else:
                     return False
-            except:
+            except Exception:
                 return False
         elif volume_name:
             response = self.ec2_connection.describe_volumes(
@@ -750,7 +754,7 @@ class EC2System(WrapanapiAPIBase):
             else:
                 return False
         else:
-            raise Exception("Neither volume_name nor volume_id were specified.")
+            raise TypeError("Neither volume_name nor volume_id were specified.")
 
     def snapshot_exists(self, snapshot_name=None, snapshot_id=None):
         """
@@ -772,7 +776,7 @@ class EC2System(WrapanapiAPIBase):
                     return True
                 else:
                     return False
-            except:
+            except Exception:
                 return False
         elif snapshot_name:
             response = self.ec2_connection.describe_snapshots(
@@ -788,7 +792,7 @@ class EC2System(WrapanapiAPIBase):
             else:
                 return False
         else:
-            raise Exception("Neither snapshot_name nor snapshot_id were specified.")
+            raise TypeError("Neither snapshot_name nor snapshot_id were specified.")
 
     def copy_snapshot(self, source_snapshot_id, source_region=None):
         """
