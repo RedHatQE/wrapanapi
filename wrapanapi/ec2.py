@@ -303,7 +303,11 @@ class EC2System(WrapanapiAPIBase):
             instance_id: ID of the instance to inspect
         Returns: Whether or not the requested instance is running
         """
-        return self.vm_status(instance_id) in self.states['running']
+        try:
+            running = self.vm_status(instance_id) in self.states['running']
+            return running
+        except:
+            return False
 
     def wait_vm_running(self, instance_id, num_sec=360):
         self.logger.info(" Waiting for EC2 instance %s to change status to running" % instance_id)
@@ -701,4 +705,115 @@ class EC2System(WrapanapiAPIBase):
 
         except Exception:
             self.logger.exception("Delete of {} topic failed.".format(arn))
+            return False
+
+    def volume_exists_and_available(self, volume_name=None, volume_id=None):
+        """
+        Method for checking existence and availability state for volume
+
+        Args:
+            volume_name: Name of volume, if not set volume_id must be set
+            volume_id: ID of volume in format vol-random_chars, if not set volume_name must be set
+
+        Returns:
+            True if volume exists and is available.
+            False if volume doesn't exist or is not available.
+        """
+        if volume_id:
+            try:
+                response = self.ec2_connection.describe_volumes(
+                    VolumeIds=[volume_id],
+                    Filters=[
+                        {
+                            'Name': 'status',
+                            'Values': ['available']
+                        }
+                    ]
+                )
+                if response.get('Volumes'):
+                    return True
+                else:
+                    return False
+            except Exception:
+                return False
+        elif volume_name:
+            response = self.ec2_connection.describe_volumes(
+                Filters=[
+                    {
+                        'Name': 'status',
+                        'Values': ['available']
+                    },
+                    {
+                        'Name': 'tag:Name',
+                        'Values': [volume_name]
+                    }
+                ]
+            )
+            if response.get('Volumes'):
+                return True
+            else:
+                return False
+        else:
+            raise TypeError("Neither volume_name nor volume_id were specified.")
+
+    def snapshot_exists(self, snapshot_name=None, snapshot_id=None):
+        """
+        Method for checking existence of snapshot.
+
+        Args:
+            snapshot_name: Name of snapshot, if not set snapshot_id must be set.
+            snapshot_id: Id of snapshot in format snap-random_chars, if not set snapshot_name
+            must be set.
+
+        Returns:
+            True if snapshot exists.
+            False if snapshot doesn't exist.
+        """
+        if snapshot_id:
+            try:
+                response = self.ec2_connection.describe_snapshots(SnapshotIds=[snapshot_id])
+                if response.get('Snapshots'):
+                    return True
+                else:
+                    return False
+            except Exception:
+                return False
+        elif snapshot_name:
+            response = self.ec2_connection.describe_snapshots(
+                Filters=[
+                    {
+                        'Name': 'tag:Name',
+                        'Values': [snapshot_name]
+                    }
+                ]
+            )
+            if response.get('Snapshots'):
+                return True
+            else:
+                return False
+        else:
+            raise TypeError("Neither snapshot_name nor snapshot_id were specified.")
+
+    def copy_snapshot(self, source_snapshot_id, source_region=None):
+        """
+        This method is not working properly because of bug in boto3.
+        It creates new snapshot with empty size and error.
+        Args:
+            source_snapshot_id: Id of source snapshot in format snap-random_chars
+            source_region: Source region, if not set then ec2_connection region
+
+        Returns:
+            True when snapshot copy started successfully.
+            False when snapshot copy didn't start.
+        """
+        if not source_region:
+            source_region = self.kwargs.get('region')
+        try:
+            self.ec2_connection.copy_snapshot(
+                SourceRegion=source_region, SourceSnapshotId=source_snapshot_id,
+                DestinationRegion=source_region
+            )
+            return True
+        except Exception:
+            self.logger.exception("Copy snapshot with id {} failed.".format(source_snapshot_id))
             return False
