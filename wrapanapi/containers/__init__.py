@@ -103,10 +103,10 @@ class ContainersResourceBase(object):
 
     def delete_label(self, key):
         """Deletes a label from this resource"""
-        labels = self.list_labels()
-        if key not in labels:
+        original_labels = self.list_labels()
+        if key not in original_labels:
             raise Exception('{} has no label "{}"'.format(self, key))
-        del labels[key]
+        del original_labels[key]
         labels = {'$patch': 'replace'}
-        labels.update(labels)
+        labels.update(original_labels)
         return self.patch({'metadata': {'labels': labels}})
