@@ -2,6 +2,7 @@ import requests
 import os
 import json
 import six
+import logging
 
 from exceptions import RestClientException
 
@@ -31,6 +32,7 @@ class ContainerClient(object):
             entry: Entry point of the REST API
             verify: 'True' if we want to verify SSL, 'False' otherwise
         """
+        self._logger = logging.getLogger(__name__)
         self.api_entry = "{}://{}:{}/{}".format(protocol, hostname, port, entry)
         self.verify = verify
         if type(auth) in (list, set, tuple):
@@ -116,6 +118,7 @@ class ContainerClient(object):
         return r.ok
 
     def raw_get(self, path, headers=None, params=None):
+        self._logger.debug('GET %s;', path)
         return requests.get(
             os.path.join(self.api_entry, path),
             auth=self.auth,
@@ -124,21 +127,25 @@ class ContainerClient(object):
             params=params)
 
     def raw_put(self, path, data, headers=None):
+        self._logger.debug('PUT %s; data=%s;', path, data)
         return requests.put(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
             headers=headers, data=json.dumps(data))
 
     def raw_post(self, path, data, headers=None):
+        self._logger.debug('POST %s; data=%s;', path, data)
         return requests.post(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
             headers=headers, data=json.dumps(data))
 
     def raw_patch(self, path, data, headers=None):
+        self._logger.debug('PATCH %s; data=%s;', path, data)
         return requests.patch(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
             headers=headers, data=json.dumps(data))
 
     def raw_delete(self, path, headers=None):
+        self._logger.debug('DELETE %s;', path)
         return requests.delete(
             os.path.join(self.api_entry, path), auth=self.auth, verify=self.verify,
             headers=headers)
