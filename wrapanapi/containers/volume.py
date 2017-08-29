@@ -3,6 +3,8 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Volume(ContainersResourceBase):
     RESOURCE_TYPE = 'persistentvolume'
+    KIND = 'PersistentVolume'
+    CREATABLE = True
 
     def __init__(self, provider, name):
         ContainersResourceBase.__init__(self, provider, name, None)

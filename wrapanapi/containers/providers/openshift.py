@@ -112,9 +112,6 @@ class Openshift(Kubernetes):
         entities_j = self.o_api.get('deploymentconfig')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
-            spec = entity_j['spec']
-            entity = DeploymentConfig(self, meta['name'], meta['namespace'],
-                                      spec['template']['spec']['containers'][-1].get('image'),
-                                      spec['replicas'])
+            entity = DeploymentConfig(self, meta['name'], meta['namespace'])
             entities.append(entity)
         return entities

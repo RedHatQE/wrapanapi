@@ -3,6 +3,8 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Service(ContainersResourceBase):
     RESOURCE_TYPE = 'service'
+    KIND = 'Service'
+    CREATABLE = True
 
     @property
     def portal_ip(self):

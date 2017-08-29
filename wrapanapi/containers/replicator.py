@@ -3,6 +3,7 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Replicator(ContainersResourceBase):
     RESOURCE_TYPE = 'replicationcontroller'
+    KIND = 'ReplicationController'
 
     @property
     def replicas(self):

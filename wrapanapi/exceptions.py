@@ -57,8 +57,22 @@ class RequestFailedException(Exception):
     pass
 
 
+class ResourceAlreadyExistsException(Exception):
+    """Raised when trying to create a resource that already exists"""
+    pass
+
+
 class NetworkNameNotFound(Exception):
     pass
+
+
+class UncreatableResourceException(Exception):
+    """Raised when trying to create uncreatable resource"""
+    def __init__(self, resource):
+        self.resource = resource
+
+    def __str__(self):
+        return '{} is not creatable resource'
 
 
 class VMInstanceNotCloned(Exception):

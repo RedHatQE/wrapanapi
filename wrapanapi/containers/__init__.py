@@ -2,7 +2,8 @@ import re
 from cached_property import cached_property
 
 from wrapanapi.exceptions import (RequestFailedException, InvalidValueException,
-    LabelNotFoundException)
+    LabelNotFoundException, ResourceAlreadyExistsException,
+    UncreatableResourceException)
 
 
 class ContainersResourceBase(object):
@@ -13,9 +14,24 @@ class ContainersResourceBase(object):
     directed to the path of the resource.
     The following parameters should be statically defined:
         * RESOURCE_TYPE: (str) the resource type name in the API
+        * KIND: (str) the resource 'Kind' property as it appear in JSON
+        * CREATABLE (optional): (bool) Specify whether this resource is creatable or not (some
+                                resources are not, e.g. Pod is created by Replication Controller
+                                and not manually). set to False by default.
+        * API (optional): (str) The API to use - the default is Kubernetes ('k_api') but some
+                          resources use OpenShift ('o_api').
         * (optional) VALID_NAME_PATTERN: (str) the regex pattern that match a valid object name
     """
+    CREATABLE = False
+    API = 'k_api'
+
     def __init__(self, provider, name, namespace):
+        """
+        Args:
+            provider: (Openshift || Kubernetes) The containers provider
+            name: (str) The name of the resource
+            namespace: (str) The namespace used for this resource
+        """
         if hasattr(self, 'VALID_NAME_PATTERN') and not re.match(self.VALID_NAME_PATTERN, name):
             raise InvalidValueException('{0} name "{1}" is invalid. {0} name must '
                                         'match the regex "{2}"'
@@ -25,7 +41,7 @@ class ContainersResourceBase(object):
         self.namespace = namespace
 
     def __eq__(self, other):
-        return (self.namespace == getattr(other, 'namespace', None) and
+        return (getattr(self, 'namespace', None) == getattr(other, 'namespace', None) and
                 self.name == getattr(other, 'name', None))
 
     def __repr__(self):
@@ -42,8 +58,51 @@ class ContainersResourceBase(object):
 
     @cached_property
     def api(self):
-        """The API to use - the default is Kubernetes but some resources use the OpenShift API"""
-        return self.provider.api
+        """Return the used API according to the defined API."""
+        return getattr(self.provider, self.API)
+
+    @classmethod
+    def create(cls, provider, payload):
+        """Creating the object if it doesn't exist and creatable.
+        Args:
+            provider: (Openshift || Kubernetes) The containers provider.
+            payload: The JSON data to create this object.
+        Returns:
+            The created instance of that resource.
+        Raises:
+            UncreatableResourceException, ResourceAlreadyExistsException.
+        """
+        if not cls.CREATABLE:
+            raise UncreatableResourceException(cls.RESOURCE_TYPE)
+        api = getattr(provider, cls.API)
+        # Checking name validity
+        name = payload['metadata']['name']
+        if hasattr(cls, 'VALID_NAME_PATTERN') and not re.match(cls.VALID_NAME_PATTERN, name):
+            raise InvalidValueException('{0} name "{1}" is invalid. {0} name must '
+                                        'match the regex "{2}"'
+                                        .format(cls.RESOURCE_TYPE, name, cls.VALID_NAME_PATTERN))
+        # Choosing the arguments accordingly, some resources are
+        # not namespaced and require different arguments.
+        if 'namespace' in payload['metadata']:
+            obj = cls(provider, name, payload['metadata']['namespace'])
+        else:
+            obj = cls(provider, name)
+        # Defining default/predefined parameters
+        payload['apiVersion'] = payload.get('apiVersion', 'v1')
+        payload['kind'] = cls.KIND
+        # Checking existence
+        if obj.exists():
+            raise ResourceAlreadyExistsException(
+                '{} "{}" already exists.'.format(cls.RESOURCE_TYPE, obj.name))
+        status_code, json_content = api.post(cls.RESOURCE_TYPE, payload,
+                                             namespace=obj.namespace)
+        # Verifying success
+        if status_code not in (200, 201):
+            raise RequestFailedException(
+                'Failed to create {} "{}". status_code: {}; json_content: {};'
+                .format(cls.RESOURCE_TYPE, obj.name, status_code, json_content)
+            )
+        return obj
 
     @property
     def name_for_api(self):

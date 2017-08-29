@@ -21,7 +21,8 @@ from wrapanapi.containers.route import Route
 from wrapanapi.containers.template import Template
 from wrapanapi.containers.volume import Volume
 
-from wrapanapi.exceptions import InvalidValueException, RequestFailedException
+from wrapanapi.exceptions import InvalidValueException, ResourceAlreadyExistsException,\
+    UncreatableResourceException
 
 
 # Specify whether to use a mock provider or real one.
@@ -88,7 +89,7 @@ def gen_project(provider):
 def gen_image(provider):
     if MOCKED:
         return Image(provider, 'some.test.image', 'sha256:{}'
-                     .format(fauxfactory.gen_alphanumeric(64)))
+                    .format(fauxfactory.gen_alphanumeric(64)))
     return choice(provider.list_docker_image())
 
 
@@ -142,20 +143,27 @@ def gen_image_registry(provider):
 
 @pytest.fixture(scope=FIXTURES_SCOPES)
 def gen_volume(provider):
-    if MOCKED:
-        return Volume(provider, 'my-test-persistent-volume')
-    return choice(provider.list_volume())
+    return Volume(provider, 'my-test-persistent-volume')
 
 
 @pytest.fixture(scope=FIXTURES_SCOPES)
 def gen_dc(provider):
-    return DeploymentConfig(provider, fauxfactory.gen_alpha().lower(),
-                            'default', 'openshift/hello-openshift', 1)
+    return DeploymentConfig(provider, fauxfactory.gen_alpha().lower(), 'default')
 
 
 @pytest.fixture(scope=FIXTURES_SCOPES)
 def label():
     return (fauxfactory.gen_alpha().lower(), fauxfactory.gen_alpha().lower())
+
+
+def wait_for_existence(resource, exist=True, timeout='1M'):
+    """Wait for the object to exist (or not exist if <exist> is False)."""
+    return wait_for(
+        lambda: resource.exists() == exist,
+        message="Waiting for {} {} to {}exist..."
+                .format(resource.RESOURCE_TYPE, resource.name, ('' if exist else 'not ')),
+        delay=5, timeout=timeout
+    )
 
 
 def base__test_label_create(resource, label_key, label_value):
@@ -192,6 +200,27 @@ def base__test_label_delete(resource, label_key):
                     delay=5, timeout='1M').out
 
 
+def base__test_create(provider, resource_class, payload):
+    if MOCKED:
+        provider.o_api.post.return_value = [201, {}]
+        provider.o_api.get.return_value = [409, {}]
+    resource = resource_class.create(provider, payload)
+    if MOCKED:
+        provider.o_api.get.return_value = [200, {}]
+    assert isinstance(resource, resource_class)
+    assert wait_for_existence(resource)
+    return resource
+
+
+def base__test_delete(provider, resource):
+    if MOCKED:
+        provider.o_api.delete.return_value = [200, {}]
+        provider.o_api.get.return_value = [409, {}]
+    res = resource.delete()
+    assert res[0] == 200
+    assert wait_for_existence(resource, exist=False)
+
+
 @pytest.mark.incremental
 class TestProject(object):
     def test_list(self, provider):
@@ -205,15 +234,15 @@ class TestProject(object):
         assert all([isinstance(inst, Project) for inst in provider.list_project()])
 
     def test_project_create(self, provider, gen_project):
+        payload = {"metadata": {"name": gen_project.name}}
+        assert base__test_create(provider, Project, payload) == gen_project
+
+    def test_already_exists(self, provider, gen_project):
         if MOCKED:
-            provider.api.post.return_value = [201, {
-                "apiVersion": "v1", "kind": "Project", "metadata": {"name": gen_project.name}}]
             provider.api.get.return_value = [200, {}]
-        gen_project.create()
-        assert wait_for(lambda: gen_project.exists(),
-                        message="Waiting for project {} to be created..."
-                                .format(gen_project.name),
-                        delay=5, timeout='1M')
+        with pytest.raises(ResourceAlreadyExistsException):
+            payload = {'metadata': {'name': gen_project.name}}
+            gen_project.create(provider, payload)
 
     def test_labels_create(self, provider, gen_project, label):
         base__test_label_create(gen_project, label[0], label[1])
@@ -222,16 +251,7 @@ class TestProject(object):
         base__test_label_delete(gen_project, label[0])
 
     def test_project_delete(self, provider, gen_project):
-        if MOCKED:
-            provider.o_api.delete.return_value = provider.api.delete.return_value = [200, {}]
-            provider.o_api.get.side_effect = provider.api.get.side_effect = \
-                RequestFailedException('Request Failed')
-        res = gen_project.delete()
-        assert res[0] == 200
-        assert wait_for(lambda: not gen_project.exists(),
-                        message="Waiting for project {} to be deleted..."
-                        .format(gen_project.name),
-                        delay=5, timeout='1M')
+        base__test_delete(provider, gen_project)
 
     def test_invalid_name(self):
         with pytest.raises(InvalidValueException):
@@ -307,11 +327,34 @@ class TestService(object):
 
 @pytest.mark.incremental
 class TestRoute(object):
+    def test_create(self, provider, gen_route, gen_service):
+        if MOCKED:
+            service = gen_service
+        else:
+            service = provider.list_service().pop()
+        payload = {
+            'metadata': {
+                'name': 'route-to-{}'.format(service.name),
+                'namespace': service.namespace
+            },
+            'spec': {
+                'host': 'www.example.com',
+                'to': {
+                    'Kind': service.KIND,
+                    'name': service.name
+                }
+            }
+        }
+        base__test_create(provider, Route, payload)
+
     def test_labels_create(self, provider, gen_route, label):
         base__test_label_create(gen_route, label[0], label[1])
 
     def test_labels_delete(self, provider, gen_route, label):
         base__test_label_delete(gen_route, label[0])
+
+    def test_delete(self, provider, gen_route):
+        base__test_delete(provider, gen_route)
 
 
 @pytest.mark.incremental
@@ -391,15 +434,77 @@ class TestDeploymentConfig(object):
                     for inst in provider.list_deployment_config()])
 
     def test_dc_create(self, provider, gen_dc):
+        payload = {
+            'metadata': {
+                'name': gen_dc.name,
+                'namespace': gen_dc.namespace
+            },
+            'spec': {
+                'replicas': 1,
+                'test': False,
+                'triggers': [
+                    {
+                        'type': 'ConfigChange'
+                    }
+                ],
+                'strategy': {
+                    'activeDeadlineSeconds': 21600,
+                    'resources': {},
+                    'rollingParams': {
+                        'intervalSeconds': 1,
+                        'maxSurge': '25%',
+                        'maxUnavailable': '25%',
+                        'timeoutSeconds': 600,
+                        'updatePeriodSeconds': 1
+                    },
+                    'type': 'Rolling'
+                },
+                'template': {
+                    'metadata': {
+                        'labels': {
+                            'run': gen_dc.name
+                        }
+                    },
+                    'spec': {
+                        'containers': [
+                            {
+                                'image': 'openshift/hello-openshift',
+                                'imagePullPolicy': 'Always',
+                                'name': gen_dc.name,
+                                'ports': [
+                                    {
+                                        'containerPort': 8080,
+                                        'protocol': 'TCP'
+                                    }
+                                ],
+                                'resources': {},
+                                'terminationMessagePath': '/dev/termination-log'
+                            }
+                        ],
+                        'dnsPolicy': 'ClusterFirst',
+                        'restartPolicy': 'Always',
+                        'securityContext': {},
+                        'terminationGracePeriodSeconds': 30
+                    }
+                }
+            },
+            'status': {
+                'replicas': 1,
+                'latestVersion': 1,
+                'observedGeneration': 2,
+                'updatedReplicas': 1,
+                'availableReplicas': 1,
+                'unavailableReplicas': 0
+            }
+        }
+        assert base__test_create(provider, DeploymentConfig, payload) == gen_dc
+
+    def test_already_exists(self, provider, gen_dc):
         if MOCKED:
-            provider.o_api.post.return_value = [201, {}]
-            provider.o_api.get.return_value = [200, {}]
-        res = gen_dc.create()
-        assert res[0] in (200, 201)
-        assert wait_for(lambda: gen_dc.exists(),
-                        message="Waiting for dc {} to exist..."
-                        .format(gen_dc.name),
-                        delay=5, timeout='1M')
+            provider.api.get.return_value = [200, {}]
+        with pytest.raises(ResourceAlreadyExistsException):
+            payload = {'metadata': {'name': gen_dc.name, 'namespace': gen_dc.namespace}}
+            DeploymentConfig.create(provider, payload)
 
     def test_labels_create(self, provider, gen_dc, label):
         base__test_label_create(gen_dc, label[0], label[1])
@@ -408,20 +513,12 @@ class TestDeploymentConfig(object):
         base__test_label_delete(gen_dc, label[0])
 
     def test_dc_delete(self, provider, gen_dc):
-        if MOCKED:
-            provider.o_api.delete.return_value = [200, {}]
-            provider.o_api.get.side_effect = RequestFailedException('Request Failed')
-        res = gen_dc.delete()
-        assert res[0] == 200
-        assert wait_for(lambda: not gen_dc.exists(),
-                        message="Waiting for dc {} to be deleted..."
-                        .format(gen_dc.name),
-                        delay=5, timeout='1M')
+        base__test_delete(provider, gen_dc)
 
     def test_invalid_name(self):
         with pytest.raises(InvalidValueException):
-            DeploymentConfig(provider, 'this_is_invalid_dc_name', '', '', 0)
-            DeploymentConfig(provider, 'this/is/invalid/dc/name/as/well', '', '', 0)
+            DeploymentConfig(provider, 'this_is_invalid_dc_name', 'default')
+            DeploymentConfig(provider, 'this/is/invalid/dc/name/as/well', 'default')
 
 
 @pytest.mark.incremental
@@ -436,12 +533,14 @@ class TestImageRegistry(object):
 
     def test_import_image(self, provider, gen_image_registry):
         if MOCKED:
-            provider.o_api.post.return_value = [200, {
+            docker_image_reference = gen_docker_image_reference()[0]
+            provider.o_api.post.return_value = provider.o_api.get.return_value = [200, {
                 'status': {
-                    'images': [{'image': {'dockerImageReference': gen_docker_image_reference()[0]}}]
+                    'dockerImageRepository': docker_image_reference,
+                    'images': [{'image': {'dockerImageReference': docker_image_reference}}]
                 }
             }]
-            provider.o_api.get.return_value = provider.o_api.delete.return_value = [200, {}]
+            provider.o_api.delete.return_value = [200, {}]
         image = gen_image_registry.import_image()
         assert image.exists()
         image.delete()
@@ -460,6 +559,21 @@ class TestImageRegistry(object):
 
 @pytest.mark.incremental
 class TestVolume(object):
+    def test_create(self, provider, gen_volume):
+        payload = {
+            'metadata': {'name': gen_volume.name},
+            'spec': {
+                'accessModes': ['ReadWriteOnce'],
+                'capacity': {'storage': '1Gi'},
+                'nfs': {
+                    'path': '/tmp',
+                    'server': '12.34.56.78'
+                }
+            },
+            'persistentVolumeReclaimPolicy': 'Retain'
+        }
+        assert base__test_create(provider, Volume, payload) == gen_volume
+
     def test_labels_create(self, provider, gen_volume, label):
         base__test_label_create(gen_volume, label[0], label[1])
 
@@ -476,3 +590,12 @@ class TestVolume(object):
                 }
             }]
         gen_volume.capacity, gen_volume.accessmodes
+
+    def test_delete(self, provider, gen_volume):
+        base__test_delete(provider, gen_volume)
+
+
+def test_uncreatable(provider, gen_image, gen_image_registry):
+    with pytest.raises(UncreatableResourceException):
+        gen_image.create(provider, {})
+        gen_image_registry.create(provider, {})
