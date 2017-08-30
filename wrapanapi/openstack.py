@@ -137,7 +137,7 @@ class OpenstackSystem(WrapanapiAPIBase):
                                 user_domain_id=self.domain_id,
                                 project_domain_name=self.domain_id)
                 self._kapi = Client(session=Session(auth=auth, verify=False))
-                self._tenant_manager = self._kapi.projects.delete()
+                self._tenant_manager = self._kapi.projects
 
         return self._kapi
 
