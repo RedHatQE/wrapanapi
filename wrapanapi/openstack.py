@@ -13,7 +13,6 @@ import pytz
 from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
 from heatclient import client as heat_client
-from keystoneclient.v2_0 import client as oskclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import HTTPClient
@@ -86,9 +85,12 @@ class OpenstackSystem(WrapanapiAPIBase):
         self.username = kwargs['username']
         self.password = kwargs['password']
         self.auth_url = kwargs['auth_url']
+        self.keystone_version = kwargs.get('keystone_version', 2)
+        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
         self._api = None
         self._kapi = None
         self._capi = None
+        self._tenant_manager = None
 
     @property
     def api(self):
@@ -114,11 +116,29 @@ class OpenstackSystem(WrapanapiAPIBase):
     @property
     def kapi(self):
         if not self._kapi:
-            self._kapi = oskclient.Client(username=self.username,
-                                          password=self.password,
-                                          tenant_name=self.tenant,
-                                          auth_url=self.auth_url,
-                                          insecure=True)
+            if self.keystone_version == 2:
+                from keystoneclient.v2_0.client import Client
+                self._kapi = Client(username=self.username,
+                                    password=self.password,
+                                    tenant_name=self.tenant,
+                                    auth_url=self.auth_url,
+                                    insecure=True)
+                self._tenant_manager = self._kapi.tenants
+
+            if self.keystone_version == 3:
+                # Using session since usage without it is deprecated
+                from keystoneauth1.identity.v3 import Password
+                from keystoneauth1.session import Session
+                from keystoneclient.v3.client import Client
+                auth = Password(auth_url=self.auth_url,
+                                username=self.username,
+                                password=self.password,
+                                project_name=self.tenant,
+                                user_domain_id=self.domain_id,
+                                project_domain_name=self.domain_id)
+                self._kapi = Client(session=Session(auth=auth, verify=False))
+                self._tenant_manager = self._kapi.projects.delete()
+
         return self._kapi
 
     @property
@@ -145,8 +165,11 @@ class OpenstackSystem(WrapanapiAPIBase):
         return self._stackapi
 
     def _get_tenants(self):
+
+        if self.keystone_version == 3:
+            return self._tenant_manager.list(user=self.username)
         real_tenants = []
-        tenants = self.kapi.tenants.list()
+        tenants = self._tenant_manager.list()
         for tenant in tenants:
             users = tenant.list_users()
             user_list = [user.name for user in users]
@@ -155,7 +178,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         return real_tenants
 
     def _get_tenant(self, **kwargs):
-        return self.kapi.tenants.find(**kwargs).id
+        return self._tenant_manager.find(**kwargs).id
 
     def _get_user(self, **kwargs):
         return self.kapi.users.find(**kwargs).id
@@ -163,11 +186,20 @@ class OpenstackSystem(WrapanapiAPIBase):
     def _get_role(self, **kwargs):
         return self.kapi.roles.find(**kwargs).id
 
-    def add_tenant(self, tenant_name, description=None, enabled=True, user=None, roles=None):
-        tenant = self.kapi.tenants.create(tenant_name=tenant_name,
-                                          description=description,
-                                          enabled=enabled)
+    def add_tenant(self, tenant_name, description=None, enabled=True, user=None, roles=None,
+                   domain=None):
+        params = dict(description=description,
+                      enabled=enabled)
+        if self.keystone_version == 2:
+            params['tenant_name'] = tenant_name
+        elif self.keystone_version == 3:
+            params['name'] = tenant_name
+            params['domain'] = domain
+        tenant = self._tenant_manager.create(**params)
         if user and roles:
+            if self.keystone_version == 3:
+                raise NotImplementedError('Role assignments for users are not implemented yet for '
+                                          'Keystone V3')
             user = self._get_user(name=user)
             for role in roles:
                 role_id = self._get_role(name=role)
@@ -179,7 +211,7 @@ class OpenstackSystem(WrapanapiAPIBase):
 
     def remove_tenant(self, tenant_name):
         tid = self._get_tenant(name=tenant_name)
-        self.kapi.tenants.delete(tid)
+        self._tenant_manager.delete(tid)
 
     def start_vm(self, instance_name):
         self.logger.info(" Starting OpenStack instance %s" % instance_name)
