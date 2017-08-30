@@ -22,6 +22,16 @@ class InvalidValueException(Exception):
     pass
 
 
+class LabelNotFoundException(Exception):
+    """Raised when trying to delete a label which doesn't exist"""
+    def __init__(self, label_key):
+        self._label_key = label_key
+
+    def __str__(self):
+        return 'Could not delete label "{}" (label does not exist).'.format(
+            self._label_key)
+
+
 class MultipleImagesError(Exception):
     pass
 
