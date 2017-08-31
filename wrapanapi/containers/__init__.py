@@ -1,7 +1,8 @@
 import re
 from cached_property import cached_property
 
-from wrapanapi.exceptions import RequestFailedException, InvalidValueException
+from wrapanapi.exceptions import (RequestFailedException, InvalidValueException,
+    LabelNotFoundException)
 
 
 class ContainersResourceBase(object):
@@ -103,10 +104,10 @@ class ContainersResourceBase(object):
 
     def delete_label(self, key):
         """Deletes a label from this resource"""
-        labels = self.list_labels()
-        if key not in labels:
-            raise Exception('{} has no label "{}"'.format(self, key))
-        del labels[key]
+        original_labels = self.list_labels()
+        if key not in original_labels:
+            raise LabelNotFoundException(key)
+        del original_labels[key]
         labels = {'$patch': 'replace'}
-        labels.update(labels)
+        labels.update(original_labels)
         return self.patch({'metadata': {'labels': labels}})
