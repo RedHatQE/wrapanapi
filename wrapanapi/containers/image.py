@@ -29,7 +29,7 @@ class Image(ContainersResourceBase):
         """
         registry, image_str = image_str.split('/', 1) if '/' in image_str else ('', image_str)
         name, image_id = image_str.split('@')
-        tag = name.split(':') if ':' in image_str else (image_str, '')
+        tag = name.split(':')[-1] if ':' in image_str else (image_str, '')
         return registry, name, image_id, tag
 
     @cached_property
