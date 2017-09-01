@@ -109,6 +109,7 @@ class RHEVMSystem(WrapanapiAPIBase):
             'url': url,
             'username': username,
             'password': password,
+            'filter': True,
             'insecure': True
         }
         self.kwargs = kwargs
