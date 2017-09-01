@@ -90,7 +90,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         self._api = None
         self._kapi = None
         self._capi = None
-        self._tenant_manager = None
+        self._tenant_api = None
 
     @property
     def api(self):
@@ -123,7 +123,6 @@ class OpenstackSystem(WrapanapiAPIBase):
                                     tenant_name=self.tenant,
                                     auth_url=self.auth_url,
                                     insecure=True)
-                self._tenant_manager = self._kapi.tenants
 
             if self.keystone_version == 3:
                 # Using session since usage without it is deprecated
@@ -137,9 +136,19 @@ class OpenstackSystem(WrapanapiAPIBase):
                                 user_domain_id=self.domain_id,
                                 project_domain_name=self.domain_id)
                 self._kapi = Client(session=Session(auth=auth, verify=False))
-                self._tenant_manager = self._kapi.projects
 
         return self._kapi
+
+    @property
+    def tenant_api(self):
+        if not self._tenant_api:
+            if self.keystone_version == 2:
+                self._tenant_api = self.kapi.tenants
+            elif self.keystone_version == 3:
+                self._tenant_api = self.kapi.projects
+
+        return self._tenant_api
+
 
     @property
     def capi(self):
@@ -167,9 +176,9 @@ class OpenstackSystem(WrapanapiAPIBase):
     def _get_tenants(self):
 
         if self.keystone_version == 3:
-            return self._tenant_manager.list(user=self.username)
+            return self.tenant_api.list(user=self.username)
         real_tenants = []
-        tenants = self._tenant_manager.list()
+        tenants = self.tenant_api.list()
         for tenant in tenants:
             users = tenant.list_users()
             user_list = [user.name for user in users]
@@ -178,7 +187,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         return real_tenants
 
     def _get_tenant(self, **kwargs):
-        return self._tenant_manager.find(**kwargs).id
+        return self.tenant_api.find(**kwargs).id
 
     def _get_user(self, **kwargs):
         return self.kapi.users.find(**kwargs).id
@@ -195,7 +204,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         elif self.keystone_version == 3:
             params['name'] = tenant_name
             params['domain'] = domain
-        tenant = self._tenant_manager.create(**params)
+        tenant = self.tenant_api.create(**params)
         if user and roles:
             if self.keystone_version == 3:
                 raise NotImplementedError('Role assignments for users are not implemented yet for '
@@ -211,7 +220,7 @@ class OpenstackSystem(WrapanapiAPIBase):
 
     def remove_tenant(self, tenant_name):
         tid = self._get_tenant(name=tenant_name)
-        self._tenant_manager.delete(tid)
+        self.tenant_api.delete(tid)
 
     def start_vm(self, instance_name):
         self.logger.info(" Starting OpenStack instance %s" % instance_name)
