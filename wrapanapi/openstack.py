@@ -149,7 +149,6 @@ class OpenstackSystem(WrapanapiAPIBase):
 
         return self._tenant_api
 
-
     @property
     def capi(self):
         if not self._capi:
