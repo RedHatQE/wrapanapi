@@ -19,7 +19,7 @@ websocket_client
 dateparser
 boto3
 packaging
-azure
+azure>=2.0.0
 ###
 # Libraries with compiled components, and their related devel packages
 ###
