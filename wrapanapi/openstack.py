@@ -13,6 +13,9 @@ import pytz
 from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
 from heatclient import client as heat_client
+from keystoneauth1.identity import Password
+from keystoneauth1.session import Session
+from keystoneclient import client as keystone_client
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import HTTPClient
@@ -87,21 +90,28 @@ class OpenstackSystem(WrapanapiAPIBase):
         self.auth_url = kwargs['auth_url']
         self.keystone_version = kwargs.get('keystone_version', 2)
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self._session = None
         self._api = None
         self._kapi = None
         self._capi = None
         self._tenant_api = None
 
     @property
+    def session(self):
+        if not self._session:
+            auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
+                               password=self.password, project_name=self.tenant)
+            if self.keystone_version == 3:
+                auth_kwargs.update(dict(user_domain_id=self.domain_id,
+                                        project_domain_name=self.domain_id))
+            pass_auth = Password(**auth_kwargs)
+            self._session = Session(auth=pass_auth, verify=False)
+        return self._session
+
+    @property
     def api(self):
         if not self._api:
-            self._api = osclient.Client('2',
-                                        self.username,
-                                        self.password,
-                                        self.tenant,
-                                        self.auth_url,
-                                        service_type="compute",
-                                        insecure=True,
+            self._api = osclient.Client('2', session=self.session, service_type="compute",
                                         timeout=30)
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
@@ -116,27 +126,7 @@ class OpenstackSystem(WrapanapiAPIBase):
     @property
     def kapi(self):
         if not self._kapi:
-            if self.keystone_version == 2:
-                from keystoneclient.v2_0.client import Client
-                self._kapi = Client(username=self.username,
-                                    password=self.password,
-                                    tenant_name=self.tenant,
-                                    auth_url=self.auth_url,
-                                    insecure=True)
-
-            if self.keystone_version == 3:
-                # Using session since usage without it is deprecated
-                from keystoneauth1.identity.v3 import Password
-                from keystoneauth1.session import Session
-                from keystoneclient.v3.client import Client
-                auth = Password(auth_url=self.auth_url,
-                                username=self.username,
-                                password=self.password,
-                                project_name=self.tenant,
-                                user_domain_id=self.domain_id,
-                                project_domain_name=self.domain_id)
-                self._kapi = Client(session=Session(auth=auth, verify=False))
-
+            self._kapi = keystone_client.Client(session=self.session)
         return self._kapi
 
     @property
@@ -152,22 +142,12 @@ class OpenstackSystem(WrapanapiAPIBase):
     @property
     def capi(self):
         if not self._capi:
-            self._capi = cinderclient.Client(self.username,
-                                             self.password,
-                                             self.tenant,
-                                             self.auth_url,
-                                             service_type="volume",
-                                             insecure=True)
+            self._capi = cinderclient.Client(session=self.session, service_type="volume")
         return self._capi
 
     @property
     def stackapi(self):
-        ks_client = oskclient.Client(username=self.username,
-                                     password=self.password,
-                                     tenant_name=self.tenant,
-                                     auth_url=self.auth_url,
-                                     insecure=True)
-        heat_endpoint = ks_client.service_catalog.url_for(service_type='orchestration',
+        heat_endpoint = self.kapi.service_catalog.url_for(service_type='orchestration',
                                                           endpoint_type='publicURL')
         self._stackapi = heat_client.Client('1', heat_endpoint, token=ks_client.auth_token)
         return self._stackapi
