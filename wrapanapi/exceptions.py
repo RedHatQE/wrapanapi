@@ -32,6 +32,15 @@ class LabelNotFoundException(Exception):
             self._label_key)
 
 
+class KeystoneVersionNotSupported(Exception):
+    """Raised when inappropriate version of Keystone is provided for Openstack system"""
+    def __init__(self, ver):
+        self.version = ver
+
+    def __str__(self):
+        return "Provided version of Keystone is not supported: {}".format(self.version)
+
+
 class MultipleImagesError(Exception):
     pass
 

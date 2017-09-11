@@ -27,7 +27,7 @@ from wait_for import wait_for
 from base import WrapanapiAPIBase, VMInfo
 from exceptions import (
     NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
-    ActionTimedOutError, VMError
+    ActionTimedOutError, VMError, KeystoneVersionNotSupported
 )
 
 
@@ -89,6 +89,8 @@ class OpenstackSystem(WrapanapiAPIBase):
         self.password = kwargs['password']
         self.auth_url = kwargs['auth_url']
         self.keystone_version = kwargs.get('keystone_version', 2)
+        if self.keystone_version not in (2, 3):
+            raise KeystoneVersionNotSupported(self.keystone_version)
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
