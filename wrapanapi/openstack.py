@@ -18,7 +18,7 @@ from keystoneauth1.session import Session
 from keystoneclient import client as keystone_client
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
-from novaclient.client import HTTPClient
+from novaclient.client import SessionClient
 from novaclient.v2.floating_ips import FloatingIP
 from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
@@ -42,7 +42,7 @@ from exceptions import (
 def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
     try:
         # Use the original request method to do the actual work
-        return HTTPClient.request(self, url, method, **kwargs)
+        return SessionClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
             self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
@@ -89,7 +89,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         self.password = kwargs['password']
         self.auth_url = kwargs['auth_url']
         self.keystone_version = kwargs.get('keystone_version', 2)
-        if self.keystone_version not in (2, 3):
+        if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
         self._session = None
@@ -97,6 +97,7 @@ class OpenstackSystem(WrapanapiAPIBase):
         self._kapi = None
         self._capi = None
         self._tenant_api = None
+        self._stackapi = None
 
     @property
     def session(self):
@@ -122,7 +123,7 @@ class OpenstackSystem(WrapanapiAPIBase):
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
             self._api.client.request = _request_timeout_handler.__get__(self._api.client,
-                HTTPClient)
+                                                                        SessionClient)
         return self._api
 
     @property
@@ -161,7 +162,7 @@ class OpenstackSystem(WrapanapiAPIBase):
     def _get_tenants(self):
 
         if self.keystone_version == 3:
-            return self.tenant_api.list(user=self.username)
+            return self.tenant_api.list()
         real_tenants = []
         tenants = self.tenant_api.list()
         for tenant in tenants:
