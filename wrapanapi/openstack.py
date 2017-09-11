@@ -147,9 +147,13 @@ class OpenstackSystem(WrapanapiAPIBase):
 
     @property
     def stackapi(self):
-        heat_endpoint = self.kapi.service_catalog.url_for(service_type='orchestration',
-                                                          endpoint_type='publicURL')
-        self._stackapi = heat_client.Client('1', heat_endpoint, token=ks_client.auth_token)
+        if not self._stackapi:
+            heat_endpoint = self.kapi.session.auth.auth_ref.service_catalog.url_for(
+                service_type='orchestration'
+            )
+            self._stackapi = heat_client.Client('1', heat_endpoint,
+                                                token=self.kapi.session.auth.auth_ref.auth_token,
+                                                insecure=True)
         return self._stackapi
 
     def _get_tenants(self):
