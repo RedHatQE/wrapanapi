@@ -96,7 +96,8 @@ class RHEVMSystem(WrapanapiAPIBase):
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
         super(RHEVMSystem, self).__init__(kwargs)
-        url_component = 'ovirt-engine/api' if float(kwargs['version']) >= 4.0 else 'api'
+        rhv_gt_4 = float(kwargs['version']) >= 4.0
+        url_component = 'ovirt-engine/api' if rhv_gt_4 else 'api'
         if 'api_endpoint' in kwargs:
             url = kwargs['api_endpoint']
         elif 'port' in kwargs:
@@ -109,9 +110,8 @@ class RHEVMSystem(WrapanapiAPIBase):
             'url': url,
             'username': username,
             'password': password,
-            'filter': True,
-            'insecure': True
-        }
+            'insecure': True,
+            'filter': False if rhv_gt_4 else True}
         self.kwargs = kwargs
 
     @property
