@@ -145,6 +145,14 @@ class AzureSystem(WrapanapiAPIBase):
         self.logger.info("Returned Status was {}".format(last_power_status))
         return last_power_status
 
+    def vm_type(self, vm_name, resource_group=None):
+        self.logger.info("Attempting to Retrieve Azure VM Type {}".format(vm_name))
+        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
+                                     vm_name=vm_name, expand='instanceView')
+        vm_type = vm.hardware_profile.vm_size
+        self.logger.info("Returned Type was {}".format(vm_type))
+        return vm_type
+
     def is_vm_running(self, vm_name, resource_group=None):
         if self.vm_status(vm_name, resource_group) == self.STATE_RUNNING:
             self.logger.info("According to Azure, the VM \"{}\" is running".format(vm_name))
