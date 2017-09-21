@@ -3,7 +3,6 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Node(ContainersResourceBase):
     RESOURCE_TYPE = 'node'
-    KIND = 'Node'
 
     def __init__(self, provider, name):
         ContainersResourceBase.__init__(self, provider, name, None)

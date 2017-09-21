@@ -14,13 +14,14 @@ class ContainersResourceBase(object):
     directed to the path of the resource.
     The following parameters should be statically defined:
         * RESOURCE_TYPE: (str) the resource type name in the API
-        * KIND: (str) the resource 'Kind' property as it appear in JSON
         * CREATABLE (optional): (bool) Specify whether this resource is creatable or not (some
                                 resources are not, e.g. Pod is created by Replication Controller
                                 and not manually). set to False by default.
-        * API (optional): (str) The API to use - the default is Kubernetes ('k_api') but some
+        * (optional) API: (str) The API to use - the default is Kubernetes ('k_api') but some
                           resources use OpenShift ('o_api').
         * (optional) VALID_NAME_PATTERN: (str) the regex pattern that match a valid object name
+        * (optional) KIND: (str) the resource 'Kind' property as it appear in JSON.
+                           if not specified, grabbing the Kind from the class name.
     """
     CREATABLE = False
     API = 'k_api'
@@ -62,6 +63,11 @@ class ContainersResourceBase(object):
         return getattr(self.provider, self.API)
 
     @classmethod
+    def kind(cls):
+        """Return the resource Kind property as it should be in the JSON"""
+        return getattr(cls, 'KIND', None) or cls.__name__
+
+    @classmethod
     def create(cls, provider, payload):
         """Creating the object if it doesn't exist and creatable.
         Args:
@@ -89,7 +95,7 @@ class ContainersResourceBase(object):
             obj = cls(provider, name)
         # Defining default/predefined parameters
         payload['apiVersion'] = payload.get('apiVersion', 'v1')
-        payload['kind'] = cls.KIND
+        payload['kind'] = cls.kind()
         # Checking existence
         if obj.exists():
             raise ResourceAlreadyExistsException(

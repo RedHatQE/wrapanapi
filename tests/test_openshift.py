@@ -340,7 +340,7 @@ class TestRoute(object):
             'spec': {
                 'host': 'www.example.com',
                 'to': {
-                    'Kind': service.KIND,
+                    'Kind': service.kind(),
                     'name': service.name
                 }
             }

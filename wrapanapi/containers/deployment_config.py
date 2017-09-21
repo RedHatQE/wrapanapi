@@ -3,7 +3,6 @@ from wrapanapi.containers import ContainersResourceBase
 
 class DeploymentConfig(ContainersResourceBase):
     RESOURCE_TYPE = 'deploymentconfig'
-    KIND = 'DeploymentConfig'
     CREATABLE = True
     API = 'o_api'
     VALID_NAME_PATTERN = '^[a-zA-Z0-9][a-zA-Z0-9\-]+$'

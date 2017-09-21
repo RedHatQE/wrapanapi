@@ -3,7 +3,6 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Project(ContainersResourceBase):
     RESOURCE_TYPE = 'namespace'
-    KIND = 'Project'
     CREATABLE = True
     VALID_NAME_PATTERN = r'^[a-z0-9][a-z0-9\-]+$'
 
