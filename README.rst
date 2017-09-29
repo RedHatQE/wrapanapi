@@ -30,6 +30,7 @@ wrapanapi is a simple virtualization client with support (in varying degrees) fo
 * Google Compute Engine
 * Kubernetes
 * Hawkular
+* Amazon EC2
 
 It can be used to control virtualization clients and offers operations such as
 
