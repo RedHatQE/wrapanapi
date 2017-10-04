@@ -4,6 +4,7 @@
 Used to communicate with providers without using CFME facilities
 """
 import re
+import json
 import winrm
 import tzlocal
 import pytz
@@ -129,7 +130,7 @@ class SCVMMSystem(WrapanapiAPIBase):
         finally:
             script = """
                 $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-                Remove-SCVirtualMachine -VM $VM -Force
+                Remove-SCVirtualMachine -VM $VM
             """.format(vm_name=vm_name)
             self.logger.info("Deleting SCVMM VM {}".format(vm_name))
             self.run_script(script)
@@ -224,6 +225,17 @@ class SCVMMSystem(WrapanapiAPIBase):
 
     def info(self, vm_name):
         pass
+
+    def vm_hardware_configuration(self, vm_name):
+        data = self.run_script(
+            """
+            $vm = Get-SCVirtualMachine -Name \"{}\"
+            $conf = @{{"ram"=$vm.Memory; "cpu"=$vm.CPUCount}}
+            $conf|ConvertTo-Json -Depth 3 -Compress
+            """.format(vm_name))
+        result = json.loads(data)
+        return {str(key): (str(val) if isinstance(val, unicode) else val) for key, val in
+                result.items()}
 
     def disconnect(self):
         pass
