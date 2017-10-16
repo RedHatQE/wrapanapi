@@ -355,9 +355,9 @@ class SCVMMSystem(WrapanapiAPIBase):
         # This forces SCVMM to update Library after a template change instead of waiting on timeout
         self.logger.info("Updating SCVMM Library")
         script = """
-            $lib = Get-SCLibraryShare | where {$_.name -eq 'MSSCVMMLibrary'}
-            Read-SCLibraryShare $lib[0]
-        """
+            $lib = Get-SCLibraryShare | where {$_.name -eq 'hyperv'}
+            SCLibraryShare -LibraryShare $lib[0] -Path VmmLibraryFiles -RunAsynchronously
+            """
         self.run_script(script)
 
     def mark_as_template(self, vm_name, library, library_share):
