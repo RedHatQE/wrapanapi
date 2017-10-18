@@ -1,5 +1,3 @@
-from cached_property import cached_property
-
 from wrapanapi.containers import ContainersResourceBase
 from wrapanapi.exceptions import RequestFailedException
 from wrapanapi.containers.image import Image
@@ -7,6 +5,8 @@ from wrapanapi.containers.image import Image
 
 class ImageRegistry(ContainersResourceBase):
     RESOURCE_TYPE = 'imagestream'
+    KIND = 'ImageStream'
+    API = 'o_api'
     VALID_NAME_PATTERN = '^[a-zA-Z0-9][a-zA-Z0-9\-_\.]+$'
 
     def __init__(self, provider, name, registry, namespace):
@@ -18,10 +18,6 @@ class ImageRegistry(ContainersResourceBase):
     def __repr__(self):
         return '<{} name="{}" host="{}" namespace="{}">'.format(
             self.__class__.__name__, self.name, self.host, self.namespace)
-
-    @cached_property
-    def api(self):
-        return self.provider.o_api
 
     def import_image(self):
         """Import the image from the docker registry. Returns instance of image"""
