@@ -59,6 +59,15 @@ Condition = namedtuple('Condition', ['conditionId', 'type', 'operator', 'thresho
 Dampening = namedtuple('Dampening', ['dampeningId', 'triggerId', 'type', 'evalTrueSetting',
                                      'evalTotalSetting', 'evalTimeSetting'])
 
+MWMFeed = namedtuple('Feed', ['id'])
+MWMResource = namedtuple('Resource', ['id', 'feedId', 'name', 'config'])
+MWMServer = namedtuple('Server', ['id', 'name', 'data'])
+MWMServerGroup = namedtuple('ServerGroup', ['id', 'name', 'data'])
+MWMDomain = namedtuple('Domain', ['id', 'name', 'data'])
+MWMMessaging = namedtuple('Messaging', ['id', 'name', 'data'])
+MWMDeployment = namedtuple('Deployment', ['id', 'name', 'data'])
+MWMDatasource = namedtuple('Datasource', ['id', 'name', 'data'])
+
 CANONICAL_PATH_NAME_MAPPING = {
     '/d;': 'data_id',
     '/e;': 'environment_id',
@@ -217,11 +226,16 @@ class Hawkular(WrapanapiAPIBase):
         return self._metric
 
     @property
+    def services(self):
+        return self._hawkular
+
+    @property
     def operation(self):
         return self._operation
 
     def _get_inventory(self, hostname, port, protocol):
-        cls = HawkularInventoryInMetrics\
+        cls = MWMInventory\
+            if self._services_older('0.40.0.Final') else HawkularInventoryInMetrics\
             if self._metrics_older("0.26.1.Final") else HawkularInventory
         kwargs = dict(
             hostname=hostname, port=port, auth=self.auth,
@@ -233,6 +247,11 @@ class Hawkular(WrapanapiAPIBase):
         return version.parse(
             self.metric._get("status")
             ['Implementation-Version']) >= version.parse(metrics_version)
+
+    def _services_older(self, services_version):
+        return version.parse(
+            self.services._get("status")
+            ['Implementation-Version']) >= version.parse(services_version)
 
     def info(self):
         raise NotImplementedError('info not implemented.')
@@ -1180,6 +1199,137 @@ class HawkularInventoryInMetrics(HawkularService):
 
     def _decompress(self, raw):
         return json.loads(gzip.GzipFile(fileobj=StringIO(raw)).read())
+
+
+class MWMInventory(HawkularService):
+    def __init__(self, hostname, port, protocol, auth, tenant_id):
+        """Creates MWM Hawkular Inventory service instance. For args refer 'HawkularService'"""
+        HawkularService.__init__(self, hostname=hostname, port=port, protocol=protocol,
+                                 auth=auth, tenant_id=tenant_id, entry="hawkular/inventory")
+
+    _stats_available = {
+        'num_server': lambda self: len(self.list_server()),
+        'num_domain': lambda self: len(self.list_domain()),
+        'num_deployment': lambda self: len(self.list_server_deployment()),
+        'num_datasource': lambda self: len(self.list_server_datasource()),
+        'num_messaging': lambda self: len(self.list_messaging()),
+    }
+
+    def list_feed(self):
+        """Returns list of feeds.
+        It lists all Wildfly Servers and get's feedIds from them.
+        """
+        feeds = []
+        resources = self.list_resource(resource_type_id='WildFly Server')
+        resources.extend(self.list_resource(resource_type_id='Domain WildFly Server'))
+        for resource in resources:
+            feeds.append(MWMFeed(resource.feedId))
+        return feeds
+
+    def list_server_deployment(self, feed_id=None):
+        """Returns list of server deployments.
+
+        Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(resource_type_id='Deployment', feed_id=feed_id)
+        resources.extend(self.list_resource(
+            resource_type_id='SubDeployment', feed_id=feed_id))
+        deployments = []
+        for resource in resources:
+            deployments.append(MWMDeployment(resource.id, resource.name, resource.config))
+        return deployments
+
+    def list_messaging(self, feed_id=None):
+        """Returns list of massagings (JMS Queue and JMS Topic).
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(resource_type_id='JMS Queue', feed_id=feed_id)
+        resources.extend(self.list_resource(
+            resource_type_id='JMS Topic', feed_id=feed_id))
+        messagings = []
+        for resource in resources:
+            messagings.append(MWMMessaging(resource.id, resource.name, resource.config))
+        return messagings
+
+    def list_server(self, feed_id=None):
+        """Returns list of middleware servers.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(resource_type_id='WildFly Server', feed_id=feed_id)
+        resources.extend(self.list_resource(
+            resource_type_id='Domain WildFly Server', feed_id=feed_id))
+        servers = []
+        for resource in resources:
+            servers.append(MWMServer(resource.id, resource.name, resource.config))
+        return servers
+
+    def list_domain(self, feed_id=None):
+        """Returns list of middleware domains.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(resource_type_id='Host Controller', feed_id=feed_id)
+        domains = []
+        for resource in resources:
+            domains.append(MWMDomain(resource.id, resource.name, resource.config))
+        return domains
+
+    def list_server_group(self, feed_id):
+        """Returns list of middleware domain's server groups.
+
+          Args:
+            feed_id: Feed id of the resource (optional)
+        """
+        resources = self.list_resource(resource_type_id='Domain Server Group', feed_id=feed_id)
+        server_groups = []
+        for resource in resources:
+            server_groups.append(MWMServerGroup(
+                resource.id, resource.name, resource.config))
+        return server_groups
+
+    def list_server_datasource(self, feed_id=None):
+        """Returns list of datasources (both XA and non XA).
+
+         Args:
+             feed_id: Feed id of the datasource (optional)
+        """
+        resources = self.list_resource(resource_type_id='Datasource', feed_id=feed_id)
+        resources.extend(self.list_resource(
+            resource_type_id='XA Datasource', feed_id=feed_id))
+        datasources = []
+        for resource in resources:
+            datasources.append(MWMDatasource(resource.id, resource.name, resource.config))
+        return datasources
+
+    def list_resource(self, resource_type_id, feed_id=None):
+        """Returns list of resources.
+
+         Args:
+            resource_type_id: Resource type id
+            feed_id: Feed id of the resource (optional)
+        """
+        if not resource_type_id:
+            raise KeyError("'resource_type_id' is a mandatory field!")
+        resources = []
+        if feed_id:
+            entities_j = self._get('resources?typeId={}&feedId={}'
+                                   .format(resource_type_id, feed_id))
+        else:
+            entities_j = self._get('resources?typeId={}'
+                                   .format(resource_type_id))
+        if entities_j:
+            for entity_j in entities_j['results']:
+                resources.append(MWMResource(entity_j['id'],
+                                             entity_j['feedId'],
+                                             entity_j['name'],
+                                             entity_j['config']))
+        return resources
 
 
 class HawkularMetric(HawkularService):
