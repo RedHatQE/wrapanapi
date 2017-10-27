@@ -1,4 +1,4 @@
-from wrapanapi.base import ContainerWrapanapiAPIBase
+from wrapanapi.base import WrapanapiAPIBase
 from wrapanapi.rest_client import ContainerClient
 
 from wrapanapi.containers.container import Container
@@ -33,7 +33,7 @@ kubernetes:
 """
 
 
-class Kubernetes(ContainerWrapanapiAPIBase):
+class Kubernetes(WrapanapiAPIBase):
 
     _stats_available = {
         'num_container': lambda self: len(self.list_container()),
