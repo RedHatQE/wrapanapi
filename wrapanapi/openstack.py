@@ -24,7 +24,7 @@ from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
 from wait_for import wait_for
 
-from base import WrapanapiAPIBase, VMInfo
+from base import WrapanapiAPIBaseVM, VMInfo
 from exceptions import (
     NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
     ActionTimedOutError, VMError, KeystoneVersionNotSupported
@@ -54,7 +54,7 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackSystem(WrapanapiAPIBase):
+class OpenstackSystem(WrapanapiAPIBaseVM):
     """Openstack management system
 
     Uses novaclient.
