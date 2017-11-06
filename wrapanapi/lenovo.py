@@ -60,8 +60,9 @@ class LenovoSystem(WrapanapiAPIBase):
         response = self.__service_instance("/cabinet?status=includestandalone")
         # TODO this only parses the first list of nodes in the cabinet. Need to abstract this method
         # cabinets = response['cabinetList']
+        # map(lambda x: x['nodeList'], cabinets)
         cabinets = response['cabinetList'][0]
-        nodelist = map(lambda x: x['nodeList'], cabinets['nodeList'])
+        nodelist = cabinets['nodeList']
         inventorylist = map(lambda x: x['itemInventory'], nodelist)
         inventorylist = filter(lambda x: x['type'] != 'SCU', inventorylist)
         return inventorylist
