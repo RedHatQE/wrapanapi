@@ -161,6 +161,12 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
         return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
+    def list_cluster(self, **kwargs):
+        """List all clusters' names."""
+        data = self.run_script(
+            "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
+        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+
     def all_vms(self, **kwargs):
         vm_list = []
         data = self.run_script("""
