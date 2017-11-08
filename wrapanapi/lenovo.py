@@ -3,7 +3,11 @@
 
 Used to communicate with providers without using CFME facilities
 """
+import requests
+import json
 from base import WrapanapiAPIBase
+from urlparse import urlunparse
+from requests.exceptions import Timeout
 
 
 class LenovoSystem(WrapanapiAPIBase):
@@ -21,22 +25,44 @@ class LenovoSystem(WrapanapiAPIBase):
         'num_server': lambda self: len(self.list_server()),
     }
 
-    def __init__(self, hostname, username, password, **kwargs):
-        super(LenovoSystem, self).__init__(kwargs)
+    def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
         self.hostname = hostname
+        self.port = port
         self.username = username
         self.password = password
+        self.protocol = protocol
+        self._content = None
 
     def __del__(self):
         """Disconnect from the API when the object is deleted"""
         # This isn't the best place for this, but this class doesn't know when it is no longer in
         # use, and we need to do some sort of disconnect based on the pyVmomi documentation.
-        raise NotImplementedError
+        self.port = self.port
+
+    def __service_instance(self, path):
+        """An instance of the service"""
+        try:
+            uri = urlunparse((self.protocol, self.hostname, path, "", "", ""))
+            response = requests.get(uri, auth=(self.username, self.password), verify=False)
+            self._content = json.loads(response.content)
+            return self._content
+        except Timeout:
+            return None
 
     @property
     def version(self):
         """The product version"""
-        raise NotImplementedError
+        response = self.__service_instance("/aicc")
+        versionstr = response['appliance']['version']
+        return versionstr
 
-    def list_server(self):
-        raise NotImplementedError
+    def list_servers(self):
+        response = self.__service_instance("/cabinet?status=includestandalone")
+        # TODO this only parses the first list of nodes in the cabinet. Need to abstract this method
+        # cabinets = response['cabinetList']
+        # map(lambda x: x['nodeList'], cabinets)
+        cabinets = response['cabinetList'][0]
+        nodelist = cabinets['nodeList']
+        inventorylist = map(lambda x: x['itemInventory'], nodelist)
+        inventorylist = filter(lambda x: x['type'] != 'SCU', inventorylist)
+        return inventorylist
