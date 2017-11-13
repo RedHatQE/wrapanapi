@@ -8,7 +8,7 @@ import mock
 import fauxfactory
 from wait_for import wait_for
 
-from wrapanapi.containers.providers import openshift
+from wrapanapi.containers.providers import rhopenshift
 from wrapanapi.containers.project import Project
 from wrapanapi.containers.deployment_config import DeploymentConfig
 from wrapanapi.containers.image_registry import ImageRegistry
@@ -38,11 +38,11 @@ FIXTURES_SCOPES = ('function' if MOCKED else 'module')
 @pytest.fixture(scope=FIXTURES_SCOPES)
 def provider():
     if MOCKED:
-        ocp = openshift.Openshift('openshift.test.com', username='default')
+        ocp = rhopenshift.Openshift('openshift.test.com', username='default')
         with mock.patch('wrapanapi.rest_client.ContainerClient') as client:
             ocp.o_api = ocp.api = ocp.k_api = client
     else:
-        return openshift.Openshift(HOSTNAME, username=USERNAME, token=TOKEN)
+        return rhopenshift.Openshift(HOSTNAME, username=USERNAME, token=TOKEN)
     return ocp
 
 
