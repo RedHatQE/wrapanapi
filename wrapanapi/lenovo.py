@@ -3,7 +3,6 @@
 Used to communicate with providers without using CFME facilities
 """
 import json
-from urlparse import urlunparse
 
 import requests
 from requests.exceptions import Timeout
@@ -32,11 +31,10 @@ class LenovoSystem(WrapanapiAPIBase):
     HEALTH_CRITICAL = ("critical", "minor-failure", "major-failure", "non-recoverable", "fatal")
 
     def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
-        self.hostname = hostname
-        self.port = port
-        self.username = username
-        self.password = password
-        self.protocol = protocol
+        self.auth = (username, password)
+        self.url = '{}://{}:{}/'.format(protocol, hostname, port)
+        self._servers_list = None
+        self.kwargs = kwargs
 
     def __del__(self):
         """Disconnect from the API when the object is deleted"""
@@ -46,36 +44,64 @@ class LenovoSystem(WrapanapiAPIBase):
     def _service_instance(self, path):
         """An instance of the service"""
         try:
-            uri = urlunparse((self.protocol, self.hostname, path, "", "", ""))
-            response = requests.get(uri, auth=(self.username, self.password), verify=False)
+            response = requests.get(self.url + path, auth=self.auth, verify=False)
             return json.loads(response.content)
+        except Timeout:
+            return None
+
+    def _service_put(self, path, request):
+        """An instance of the service"""
+        try:
+            response = requests.put(self.url + path, data=json.dumps(request), auth=self.auth,
+                    verify=False)
+            return response
         except Timeout:
             return None
 
     @property
     def version(self):
         """The product version"""
-        response = self._service_instance("/aicc")
+        response = self._service_instance("aicc")
         return response['appliance']['version']
 
     def list_servers(self):
-        response = self._service_instance("/cabinet?status=includestandalone")
+        response = self._service_instance("cabinet?status=includestandalone")
         cabinets = response['cabinetList'][0]
         nodes_list = cabinets['nodeList']
 
-        inventory_list = [node['itemInventory'] for node in nodes_list]
+        inventory = [node['itemInventory'] for node in nodes_list]
 
-        chassis_list = cabinets['chassisList'][0]
-        nodes_from_chassis_list = [node for node in chassis_list['itemInventory']['nodes']
+        nodes_from_chassis = []
+        if len(cabinets['chassisList']) > 0:
+            chassis_list = cabinets['chassisList'][0]
+            nodes_from_chassis = [node for node in chassis_list['itemInventory']['nodes']
                             if node['type'] != 'SCU']
 
-        inventory_list.extend(nodes_from_chassis_list)
-        return inventory_list
+        inventory.extend(nodes_from_chassis)
+
+        self._servers_list = inventory
+        return inventory
+
+    def change_node_power_status(self, server, request):
+        url = "nodes/" + str(server['uuid'])
+        payload = {'powerState': request}
+        response = self._service_put(url, payload)
+
+        return response
+
+    def change_led_status(self, server, name, state):
+        url = "nodes/" + str(server['uuid'])
+        payload = {'leds': [{'name': name, 'state': state}]}
+        response = self._service_put(url, payload)
+
+        return response
 
     def get_server(self, server_name):
+        if not self._servers_list:
+            self.list_servers()
+
         try:
-            servers = self.list_servers()
-            for node in servers:
+            for node in self._servers_list:
                 if node['name'] == server_name:
                     return node
         except AttributeError:
@@ -86,12 +112,12 @@ class LenovoSystem(WrapanapiAPIBase):
             server = self.get_server(server_name)
             leds = server['leds']
             for led in leds:
-                if led['name'] == 'Identify':
+                if led['name'] == 'Identify' or led['name'] == 'Identification':
                     return led
         except AttributeError:
             return None
 
-    def get_server_host_name(self, server_name):
+    def get_server_hostname(self, server_name):
         server = self.get_server(server_name)
 
         return str(server['hostname'])
@@ -126,11 +152,11 @@ class LenovoSystem(WrapanapiAPIBase):
     def server_health(self, server_name):
         server = self.get_server(server_name)
 
-        if str(server['cmmHealthState']) in self.HEALTH_VALID:
+        if str(server['cmmHealthState'].lower()) in self.HEALTH_VALID:
             return "Valid"
-        elif str(server['cmmHealthState']) in self.HEALTH_WARNING:
+        elif str(server['cmmHealthState'].lower()) in self.HEALTH_WARNING:
             return "Warning"
-        elif str(server['cmmHealthState']) in self.HEALTH_CRITICAL:
+        elif str(server['cmmHealthState'].lower()) in self.HEALTH_CRITICAL:
             return "Critical"
         else:
             return "Unknow"
@@ -153,17 +179,17 @@ class LenovoSystem(WrapanapiAPIBase):
     def is_server_valid(self, server_name):
         server = self.get_server(server_name)
 
-        return str(server['cmmHealthState']) in self.HEALTH_VALID
+        return str(server['cmmHealthState'].lower()) in self.HEALTH_VALID
 
     def is_server_warning(self, server_name):
         server = self.get_server(server_name)
 
-        return str(server['cmmHealthState']) in self.HEALTH_WARNING
+        return str(server['cmmHealthState'].lower()) in self.HEALTH_WARNING
 
     def is_server_critical(self, server_name):
         server = self.get_server(server_name)
 
-        return str(server['cmmHealthState']) in self.HEALTH_CRITICAL
+        return str(server['cmmHealthState'].lower()) in self.HEALTH_CRITICAL
 
     def is_server_led_on(self, server_name):
         led = self.get_led(server_name)
@@ -175,7 +201,7 @@ class LenovoSystem(WrapanapiAPIBase):
 
         return led['state'] == 'Off'
 
-    def is_server_led_blink(self, server_name):
+    def is_server_led_blinking(self, server_name):
         led = self.get_led(server_name)
 
         return led['state'] == 'Blinking'
@@ -218,3 +244,66 @@ class LenovoSystem(WrapanapiAPIBase):
         server = self.get_server(server_name)
 
         return str(server['description'])
+
+    def set_power_on_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'powerOn')
+
+        return "Power state action has been sent, status:" + str(response.status_code)
+
+    def set_power_off_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'powerOffSoftGraceful')
+
+        return "Power state action has been sent, status:" + str(response.status_code)
+
+    def set_power_off_immediately_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'powerOff')
+
+        return "Power state action has been sent, status:" + str(response.status_code)
+
+    def set_restart_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'powerOffSoftGraceful')
+
+        return "Restart state action has been sent, status:" + str(response.status_code)
+
+    def set_restart_immediately_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'powerCycleSoft')
+
+        return "Restart state action has been sent, status:" + str(response.status_code)
+
+    def set_restart_setup_system_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'bootToF1')
+
+        return "Restart state action has been sent, status:" + str(response.status_code)
+
+    def set_restart_controller_server(self, server_name):
+        server = self.get_server(server_name)
+        response = self.change_node_power_status(server, 'restart')
+
+        return "Restart state action has been sent, status:" + str(response.status_code)
+
+    def set_server_led_on(self, server_name):
+        server = self.get_server(server_name)
+        led = self.get_led(server_name)
+        response = self.change_led_status(server, led['name'], 'On')
+
+        return "LED state action has been sent, status:" + str(response.status_code)
+
+    def set_server_led_off(self, server_name):
+        server = self.get_server(server_name)
+        led = self.get_led(server_name)
+        response = self.change_led_status(server, led['name'], 'Off')
+
+        return "LED state action has been sent, status:" + str(response.status_code)
+
+    def set_server_led_blinking(self, server_name):
+        server = self.get_server(server_name)
+        led = self.get_led(server_name)
+        response = self.change_led_status(server, led['name'], 'Blinking')
+
+        return "LED state action has been sent, status:" + str(response.status_code)
