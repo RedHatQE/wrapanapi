@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import fauxfactory
 import pytz
 from ovirtsdk.api import API
@@ -10,8 +11,8 @@ from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
 from ovirtsdk.xml import params
 from wait_for import wait_for, TimedOutError
 
-from base import WrapanapiAPIBaseVM, VMInfo
-from exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
+from .base import WrapanapiAPIBaseVM, VMInfo
+from .exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
 class RHEVMSystem(WrapanapiAPIBaseVM):

@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import re
 import json
 import winrm
@@ -16,7 +17,7 @@ from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
 
-from base import WrapanapiAPIBaseVM, VMInfo
+from .base import WrapanapiAPIBaseVM, VMInfo
 
 
 class SCVMMSystem(WrapanapiAPIBaseVM):

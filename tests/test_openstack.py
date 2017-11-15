@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Openstack client."""
+from __future__ import absolute_import
 import pytest
 
 from wrapanapi import exceptions, openstack
