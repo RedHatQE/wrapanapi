@@ -1,4 +1,5 @@
 # coding: utf-8
+from __future__ import absolute_import
 from collections import namedtuple
 from ironicclient import client as iclient
 from keystoneclient.v2_0 import client as oskclient
@@ -6,7 +7,7 @@ from novaclient import client as osclient
 from novaclient.client import HTTPClient
 from requests.exceptions import Timeout
 
-from base import WrapanapiAPIBaseVM
+from .base import WrapanapiAPIBaseVM
 
 
 Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
