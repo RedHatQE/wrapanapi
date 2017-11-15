@@ -14,7 +14,7 @@ python-novaclient<7.0.0
 python-heatclient
 pywinrm
 requests
-suds
+suds-jurko
 tzlocal
 wait_for
 websocket_client
