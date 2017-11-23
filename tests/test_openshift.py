@@ -5,7 +5,6 @@ import os
 from random import choice
 
 import pytest
-import mock
 import fauxfactory
 from wait_for import wait_for
 
@@ -37,11 +36,11 @@ FIXTURES_SCOPES = ('function' if MOCKED else 'module')
 
 
 @pytest.fixture(scope=FIXTURES_SCOPES)
-def provider():
+def provider(mocker):
     if MOCKED:
         ocp = openshift.Openshift('openshift.test.com', username='default')
-        with mock.patch('wrapanapi.rest_client.ContainerClient') as client:
-            ocp.o_api = ocp.api = ocp.k_api = client
+        client = mocker.patch('wrapanapi.rest_client.ContainerClient')
+        ocp.o_api = ocp.api = ocp.k_api = client
     else:
         return openshift.Openshift(HOSTNAME, username=USERNAME, token=TOKEN)
     return ocp
