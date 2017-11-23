@@ -7,3 +7,6 @@
 .env/
 .idea/
 *.vars.json
+.tox/
+AUTHORS
+ChangeLog
