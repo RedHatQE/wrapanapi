@@ -12,7 +12,10 @@ python-novaclient<7.0.0
 python-heatclient
 pywinrm
 requests
-suds-jurko
+
+
+
+
 tzlocal
 wait_for
 websocket_client
@@ -20,6 +23,11 @@ dateparser
 boto3
 packaging
 azure>=2.0.0
+
+# suds jurko supports python3, suds is only used on python2
+suds-jurko; python_version > '3.0'
+suds; python_version == '2.7'
+
 ###
 # Libraries with compiled components, and their related devel packages
 ###
