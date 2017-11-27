@@ -93,24 +93,35 @@ class Kubernetes(WrapanapiAPIBase):
                     entities.append(cont)
         return entities
 
-    def list_container_group(self):
-        """Returns list of container groups (pods)"""
+    def list_container_group(self, project_name=None):
+        """Returns list of container groups (pods).
+        If project_name is passed, only the pods under the selected project will be returned"""
         entities = []
         entities_j = self.api.get('pod')[1]['items']
+        # entities_j = self.api.get('container')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Pod(self, meta['name'], meta['namespace'])
-            entities.append(entity)
+            if not project_name:
+                entities.append(entity)
+            else:
+                if entity.project_name == project_name:
+                    entities.append(entity)
         return entities
 
-    def list_service(self):
-        """Returns list of services"""
+    def list_service(self, project_name=None):
+        """Returns list of services.
+        If project name is passed, only the services under the selected project will be returned"""
         entities = []
         entities_j = self.api.get('service')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Service(self, meta['name'], meta['namespace'])
-            entities.append(entity)
+            if not project_name:
+                entities.append(entity)
+            else:
+                if entity.project_name == project_name:
+                    entities.append(entity)
         return entities
 
     def list_replication_controller(self):
