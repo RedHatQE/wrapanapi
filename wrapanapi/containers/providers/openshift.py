@@ -116,6 +116,6 @@ class Openshift(Kubernetes):
             entities.append(entity)
         return entities
 
-    def get_project(self, project_name):
+    def get_project_by_name(self, project_name):
         """Returns only the selected Project object"""
         return Project(self, project_name)
