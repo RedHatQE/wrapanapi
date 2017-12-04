@@ -125,7 +125,12 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
         return images.list(project=self._project).execute()
 
     def list_vm(self):
-        instances = self.all_vms()
+        """List VMs in this GCE zone - filtered from all_vms
+
+        Returns:
+            List of VM names in the object's zone
+        """
+        instances = self.all_vms(by_zone=True)
         return [instance.name for instance in instances]
 
     def list_bucket(self):
@@ -523,11 +528,21 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
     def wait_vm_suspended(self, vm_name, num_sec):
         raise ActionNotSupported('vm_suspend not supported.')
 
-    def all_vms(self):
+    def all_vms(self, by_zone=False):
+        """List all VMs in the GCE account, unfiltered by default
+
+        Args:
+            by_zone: boolean, True to filter by the current object's zone
+
+        Returns:
+            List of VMInfo nametuples
+        """
         result = []
         zones = self._compute.zones().list(project=self._project).execute()
         for zone in zones.get('items', []):
             zone_name = zone.get('name', None)
+            if by_zone and zone_name != self._zone:
+                continue
             for vm in self._get_zone_instances(zone_name).get('items', []):
                 if vm['id'] and vm['name'] and vm['status'] and vm.get('networkInterfaces'):
 
@@ -537,6 +552,8 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
                         vm['status'],
                         vm.get('networkInterfaces')[0].get('networkIP'),
                     ))
+        else:
+            self.logger.info('No matching zone found in all_vms with by_zone=True')
         return result
 
     def vm_creation_time(self, instance_name):
