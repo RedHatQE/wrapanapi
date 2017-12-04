@@ -358,7 +358,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
     def get_vm_guid(self, vm_name):
-        for vm in self.all_vms():
+        for vm in self.list_vm():
             if vm.name == vm_name:
                 return vm.uuid
         else:
