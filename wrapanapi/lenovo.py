@@ -31,6 +31,7 @@ class LenovoSystem(WrapanapiAPIBase):
     HEALTH_CRITICAL = ("critical", "minor-failure", "major-failure", "non-recoverable", "fatal")
 
     def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
+        super(LenovoSystem, self).__init__(kwargs)
         self.auth = (username, password)
         self.url = '{}://{}:{}/'.format(protocol, hostname, port)
         self._servers_list = None
