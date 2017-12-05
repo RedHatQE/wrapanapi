@@ -20,8 +20,8 @@ class LenovoSystem(WrapanapiAPIBase):
     _api = None
 
     _stats_available = {
-        'num_server': lambda self: len(self.list_servers()),
-        # 'num_server_with_host': lambda self: len(self.list_servers_with_host()),
+        'num_server': lambda self, requester: len(self.list_servers(requester)),
+        'power_state': lambda self, requester: self.get_server_power_status(requester),
     }
     POWERED_ON = 8
     POWERED_OFF = 5
@@ -64,7 +64,7 @@ class LenovoSystem(WrapanapiAPIBase):
         response = self._service_instance("aicc")
         return response['appliance']['version']
 
-    def list_servers(self):
+    def list_servers(self, requester=None):
         response = self._service_instance("cabinet?status=includestandalone")
         cabinets = response['cabinetList'][0]
         nodes_list = cabinets['nodeList']
@@ -136,6 +136,9 @@ class LenovoSystem(WrapanapiAPIBase):
         server = self.get_server(server_name)
 
         return server['macAddress']
+
+    def get_server_power_status(self, requester=None):
+        return self.server_status(requester.name)
 
     def server_status(self, server_name):
         server = self.get_server(server_name)
@@ -307,3 +310,15 @@ class LenovoSystem(WrapanapiAPIBase):
         response = self.change_led_status(server, led['name'], 'Blinking')
 
         return "LED state action has been sent, status:" + str(response.status_code)
+
+    def stats(self, requester=None, *requested_stats):
+        """Returns all available stats, if none are explicitly requested
+
+        Args:
+            *requested_stats: A list giving the name of the stats to return. Stats are defined
+                in the _stats_available attibute of the specific class.
+        Returns: A dict of stats.
+        """
+        requested_stats = requested_stats or self._stats_available
+        return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
+
