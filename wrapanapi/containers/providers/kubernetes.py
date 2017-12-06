@@ -98,15 +98,14 @@ class Kubernetes(WrapanapiAPIBase):
         If project_name is passed, only the pods under the selected project will be returned"""
         entities = []
         entities_j = self.api.get('pod')[1]['items']
-        # entities_j = self.api.get('container')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Pod(self, meta['name'], meta['namespace'])
             if not project_name:
-                entities.append(entity)
-            else:
-                if entity.project_name == project_name:
-                    entities.append(entity)
+                meta = entity_j['metadata']
+                if project_name and project_name != meta['namespace']:
+                    continue
+                entities.append(Pod(self, meta['name'], meta['namespace']))
         return entities
 
     def list_service(self, project_name=None):
@@ -118,10 +117,10 @@ class Kubernetes(WrapanapiAPIBase):
             meta = entity_j['metadata']
             entity = Service(self, meta['name'], meta['namespace'])
             if not project_name:
-                entities.append(entity)
-            else:
-                if entity.project_name == project_name:
-                    entities.append(entity)
+                meta = entity_j['metadata']
+                if project_name and project_name != meta['namespace']:
+                    continue
+                entities.append(Service(self, meta['name'], meta['namespace']))
         return entities
 
     def list_replication_controller(self):
