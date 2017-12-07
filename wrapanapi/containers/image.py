@@ -6,7 +6,7 @@ from wrapanapi.containers import ContainersResourceBase
 class Image(ContainersResourceBase):
     RESOURCE_TYPE = 'image'
 
-    def __init__(self, provider, name, image_id, image_project_name = None):
+    def __init__(self, provider, name, image_id, image_project_name=None):
         ContainersResourceBase.__init__(self, provider, name, None)
         self.id = image_id
         self.image_project_name = image_project_name
