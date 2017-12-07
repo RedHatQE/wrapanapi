@@ -101,7 +101,7 @@ class Kubernetes(WrapanapiAPIBase):
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Pod(self, meta['name'], meta['namespace'])
-            if not project_name:
+            if project_name:
                 meta = entity_j['metadata']
                 if project_name and project_name != meta['namespace']:
                     continue
@@ -116,7 +116,7 @@ class Kubernetes(WrapanapiAPIBase):
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Service(self, meta['name'], meta['namespace'])
-            if not project_name:
+            if project_name:
                 meta = entity_j['metadata']
                 if project_name and project_name != meta['namespace']:
                     continue
