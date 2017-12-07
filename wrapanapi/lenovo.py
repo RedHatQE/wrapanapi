@@ -324,4 +324,3 @@ class LenovoSystem(WrapanapiAPIBase):
 
     def disconnect(self):
         pass
-
