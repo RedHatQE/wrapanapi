@@ -139,9 +139,10 @@ class Kubernetes(WrapanapiAPIBase):
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
             imgs_j = entity_j['status'].get('containerStatuses', [])
+            img_project_name = entity_j['metadata'].get('namespace', [])
             for img_j in imgs_j:
                 _, name, _ = self._parse_image_info(img_j['image'])
-                img = Image(self, name, img_j['imageID'])
+                img = Image(self, name, img_j['imageID'], img_project_name)
                 if img not in entities:
                     entities.append(img)
         return entities
