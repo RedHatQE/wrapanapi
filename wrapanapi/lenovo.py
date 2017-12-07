@@ -311,14 +311,17 @@ class LenovoSystem(WrapanapiAPIBase):
 
         return "LED state action has been sent, status:" + str(response.status_code)
 
-    def stats(self, requester=None, *requested_stats):
-        """Returns all available stats, if none are explicitly requested
+    def stats(self, *requested_stats, **kwargs):
+        requester = None
 
-        Args:
-            *requested_stats: A list giving the name of the stats to return. Stats are defined
-                in the _stats_available attibute of the specific class.
-        Returns: A dict of stats.
-        """
+        # Get the requester which represents the class of this method's caller
+        if 'requester' in kwargs:
+            requester = kwargs.get('requester')
+
+        # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
         return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
+
+    def disconnect(self):
+        pass
 
