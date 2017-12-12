@@ -20,8 +20,8 @@ class LenovoSystem(WrapanapiAPIBase):
     _api = None
 
     _stats_available = {
-        'num_server': lambda self, requester: len(self.list_servers(requester)),
-        'power_state': lambda self, requester: self.get_server_power_status(requester),
+        'num_server': lambda self, requester: len(self.list_servers()),
+        'power_state': lambda self, requester: self.server_status(requester.name),
     }
     POWERED_ON = 8
     POWERED_OFF = 5
@@ -31,6 +31,7 @@ class LenovoSystem(WrapanapiAPIBase):
     HEALTH_CRITICAL = ("critical", "minor-failure", "major-failure", "non-recoverable", "fatal")
 
     def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
+        super(LenovoSystem, self).__init__(kwargs)
         self.auth = (username, password)
         self.url = '{}://{}:{}/'.format(protocol, hostname, port)
         self._servers_list = None
@@ -64,7 +65,7 @@ class LenovoSystem(WrapanapiAPIBase):
         response = self._service_instance("aicc")
         return response['appliance']['version']
 
-    def list_servers(self, requester=None):
+    def list_servers(self):
         response = self._service_instance("cabinet?status=includestandalone")
         cabinets = response['cabinetList'][0]
         nodes_list = cabinets['nodeList']
@@ -136,9 +137,6 @@ class LenovoSystem(WrapanapiAPIBase):
         server = self.get_server(server_name)
 
         return server['macAddress']
-
-    def get_server_power_status(self, requester=None):
-        return self.server_status(requester.name)
 
     def server_status(self, server_name):
         server = self.get_server(server_name)
@@ -312,15 +310,12 @@ class LenovoSystem(WrapanapiAPIBase):
         return "LED state action has been sent, status:" + str(response.status_code)
 
     def stats(self, *requested_stats, **kwargs):
-        requester = None
-
         # Get the requester which represents the class of this method's caller
-        if 'requester' in kwargs:
-            requester = kwargs.get('requester')
+        requester = kwargs.get('requester')
 
         # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
         return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
 
     def disconnect(self):
-        pass
+        self.logger.info("LenovoSystem disconnected")
