@@ -385,7 +385,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = ['name', 'config.template']
-        property_spec.type = 'VirtualMachine'
+        property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
         object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
         result = []
