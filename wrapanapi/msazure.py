@@ -12,7 +12,7 @@ from azure.mgmt.compute.models import (VirtualMachineCaptureParameters, DiskCrea
                                        VirtualMachineSizeTypes, VirtualHardDisk)
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup
-from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.storage.blob import BlockBlobService
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -60,6 +60,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.resource_client = ResourceManagementClient(credentials, self.subscription_id)
         self.network_client = NetworkManagementClient(credentials, self.subscription_id)
         self.container_client = BlockBlobService(self.storage_account, self.storage_key)
+        self.subscription_client = SubscriptionClient(credentials)
         self.vms_collection = self.compute_client.virtual_machines
 
     def start_vm(self, vm_name, resource_group=None):
@@ -260,12 +261,21 @@ class AzureSystem(WrapanapiAPIBaseVM):
         current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
         return current_ip_address
 
-    def list_free_pip(self, pip_template):
-        ips = self.network_client.public_ip_addresses.list(resource_group_name=self.resource_group)
+    def list_subscriptions(self):
+        return [(s.display_name, s.subscription_id) for s in
+                self.subscription_client.subscriptions.list()]
+
+    def list_resource_groups(self):
+        return [r.name for r in self.resource_client.resource_groups.list()]
+
+    def list_free_pip(self, pip_template, resource_group=None):
+        resource_group = resource_group or self.resource_group
+        ips = self.network_client.public_ip_addresses.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.ip_configuration and pip_template in ip.name]
 
-    def list_free_nics(self, nic_template):
-        ips = self.network_client.network_interfaces.list(resource_group_name=self.resource_group)
+    def list_free_nics(self, nic_template, resource_group=None):
+        resource_group = resource_group or self.resource_group
+        ips = self.network_client.network_interfaces.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.virtual_machine and nic_template in ip.name]
 
     def list_stack(self, resource_group=None, days_old=0):
@@ -296,32 +306,34 @@ class AzureSystem(WrapanapiAPIBaseVM):
         """
         Used for clean_up jobs to remove NIC that are not attached to any test VM
         """
-        self.logger.info("Removing NICs with \"{}\" name template".format(nic_template))
-        nic_list = self.list_free_nics(nic_template)
-
+        self.logger.info('Removing NICs with "{}" name template'.format(nic_template))
         results = []
-        for nic_name in nic_list:
-            operation = self.network_client.network_interfaces.delete(
-                resource_group_name=self.resource_group,
-                network_interface_name=nic_name)
-            operation.wait()
-            results.append((nic_name, operation.status()))
+        for resource_group in self.list_resource_groups():
+            nic_list = self.list_free_nics(nic_template, resource_group=resource_group)
+
+            for nic in nic_list:
+                operation = self.network_client.network_interfaces.delete(
+                    resource_group_name=resource_group,
+                    network_interface_name=nic)
+                operation.wait()
+                results.append((nic, operation.status()))
         return results
 
     def remove_pips_by_search(self, pip_template):
         """
         Used for clean_up jobs to remove public IPs that are not associated to any NIC
         """
-        self.logger.info("Removing Public IPs with \"{}\" name template".format(pip_template))
-        pip_list = self.list_free_pip(pip_template)
-
+        self.logger.info('Removing Public IPs with "{}" name template'.format(pip_template))
         results = []
-        for pip_name in pip_list:
-            operation = self.network_client.public_ip_addresses.delete(
-                resource_group_name=self.resource_group,
-                public_ip_address_name=pip_name)
-            operation.wait()
-            results.append((pip_name, operation.status()))
+        for resource_group in self.list_resource_groups():
+            pip_list = self.list_free_pip(pip_template, resource_group=resource_group)
+
+            for pip in pip_list:
+                operation = self.network_client.public_ip_addresses.delete(
+                    resource_group_name=resource_group,
+                    public_ip_address_name=pip)
+                operation.wait()
+                results.append((pip, operation.status()))
         return results
 
     def create_netsec_group(self, group_name, resource_group=None):
