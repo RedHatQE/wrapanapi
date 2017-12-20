@@ -20,8 +20,8 @@ class LenovoSystem(WrapanapiAPIBase):
     _api = None
 
     _stats_available = {
-        'num_server': lambda self: len(self.list_servers()),
-        # 'num_server_with_host': lambda self: len(self.list_servers_with_host()),
+        'num_server': lambda self, requester: len(self.list_servers()),
+        'power_state': lambda self, requester: self.server_status(requester.name),
     }
     POWERED_ON = 8
     POWERED_OFF = 5
@@ -308,3 +308,14 @@ class LenovoSystem(WrapanapiAPIBase):
         response = self.change_led_status(server, led['name'], 'Blinking')
 
         return "LED state action has been sent, status:" + str(response.status_code)
+
+    def stats(self, *requested_stats, **kwargs):
+        # Get the requester which represents the class of this method's caller
+        requester = kwargs.get('requester')
+
+        # Retrieve and return the stats
+        requested_stats = requested_stats or self._stats_available
+        return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
+
+    def disconnect(self):
+        self.logger.info("LenovoSystem disconnected")
