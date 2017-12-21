@@ -345,7 +345,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
         nsg = NetworkSecurityGroup(location=self.region)
         operation = security_groups.create_or_update(resource_group_name=resource_group or
-                                                                         self.resource_group,
+                                                     self.resource_group,
                                                      network_security_group_name=group_name,
                                                      parameters=nsg)
         operation.wait()
@@ -356,7 +356,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.logger.info("Attempting to Remove Azure Security Group {}".format(group_name))
         security_groups = self.network_client.network_security_groups
         operation = security_groups.delete(resource_group_name=resource_group or
-                                                               self.resource_group,
+                                           self.resource_group,
                                            network_security_group_name=group_name)
         operation.wait()
         self.logger.info("Network Security Group {} is removed".format(group_name))
