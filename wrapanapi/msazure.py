@@ -13,6 +13,7 @@ from azure.mgmt.compute.models import (VirtualMachineCaptureParameters, DiskCrea
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.storage.blob import BlockBlobService
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -20,6 +21,7 @@ from wait_for import wait_for
 
 from .exceptions import VMInstanceNotFound
 from base import WrapanapiAPIBaseVM
+
 
 # TODO: add handler for logger msrest.service_client if needed
 # TODO: add better description to each method
@@ -263,7 +265,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def list_subscriptions(self):
         return [(s.display_name, s.subscription_id) for s in
-                self.subscription_client.subscriptions.list()]
+                self.subscription_client.subscriptions.list() if
+                s.state == SubscriptionState.enabled]
 
     def list_resource_groups(self):
         return [r.name for r in self.resource_client.resource_groups.list()]
@@ -312,6 +315,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
             nic_list = self.list_free_nics(nic_template, resource_group=resource_group)
 
             for nic in nic_list:
+                self.logger.info("Nic {n} is being removed".format(n=nic))
                 operation = self.network_client.network_interfaces.delete(
                     resource_group_name=resource_group,
                     network_interface_name=nic)
@@ -341,7 +345,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
         nsg = NetworkSecurityGroup(location=self.region)
         operation = security_groups.create_or_update(resource_group_name=resource_group or
-                                                     self.resource_group,
+                                                                         self.resource_group,
                                                      network_security_group_name=group_name,
                                                      parameters=nsg)
         operation.wait()
@@ -352,7 +356,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.logger.info("Attempting to Remove Azure Security Group {}".format(group_name))
         security_groups = self.network_client.network_security_groups
         operation = security_groups.delete(resource_group_name=resource_group or
-                                           self.resource_group,
+                                                               self.resource_group,
                                            network_security_group_name=group_name)
         operation.wait()
         self.logger.info("Network Security Group {} is removed".format(group_name))
