@@ -67,7 +67,7 @@ class ContainerClient(object):
         """
         path = self.entity_path(entity_type, name, namespace)
         r = self.raw_get(path)
-        json_content = r.json() if r.ok else None
+        json_content = r.json()
         if json_content and convert:
             json_content = convert(json_content)
         return (r.status_code, json_content)
@@ -76,7 +76,7 @@ class ContainerClient(object):
         """Sends a POST request to an entity specified by the method parameters"""
         path = self.entity_path(entity_type, name, namespace)
         r = self.raw_post(path, data)
-        json_content = r.json() if r.ok else None
+        json_content = r.json()
         if json_content and convert:
             json_content = convert(json_content)
         return (r.status_code, json_content)
@@ -86,7 +86,7 @@ class ContainerClient(object):
         """Sends a PATCH request to an entity specified by the method parameters"""
         path = self.entity_path(entity_type, name, namespace)
         r = self.raw_patch(path, data, headers)
-        json_content = r.json() if r.ok else None
+        json_content = r.json()
         if json_content and convert:
             json_content = convert(json_content)
         return (r.status_code, json_content)
@@ -96,14 +96,13 @@ class ContainerClient(object):
         (In simple words - delete the entity)"""
         path = self.entity_path(entity_type, name, namespace)
         r = self.raw_delete(path)
-        json_content = r.json() if r.ok else None
+        json_content = r.json()
         if json_content and convert:
             json_content = convert(json_content)
         return (r.status_code, json_content)
 
     def get_json(self, path, headers=None, params=None):
-        r = self.raw_get(path, headers, params)
-        return (r.json() if r.ok else None)
+        return self.raw_get(path, headers, params).json()
 
     def put_status(self, path, data, headers=None):
         r = self.raw_put(path, data, headers)
