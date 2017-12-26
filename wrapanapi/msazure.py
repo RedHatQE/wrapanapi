@@ -347,13 +347,13 @@ class AzureSystem(WrapanapiAPIBaseVM):
             nic_list = self.list_free_nics(nic_template, resource_group=resource_group)
 
             for nic in nic_list:
-                self.logger.info("Nic {n} is being removed".format(n=nic))
                 operation = self.network_client.network_interfaces.delete(
                     resource_group_name=resource_group,
                     network_interface_name=nic)
                 operation.wait()
                 results.append((nic, operation.status()))
-        return results
+        if not results:
+            self.logger.info('No NICs matching "{}" template were found'.format(nic_template))
 
     def remove_pips_by_search(self, pip_template):
         """
@@ -370,7 +370,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
                     public_ip_address_name=pip)
                 operation.wait()
                 results.append((pip, operation.status()))
-        return results
+        if not results:
+            self.logger.info('No PIPs matching "{}" template were found'.format(pip_template))
 
     def create_netsec_group(self, group_name, resource_group=None):
         security_groups = self.network_client.network_security_groups
@@ -449,6 +450,9 @@ class AzureSystem(WrapanapiAPIBaseVM):
         operation = deps.delete(resource_group_name=resource_group or self.resource_group,
                                 deployment_name=stack_name)
         operation.wait()
+        self.logger.info("{deployment_name} was removed from {resource_group_name} resource "
+                         "group". format(deployment_name=stack_name,
+                                         resource_group_name=resource_group or self.resource_group))
         return operation.status()
 
     def delete_stack_by_date(self, days_old, resource_group=None):
@@ -643,6 +647,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
                     container_client.delete_blob(container_name=container.name,
                                                  blob_name=blob.name)
                     removed_blobs.append({'container': container.name, 'blob': blob.name})
+        if not removed_blobs:
+            self.logger.info('No Unmanaged blobs matching "test*" were found')
 
         # removing managed disks
         removed_disks = []
@@ -653,4 +659,6 @@ class AzureSystem(WrapanapiAPIBaseVM):
                                                  disk_name=disk.name)
                 removed_disks.append({'resource_group': self.resource_group,
                                       'disk': disk.name})
+        if not removed_disks:
+            self.logger.info('No Managed disks matching "test*" were found')
         return {'Managed': removed_disks, 'Unmanaged': removed_blobs}
