@@ -61,6 +61,18 @@ class AzureSystem(WrapanapiAPIBaseVM):
                                                        secret=self.client_secret,
                                                        tenant=self.tenant)
 
+    def __setattr__(self, key, value):
+        """If the subscription_id is changed, invalidate client caches"""
+        if key in ['credentials', 'subscription_id']:
+            for client in ['compute_client', 'resource_client', 'network_client',
+                           'subscription_client']:
+                if getattr(self, client, False):
+                    del self.__dict__[client]
+        if key in ['storage_account', 'storage_key']:
+            if getattr(self, 'container_client', False):
+                del self.__dict__['container_client']
+        self.__dict__[key] = value
+
     @cached_property
     def compute_client(self):
         return ComputeManagementClient(self.credentials, self.subscription_id)
