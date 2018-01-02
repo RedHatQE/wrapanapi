@@ -296,7 +296,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return current_ip_address
 
     def list_subscriptions(self):
-        return [(s.display_name, s.subscription_id) for s in
+        return [(str(s.display_name), str(s.subscription_id)) for s in
                 self.subscription_client.subscriptions.list() if
                 s.state == SubscriptionState.enabled]
 
