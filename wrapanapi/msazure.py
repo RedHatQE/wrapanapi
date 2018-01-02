@@ -5,6 +5,9 @@ Used to communicate with providers without using CFME facilities
 """
 import os
 import pytz
+
+from cached_property import cached_property
+
 from azure.common.credentials import ServicePrincipalCredentials
 from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
@@ -54,16 +57,45 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.template_container = kwargs['provisioning']['template_container']
         self.region = kwargs["provisioning"]["region_api"]
 
-        credentials = ServicePrincipalCredentials(client_id=self.client_id,
-                                                  secret=self.client_secret,
-                                                  tenant=self.tenant)
+        self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
+                                                       secret=self.client_secret,
+                                                       tenant=self.tenant)
 
-        self.compute_client = ComputeManagementClient(credentials, self.subscription_id)
-        self.resource_client = ResourceManagementClient(credentials, self.subscription_id)
-        self.network_client = NetworkManagementClient(credentials, self.subscription_id)
-        self.container_client = BlockBlobService(self.storage_account, self.storage_key)
-        self.subscription_client = SubscriptionClient(credentials)
-        self.vms_collection = self.compute_client.virtual_machines
+    def __setattr__(self, key, value):
+        """If the subscription_id is changed, invalidate client caches"""
+        if key in ['credentials', 'subscription_id']:
+            for client in ['compute_client', 'resource_client', 'network_client',
+                           'subscription_client']:
+                if getattr(self, client, False):
+                    del self.__dict__[client]
+        if key in ['storage_account', 'storage_key']:
+            if getattr(self, 'container_client', False):
+                del self.__dict__['container_client']
+        self.__dict__[key] = value
+
+    @cached_property
+    def compute_client(self):
+        return ComputeManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def resource_client(self):
+        return ResourceManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def network_client(self):
+        return NetworkManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def container_client(self):
+        return BlockBlobService(self.storage_account, self.storage_key)
+
+    @cached_property
+    def subscription_client(self):
+        return SubscriptionClient(self.credentials)
+
+    @property
+    def vms_collection(self):
+        return self.compute_client.virtual_machines
 
     def start_vm(self, vm_name, resource_group=None):
         col = self.vms_collection
@@ -264,7 +296,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return current_ip_address
 
     def list_subscriptions(self):
-        return [(s.display_name, s.subscription_id) for s in
+        return [(str(s.display_name), str(s.subscription_id)) for s in
                 self.subscription_client.subscriptions.list() if
                 s.state == SubscriptionState.enabled]
 
