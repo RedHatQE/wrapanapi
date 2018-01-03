@@ -311,25 +311,37 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 resource_group)]
 
     def get_storage_account_key(self, storage_account_name, resource_group):
-        """Each Storage account has 2 keys by default - both are valid"""
+        """Each Storage account has 2 keys by default - both are valid and equal"""
         keys = {v.key_name: v.value for v in self.storage_client.storage_accounts.list_keys(
             resource_group, storage_account_name).keys}
         return keys['key1']
 
     def list_resource_groups(self):
+        """
+        List Resource Groups under current subscription_id
+        """
         return [r.name for r in self.resource_client.resource_groups.list()]
 
     def list_free_pip(self, pip_template, resource_group=None):
+        """
+        List available Public IP in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         ips = self.network_client.public_ip_addresses.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.ip_configuration and pip_template in ip.name]
 
     def list_free_nics(self, nic_template, resource_group=None):
+        """
+        List available Network Interfaces in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         ips = self.network_client.network_interfaces.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.virtual_machine and nic_template in ip.name]
 
     def list_stack(self, resource_group=None, days_old=0):
+        """
+        List available Deployment Stacks in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         # todo: check maybe bug - today instead of now ?
         today = datetime.utcnow().replace(tzinfo=pytz.utc)
@@ -356,6 +368,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def remove_nics_by_search(self, nic_template, resource_group=None):
         """
         Used for clean_up jobs to remove NIC that are not attached to any test VM
+        in selected resource_group.If None (default) resource_group provided, the instance's
+        resource group is used instead
         """
         self.logger.info('Attempting to List NICs with "{}" name template'.format(nic_template))
         results = []
@@ -376,6 +390,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def remove_pips_by_search(self, pip_template, resource_group=None):
         """
         Used for clean_up jobs to remove public IPs that are not associated to any NIC
+        in selected resource_group. If None (default) resource_group provided, the instance's
+        resource group is used instead
         """
         self.logger.info('Attempting to List Public IPs with "{}" name template'.format(
             pip_template))
@@ -407,6 +423,11 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return operation.status()
 
     def remove_netsec_group(self, group_name, resource_group=None):
+        """
+        Used to remove Network Security Group from selected resource_group.
+        If None (default) resource_group provided, the instance's
+        resource group is used instead
+        """
         self.logger.info("Attempting to Remove Azure Security Group {}".format(group_name))
         security_groups = self.network_client.network_security_groups
         operation = security_groups.delete(resource_group_name=resource_group or
@@ -424,6 +445,10 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return lb_name in self.list_load_balancer()
 
     def remove_diags_container(self, container_client=None):
+        """
+        If None (default) container_client provided, the instance's
+        container_client is used instead
+        """
         container_client = container_client or self.container_client
         for container in container_client.list_containers():
             if container.name.startswith('bootdiagnostics-test'):
@@ -468,6 +493,9 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return stack_name in self.list_stack()
 
     def delete_stack(self, stack_name, resource_group=None):
+        """
+        Delete Deployment Stack from 'resource_group'
+        """
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
         deps = self.resource_client.deployments
         operation = deps.delete(resource_group_name=resource_group or self.resource_group,
@@ -657,7 +685,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def remove_unused_blobs(self, resource_group=None):
         """
         Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
-        Runs though all storage accounts in 'resource_group'
+        Runs though all storage accounts in 'resource_group'. If None (default) resource_group
+        provided, the instance's resource group is used instead
         Returns list of removed disks
         """
         removed_blobs = {}
