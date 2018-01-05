@@ -17,6 +17,7 @@ from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
+from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlockBlobService
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -65,7 +66,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         """If the subscription_id is changed, invalidate client caches"""
         if key in ['credentials', 'subscription_id']:
             for client in ['compute_client', 'resource_client', 'network_client',
-                           'subscription_client']:
+                           'subscription_client', 'storage_client']:
                 if getattr(self, client, False):
                     del self.__dict__[client]
         if key in ['storage_account', 'storage_key']:
@@ -84,6 +85,10 @@ class AzureSystem(WrapanapiAPIBaseVM):
     @cached_property
     def network_client(self):
         return NetworkManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def storage_client(self):
+        return StorageManagementClient(self.credentials, self.subscription_id)
 
     @cached_property
     def container_client(self):
@@ -266,19 +271,19 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def get_network_interface(self, vm_name, resource_group=None):
         # todo: weird function, to refactor it later
-        self.logger.info("Attempting to Retrieve Azure VM Network Interface {}".format(vm_name))
+        self.logger.info("Attempting to Retrieve Azure VM Network Interface %s", vm_name)
         vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
                                      vm_name=vm_name)
         first_if = vm.network_profile.network_interfaces[0]
-        self.logger.info("Returned URI was {}".format(first_if.id))
+        self.logger.info("Returned URI was %s", first_if.id)
         return os.path.split(first_if.id)[1]
 
     def get_vm_vhd(self, vm_name, resource_group=None):
-        self.logger.info("get_vm_vhd - Attempting to Retrieve Azure VM VHD {}".format(vm_name))
+        self.logger.info("get_vm_vhd - Attempting to Retrieve Azure VM VHD %s", vm_name)
         vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
                                      vm_name=vm_name)
         vhd_endpoint = vm.storage_profile.os_disk.vhd.uri
-        self.logger.info("Returned Disk Endpoint was {}".format(vhd_endpoint))
+        self.logger.info("Returned Disk Endpoint was %s", vhd_endpoint)
         return vhd_endpoint
 
     def current_ip_address(self, vm_name, resource_group=None):
@@ -300,20 +305,43 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 self.subscription_client.subscriptions.list() if
                 s.state == SubscriptionState.enabled]
 
+    def list_storage_accounts_by_resource_group(self, resource_group):
+        """List Azure Storage accounts on current subscription by resource group"""
+        return [s.name for s in self.storage_client.storage_accounts.list_by_resource_group(
+                resource_group)]
+
+    def get_storage_account_key(self, storage_account_name, resource_group):
+        """Each Storage account has 2 keys by default - both are valid and equal"""
+        keys = {v.key_name: v.value for v in self.storage_client.storage_accounts.list_keys(
+            resource_group, storage_account_name).keys}
+        return keys['key1']
+
     def list_resource_groups(self):
+        """
+        List Resource Groups under current subscription_id
+        """
         return [r.name for r in self.resource_client.resource_groups.list()]
 
     def list_free_pip(self, pip_template, resource_group=None):
+        """
+        List available Public IP in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         ips = self.network_client.public_ip_addresses.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.ip_configuration and pip_template in ip.name]
 
     def list_free_nics(self, nic_template, resource_group=None):
+        """
+        List available Network Interfaces in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         ips = self.network_client.network_interfaces.list(resource_group_name=resource_group)
         return [ip.name for ip in ips if not ip.virtual_machine and nic_template in ip.name]
 
     def list_stack(self, resource_group=None, days_old=0):
+        """
+        List available Deployment Stacks in selected resource_group
+        """
         resource_group = resource_group or self.resource_group
         # todo: check maybe bug - today instead of now ?
         today = datetime.utcnow().replace(tzinfo=pytz.utc)
@@ -337,61 +365,75 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def disconnect(self):
         pass
 
-    def remove_nics_by_search(self, nic_template):
+    def remove_nics_by_search(self, nic_template, resource_group=None):
         """
         Used for clean_up jobs to remove NIC that are not attached to any test VM
+        in selected resource_group.If None (default) resource_group provided, the instance's
+        resource group is used instead
         """
-        self.logger.info('Removing NICs with "{}" name template'.format(nic_template))
+        self.logger.info('Attempting to List NICs with "%s" name template', nic_template)
         results = []
-        for resource_group in self.list_resource_groups():
-            nic_list = self.list_free_nics(nic_template, resource_group=resource_group)
+        nic_list = self.list_free_nics(nic_template,
+                                       resource_group=resource_group or self.resource_group)
 
-            for nic in nic_list:
-                self.logger.info("Nic {n} is being removed".format(n=nic))
-                operation = self.network_client.network_interfaces.delete(
-                    resource_group_name=resource_group,
-                    network_interface_name=nic)
-                operation.wait()
-                results.append((nic, operation.status()))
+        for nic in nic_list:
+            operation = self.network_client.network_interfaces.delete(
+                resource_group_name=resource_group or self.resource_group,
+                network_interface_name=nic)
+            operation.wait()
+            self.logger.info('"%s" nic removed', nic)
+            results.append((nic, operation.status()))
+        if not results:
+            self.logger.debug('No NICs matching "%s" template were found', nic_template)
         return results
 
-    def remove_pips_by_search(self, pip_template):
+    def remove_pips_by_search(self, pip_template, resource_group=None):
         """
         Used for clean_up jobs to remove public IPs that are not associated to any NIC
+        in selected resource_group. If None (default) resource_group provided, the instance's
+        resource group is used instead
         """
-        self.logger.info('Removing Public IPs with "{}" name template'.format(pip_template))
+        self.logger.info('Attempting to List Public IPs with "%s" name template', pip_template)
         results = []
-        for resource_group in self.list_resource_groups():
-            pip_list = self.list_free_pip(pip_template, resource_group=resource_group)
+        pip_list = self.list_free_pip(pip_template,
+                                      resource_group=resource_group or self.resource_group)
 
-            for pip in pip_list:
-                operation = self.network_client.public_ip_addresses.delete(
-                    resource_group_name=resource_group,
-                    public_ip_address_name=pip)
-                operation.wait()
-                results.append((pip, operation.status()))
-        return results
+        for pip in pip_list:
+            operation = self.network_client.public_ip_addresses.delete(
+                resource_group_name=resource_group or self.resource_group,
+                public_ip_address_name=pip)
+            operation.wait()
+            self.logger.info('"%s" pip removed', pip)
+            results.append((pip, operation.status()))
+        if not results:
+            self.logger.debug('No PIPs matching "%s" template were found', pip_template)
+            return results
 
     def create_netsec_group(self, group_name, resource_group=None):
         security_groups = self.network_client.network_security_groups
-        self.logger.info("Attempting to Create New Azure Security Group {}".format(group_name))
+        self.logger.info("Attempting to Create New Azure Security Group %s", group_name)
         nsg = NetworkSecurityGroup(location=self.region)
         operation = security_groups.create_or_update(resource_group_name=resource_group or
                                                      self.resource_group,
                                                      network_security_group_name=group_name,
                                                      parameters=nsg)
         operation.wait()
-        self.logger.info("Network Security Group {} is created".format(group_name))
+        self.logger.info("Network Security Group '%s' is created", group_name)
         return operation.status()
 
     def remove_netsec_group(self, group_name, resource_group=None):
-        self.logger.info("Attempting to Remove Azure Security Group {}".format(group_name))
+        """
+        Used to remove Network Security Group from selected resource_group.
+        If None (default) resource_group provided, the instance's
+        resource group is used instead
+        """
+        self.logger.info("Attempting to Remove Azure Security Group '%s'", group_name)
         security_groups = self.network_client.network_security_groups
         operation = security_groups.delete(resource_group_name=resource_group or
                                            self.resource_group,
                                            network_security_group_name=group_name)
         operation.wait()
-        self.logger.info("Network Security Group {} is removed".format(group_name))
+        self.logger.info("Network Security Group '%s' is removed", group_name)
         return operation.status()
 
     def list_load_balancer(self):
@@ -401,18 +443,24 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def does_load_balancer_exist(self, lb_name):
         return lb_name in self.list_load_balancer()
 
-    def remove_diags_container(self):
-        for container in self.container_client.list_containers():
+    def remove_diags_container(self, container_client=None):
+        """
+        If None (default) container_client provided, the instance's
+        container_client is used instead
+        """
+        container_client = container_client or self.container_client
+        for container in container_client.list_containers():
             if container.name.startswith('bootdiagnostics-test'):
-                self.logger.info("Removing container {n}".format(n=container.name))
+                self.logger.info("Removing container '%s'", container.name)
                 self.container_client.delete_container(container_name=container.name)
-        self.logger.info('All diags containers are removed')
+        self.logger.info("All diags containers are removed from '%s'",
+                         container_client.account_name)
 
     def list_blob_images(self, container):
         return [blob.name for blob in self.container_client.list_blobs(container_name=container)]
 
     def remove_blob_image(self, blob, container):
-        self.logger.info("Removing Blob {b} from containter {c}".format(b=blob, c=container))
+        self.logger.info("Removing Blob '%s' from containter '%s'", blob, container)
         self.container_client.delete_blob(container_name=container, blob_name=blob)
         # delete_blob doesn't return any status
 
@@ -444,24 +492,29 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return stack_name in self.list_stack()
 
     def delete_stack(self, stack_name, resource_group=None):
+        """
+        Delete Deployment Stack from 'resource_group'
+        """
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
         deps = self.resource_client.deployments
         operation = deps.delete(resource_group_name=resource_group or self.resource_group,
                                 deployment_name=stack_name)
         operation.wait()
+        self.logger.info("'%s' was removed from '%s' resource group", stack_name,
+                         resource_group or self.resource_group)
         return operation.status()
 
     def delete_stack_by_date(self, days_old, resource_group=None):
         resource_group = resource_group or self.resource_group
         # todo: to check and refactor this method
-        self.logger.info("Removes a Deployment Stack resource older than {} days".format(days_old))
+        self.logger.info("Removes a Deployment Stack resource older than %s days", days_old)
         results = []
         for stack in self.list_stack(resource_group=resource_group, days_old=days_old):
-            self.logger.info("Removing Deployment Stack {n}".format(n=stack))
+            self.logger.info("Removing Deployment Stack '%s'", stack)
             result = self.delete_stack(stack_name=stack, resource_group=resource_group)
             results.append((stack, result))
-            self.logger.info("Attempt to remove Stack {n} "
-                             "finished with status {s}".format(n=stack, s=result))
+            self.logger.info("Attempt to remove Stack '%s' finished with status '%s'", stack,
+                             result)
         return results
 
     def deploy_template(self, template, vm_name=None, **vm_settings):
@@ -566,8 +619,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.wait_vm_running(vm.name, vm_settings['resource_group'])
         return vm.name
 
-    def list_stack_resources(self, stack_name):
-        self.logger.info("Checking Stack {} resources ".format(stack_name))
+    def list_stack_resources(self, stack_name, resource_group=None):
+        self.logger.info("Checking Stack %s resources ", stack_name)
         # todo: weird implementation to refactor this method later
         resources = {
             'vms': [],
@@ -575,7 +628,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
             'pips': [],
         }
         dep_op_list = self.resource_client.deployment_operations.list(
-            resource_group_name=self.resource_group,
+            resource_group_name=resource_group or self.resource_group,
             deployment_name=stack_name
         )
         for dep in dep_op_list:
@@ -586,7 +639,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 if res_type == 'Microsoft.Compute/virtualMachines':
                     try:
                         self.compute_client.virtual_machines.get(
-                            resource_group_name=self.resource_group,
+                            resource_group_name=resource_group or self.resource_group,
                             vm_name=res_name
                         )
                         res_exists = True
@@ -596,7 +649,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 elif res_type == 'Microsoft.Network/networkInterfaces':
                     try:
                         self.network_client.network_interfaces.get(
-                            resource_group_name=self.resource_group,
+                            resource_group_name=resource_group or self.resource_group,
                             network_interface_name=res_name
                         )
                         res_exists = True
@@ -607,7 +660,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
                     # todo: double check this match
                     try:
                         self.network_client.public_ip_addresses.get(
-                            resource_group_name=self.resource_group,
+                            resource_group_name=resource_group or self.resource_group,
                             public_ip_address_name=res_name
                         )
                         res_exists = True
@@ -616,8 +669,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
                     resources['pips'].append((res_name, res_exists))
         return resources
 
-    def is_stack_empty(self, stack_name):
-        resources = self.list_stack_resources(stack_name)
+    def is_stack_empty(self, stack_name, resource_group):
+        resources = self.list_stack_resources(stack_name, resource_group=resource_group)
         for resource_type in resources:
             for res_name, exists in resources[resource_type]:
                 if exists:
@@ -627,30 +680,47 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def info(self):
         pass
 
-    def remove_unused_blobs(self):
+    def remove_unused_blobs(self, resource_group=None):
         """
         Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
+        Runs though all storage accounts in 'resource_group'. If None (default) resource_group
+        provided, the instance's resource group is used instead
         Returns list of removed disks
         """
-        # removing unmanaged disks
-        removed_blobs = []
-        container_client = BlockBlobService(self.storage_account, self.storage_key)
-        for container in container_client.list_containers():
-            for blob in container_client.list_blobs(container_name=container.name, prefix='test'):
-                if blob.properties.lease.status == 'unlocked':
-                    self.logger.info("Removing Blob {b} "
-                                     "from containter {c}".format(b=blob.name, c=container.name))
-                    container_client.delete_blob(container_name=container.name,
-                                                 blob_name=blob.name)
-                    removed_blobs.append({'container': container.name, 'blob': blob.name})
+        removed_blobs = {}
+        self.logger.info("Attempting to List unused disks/blobs")
+        resource_group = resource_group or self.resource_group
+        removed_blobs[resource_group] = {}
+        for storage_account in self.list_storage_accounts_by_resource_group(resource_group):
+            self.logger.info("Checking storage account '%s'", storage_account)
+            removed_blobs[resource_group][storage_account] = {}
+            # removing unmanaged disks
+            key = self.get_storage_account_key(storage_account, resource_group)
+            container_client = BlockBlobService(storage_account, key)
+            for container in container_client.list_containers():
+                removed_blobs[resource_group][storage_account][container.name] = []
+                for blob in container_client.list_blobs(container_name=container.name,
+                                                        prefix='test'):
+                    if blob.properties.lease.status == 'unlocked':
+                        self.logger.info("Removing Blob '%s' from containter '%s'", blob.name,
+                                         container.name)
+                        container_client.delete_blob(container_name=container.name,
+                                                     blob_name=blob.name)
+                        removed_blobs[resource_group][storage_account][container.name].append(
+                            blob.name)
+            # also delete unused 'bootdiag' containers
+            self.remove_diags_container(container_client)
 
         # removing managed disks
         removed_disks = []
-        for disk in self.compute_client.disks.list():
+        for disk in self.compute_client.disks.list_by_resource_group(resource_group):
             if disk.name.startswith('test') and disk.owner_id is None:
-                self.logger.info("Removing disk {d}".format(d=disk.name))
-                self.compute_client.disks.delete(resource_group_name=self.resource_group,
+                self.logger.info("Removing disk '%s'", disk.name)
+                self.compute_client.disks.delete(resource_group_name=resource_group,
                                                  disk_name=disk.name)
-                removed_disks.append({'resource_group': self.resource_group,
+                removed_disks.append({'resource_group': resource_group,
                                       'disk': disk.name})
+        if not removed_disks:
+            self.logger.debug("No Managed disks matching 'test*' were found in '%s'",
+                              resource_group)
         return {'Managed': removed_disks, 'Unmanaged': removed_blobs}
