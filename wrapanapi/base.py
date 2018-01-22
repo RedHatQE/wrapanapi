@@ -19,6 +19,24 @@ class WrapanapiAPIBase(object):
         logger = kwargs.get('logger', None)
         self.logger = Logger(logger)
 
+    def stats(self, *requested_stats):
+        """Returns all available stats, if none are explicitly requested
+
+        Args:
+            *requested_stats: A list giving the name of the stats to return. Stats are defined
+                in the _stats_available attibute of the specific class.
+        Returns: A dict of stats.
+        """
+        if not hasattr(self, '_stats_available'):
+            raise Exception('{} is missing self._stats_available dictionary'.format(
+                self.__class__.__name__))
+
+        requested_stats = requested_stats or self._stats_available
+        return {stat: self._stats_available[stat](self) for stat in requested_stats}
+
+    def disconnect(self):
+        pass
+
 
 class WrapanapiAPIBaseVM(WrapanapiAPIBase):
     """Base interface class for Management Systems
@@ -278,17 +296,6 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         """
         raise NotImplementedError('remove_host_from_cluster not implemented.')
-
-    def stats(self, *requested_stats):
-        """Returns all available stats, if none are explicitly requested
-
-        Args:
-            *requested_stats: A list giving the name of the stats to return. Stats are defined
-                in the _stats_available attibute of the specific class.
-        Returns: A dict of stats.
-        """
-        requested_stats = requested_stats or self._stats_available
-        return {stat: self._stats_available[stat](self) for stat in requested_stats}
 
     def in_steady_state(self, vm_name):
         """Return whether the specified virtual machine is in steady state

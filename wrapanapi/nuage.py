@@ -6,8 +6,6 @@ import json
 
 import requests
 from requests.auth import HTTPBasicAuth
-
-import utils.json_utils as json_utils
 from base import WrapanapiAPIBase
 
 
@@ -17,80 +15,66 @@ class NuageSystem(WrapanapiAPIBase):
         hostname: The hostname of the system.
         username: The username to connect with.
         password: The password to connect with.
+        api_port: The port to connect to.
+        api_version: The api version, used as part of the url as-it-is.
+        security_protocol: SSL or non-SSL
     """
 
-    NUAGE_HEADERS = {
-        'X-Nuage-Organization': 'csp',
-        "Content-Type": "application/json; charset=UTF-8"
-    }
-
-    NUAGE_API_PATH = "nuage/api/v5_0"
-
     _stats_available = {
-        'num_enterprises': lambda self: len(self.list_enterprises()),
+        'num_network_group': lambda self: len(self.list_network_groups()),
         'num_security_group': lambda self: len(self.list_security_groups()),
-        'num_cloud_subnets': lambda self: len(self.list_cloud_subnets()),
-        'num_domains': lambda self: len(self.list_domains()),
-        'num_zones': lambda self: len(self.list_zones()),
-        'num_vms': lambda self: len(self.list_vms()),
+        'num_cloud_subnet': lambda self: len(self.list_cloud_subnets()),
     }
 
-    def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
+    def __init__(self, hostname, username, password, api_port, api_version, security_protocol,
+                 **kwargs):
         super(NuageSystem, self).__init__(kwargs)
+        protocol = 'http' if 'non' in security_protocol.lower() else 'https'
         self.login_auth = (username, password)
-        self.url = '{}://{}:{}/'.format(protocol, hostname, port)
+        self.url = '{}://{}:{}/nuage/api/{}'.format(protocol, hostname, api_port, api_version)
         self._auth = None
 
     @property
     def auth(self):
         if not self._auth:
-            login_url = self.url + self.NUAGE_API_PATH + "/me"
-            print "Calling " + login_url
-            response = requests.request('get', login_url,
-                                        auth=HTTPBasicAuth(self.login_auth[0], self.login_auth[1]),
-                                        headers=self.NUAGE_HEADERS,
-                                        verify=False
-                                        )
-
-            if response.ok:
-                print "Status code = " + str(response.status_code)
-                byteifyed_response_json = json_utils.json_loads_byteified(response.text)
-                print byteifyed_response_json
-                self._auth = (byteifyed_response_json[0].get('APIKey'),
-                              byteifyed_response_json[0].get('enterpriseID'))
-            else:
-                raise StandardError(
-                    "Login unsuccessful. Response status code: %s, response message: %s" %
-                    (response.status_code, response.content)
-                )
+            login_url = self.url + "/me"
+            response = requests.request('get', login_url, auth=HTTPBasicAuth(*self.login_auth),
+                headers=self.common_headers, verify=False)
+            response.raise_for_status()
+            r = response.json()[0]
+            self._auth = (r.get('userName'), r.get('APIKey'))
         return self._auth
 
-    def list_enterprises(self):
+    @property
+    def common_headers(self):
+        return {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Nuage-Organization': 'csp'
+        }
+
+    def list_network_groups(self):
         return self._request('/enterprises', 'get')
 
     def list_cloud_subnets(self):
-        return self._request('/subnets', 'get')
+        return self._request('/subnets', 'get', exclude_name='BackHaulSubnet')
 
-    def list_policy_groups(self):
+    def list_security_groups(self):
         return self._request('/policygroups', 'get')
 
-    def list_domains(self):
-        return self._request('/domains', 'get')
+    def _request(self, url, method, data=None, exclude_name=None):
+        headers = self.common_headers
+        if exclude_name:
+            headers.update({
+                'X-Nuage-FilterType': 'predicate',
+                'X-Nuage-Filter': "name ISNOT '{}'".format(exclude_name),
+            })
 
-    def list_domains_for_enterprise(self, enterprise_id):
-        return self._request("/enterprises/%s/domains" % enterprise_id, 'get')
-
-    def list_zones(self):
-        return self._request('/zones', 'get')
-
-    def list_vms(self):
-        return self._request('/vms', 'get')
-
-    def _request(self, url, method, data=None):
-        response = requests.request(method, self.url + self.NUAGE_API_PATH + url,
-                                    auth=HTTPBasicAuth(self.login_auth[0], self.auth[0]),
-                                    headers=self.NUAGE_HEADERS,
-                                    verify=False,
-                                    data=json.dumps(data) if data else None
-                                    )
-        return response
+        response = requests.request(
+            method, self.url + url,
+            auth=HTTPBasicAuth(*self.auth),
+            headers=headers,
+            verify=False,
+            data=json.dumps(data) if data else None
+        )
+        response.raise_for_status()
+        return response.json()
