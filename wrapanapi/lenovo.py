@@ -20,8 +20,26 @@ class LenovoSystem(WrapanapiAPIBase):
     _api = None
 
     _stats_available = {
-        'num_server': lambda self, requester: len(self.list_servers()),
-        'power_state': lambda self, requester: self.server_status(requester.name),
+        'num_server': lambda self, requester: len(self.list_servers(requester)),
+        'cores_capacity': lambda self, requester: self.get_server_cores(requester.name),
+        'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
+        'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
+    }
+    _inventory_available = {
+        'hostname': lambda self, requester: self.get_server_hostname(requester.name),
+        'ipv4_address': lambda self, requester: self.get_server_ipv4_address(requester.name),
+        'ipv6_address': lambda self, requester: self.get_server_ipv6_address(requester.name),
+        'mac_address': lambda self, requester: self.get_server_mac_address(requester.name),
+        'power_state': lambda self, requester: self.get_server_power_status(requester.name),
+        'health_state': lambda self, requester: self.get_server_health_state(requester.name),
+        'manufacturer': lambda self, requester: self.get_server_manufacturer(requester.name),
+        'model': lambda self, requester: self.get_server_model(requester.name),
+        'machine_type': lambda self, requester: self.get_server_machine_type(requester.name),
+        'serial_number': lambda self, requester: self.get_server_serial_number(requester.name),
+        'description': lambda self, requester: self.get_server_description(requester.name),
+        'product_name': lambda self, requester: self.get_server_product_name(requester.name),
+        'uuid': lambda self, requester: self.get_server_uuid(requester.name),
+        'field_replaceable_unit': lambda self, requester: self.get_server_fru(requester.name),
     }
     POWERED_ON = 8
     POWERED_OFF = 5
@@ -54,7 +72,7 @@ class LenovoSystem(WrapanapiAPIBase):
         """An instance of the service"""
         try:
             response = requests.put(self.url + path, data=json.dumps(request), auth=self.auth,
-                    verify=False)
+                                    verify=False)
             return response
         except Timeout:
             return None
@@ -76,7 +94,7 @@ class LenovoSystem(WrapanapiAPIBase):
         if len(cabinets['chassisList']) > 0:
             chassis_list = cabinets['chassisList'][0]
             nodes_from_chassis = [node for node in chassis_list['itemInventory']['nodes']
-                            if node['type'] != 'SCU']
+                                  if node['type'] != 'SCU']
 
         inventory.extend(nodes_from_chassis)
 
@@ -138,7 +156,7 @@ class LenovoSystem(WrapanapiAPIBase):
 
         return server['macAddress']
 
-    def server_status(self, server_name):
+    def get_server_power_status(self, server_name):
         server = self.get_server(server_name)
 
         if server['powerStatus'] == self.POWERED_ON:
@@ -150,7 +168,7 @@ class LenovoSystem(WrapanapiAPIBase):
         else:
             return "Unknown"
 
-    def server_health(self, server_name):
+    def get_server_health_state(self, server_name):
         server = self.get_server(server_name)
 
         if str(server['cmmHealthState'].lower()) in self.HEALTH_VALID:
@@ -246,6 +264,18 @@ class LenovoSystem(WrapanapiAPIBase):
 
         return str(server['description'])
 
+    def get_server_product_name(self, server_name):
+        return self.get_server(server_name)['productName']
+
+    def get_server_uuid(self, server_name):
+        return self.get_server(server_name)['uuid']
+
+    def get_server_fru(self, server_name):
+        return self.get_server(server_name)['FRU']
+
+    def get_server_firmwares(self, server_name):
+        return self.get_server(server_name)['firmware']
+
     def set_power_on_server(self, server_name):
         server = self.get_server(server_name)
         response = self.change_node_power_status(server, 'powerOn')
@@ -316,6 +346,14 @@ class LenovoSystem(WrapanapiAPIBase):
         # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
         return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
+
+    def inventory(self, *requested_items, **kwargs):
+        # Get the requester which represents the class of this method's caller
+        requester = kwargs.get('requester')
+
+        # Retrieve and return the inventory
+        requested_items = requested_items or self._inventory_available
+        return {item: self._inventory_available[item](self, requester) for item in requested_items}
 
     def disconnect(self):
         self.logger.info("LenovoSystem disconnected")
