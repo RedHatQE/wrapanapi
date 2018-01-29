@@ -396,7 +396,7 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
     def create_vm(self):
         raise NotImplementedError('create_vm not implemented.')
 
-    def delete_vm(self, instance_name, timeout=180):
+    def delete_vm(self, instance_name, timeout=250):
         if not self.does_vm_exist(instance_name):
             self.logger.info("The {} instance is not exists, skipping".format(instance_name))
             return True
