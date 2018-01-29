@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Hawkular client."""
+from __future__ import absolute_import
 import json
-from urlparse import urlparse
-
+from six.moves.urllib_parse import urlparse
 import os
 import pytest
 from wrapanapi import hawkular

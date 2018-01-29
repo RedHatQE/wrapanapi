@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import dateparser
 from ast import literal_eval
 from inspect import getmro

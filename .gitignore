@@ -6,3 +6,6 @@
 *.egg-info
 .env/
 .idea/
+.tox/
+AUTHORS
+ChangeLog

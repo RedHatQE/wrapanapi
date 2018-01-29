@@ -7,7 +7,7 @@ import json
 import requests
 from requests.exceptions import Timeout
 
-from base import WrapanapiAPIBase
+from .base import WrapanapiAPIBase
 
 
 class LenovoSystem(WrapanapiAPIBase):

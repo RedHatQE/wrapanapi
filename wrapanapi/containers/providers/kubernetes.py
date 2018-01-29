@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from wrapanapi.base import WrapanapiAPIBase
 from wrapanapi.rest_client import ContainerClient
 

@@ -3,12 +3,12 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import re
 import json
 import winrm
 import tzlocal
 import pytz
-from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -16,7 +16,7 @@ from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
 
-from base import WrapanapiAPIBaseVM, VMInfo
+from .base import WrapanapiAPIBaseVM, VMInfo
 
 
 class SCVMMSystem(WrapanapiAPIBaseVM):
@@ -150,22 +150,24 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     def restart_vm(self, vm_name):
         self._do_vm(vm_name, "Reset")
 
+    def _script_result(self, script):
+        data = self.run_script(script)
+        return etree.fromstring(data).getroot()\
+            .xpath("./Object/Property[@Name='Name']/text()")
+
     def list_vm(self, **kwargs):
-        data = self.run_script(
+        return self._script_result(
             "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
             "Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def list_hosts(self, **kwargs):
-        data = self.run_script(
+        return self._script_result(
             "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def list_cluster(self, **kwargs):
         """List all clusters' names."""
-        data = self.run_script(
+        return self._script_result(
             "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def all_vms(self, **kwargs):
         vm_list = []
@@ -192,39 +194,36 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             }
             $outputCollection | ConvertTo-Xml -as String
             """)
-        vms = etree.parse(StringIO(data)).getroot()
+        vms = etree.fromstring(data).getroot()
         for vm in vms:
-            VMId = vm.xpath("./Property[@Name='VMId']/text()")[0],
-            Name = vm.xpath("./Property[@Name='Name']/text()")[0],
-            Status = vm.xpath("./Property[@Name='Status']/text()")[0],
-            IPv4 = vm.xpath("./Property[@Name='IPv4']/text()")[0]
+            vm_id = vm.xpath("./Property[@Name='VMId']/text()")[0],
+            vm_name = vm.xpath("./Property[@Name='Name']/text()")[0],
+            vm_status = vm.xpath("./Property[@Name='Status']/text()")[0],
+            vm_ip_v4 = vm.xpath("./Property[@Name='IPv4']/text()")[0]
             vm_data = (
-                None if VMId == 'None' else VMId[0],
-                Name[0],
-                Status[0],
-                None if IPv4 == 'None' else IPv4)
+                None if vm_id == 'None' else vm_id[0],
+                vm_name[0],
+                vm_status[0],
+                None if vm_ip_v4 == 'None' else vm_ip_v4)
             vm_list.append(VMInfo(*vm_data))
         return vm_list
 
     def list_template(self):
-        data = self.run_script(
+        return self._script_result(
             "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
         raise NotImplementedError('list_flavor not implemented.')
 
     def list_network(self):
-        data = self.run_script(
+        return self._script_result(
             "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath(
-            "./Object/Property[@Name='Name']/text()")
 
     def vm_creation_time(self, vm_name):
         xml = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\""
             " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
-        xml_time = etree.parse(StringIO(xml)).getroot().xpath(
+        xml_time = etree.fromstring(xml).getroot().xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
         creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
         return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
@@ -250,7 +249,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
-        return etree.parse(StringIO(data)).getroot().xpath(
+        return etree.fromstring(data).getroot().xpath(
             "./Object/Property[@Name='StatusString']/text()")[0]
 
     def is_vm_running(self, vm_name):
@@ -395,7 +394,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server|"
             "select VmHost | ConvertTo-Xml -as String".format(vm_name))
-        return etree.parse(StringIO(data)).getroot().xpath(
+        return etree.fromstring(data).getroot().xpath(
             "./Object/Property[@Name='VMHost']/text()")
 
     def get_ip_address(self, vm_name, **kwargs):
@@ -425,7 +424,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
-        return self.SCVMMDataHolderDict(etree.parse(StringIO(data)).getroot().xpath("./Object")[0])
+        return self.SCVMMDataHolderDict(etree.fromstring(data).getroot().xpath("./Object")[0])
 
     ##
     # Classes and functions used to access detailed SCVMM Data

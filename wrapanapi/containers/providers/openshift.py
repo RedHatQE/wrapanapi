@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from wrapanapi.containers.providers.kubernetes import Kubernetes
 from wrapanapi.rest_client import ContainerClient
 

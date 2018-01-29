@@ -3,15 +3,14 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import fauxfactory
 import pytz
-from ovirtsdk.api import API
-from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
-from ovirtsdk.xml import params
+import ovirtsdk4 as sdk
 from wait_for import wait_for, TimedOutError
 
-from base import WrapanapiAPIBaseVM, VMInfo
-from exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
+from .base import WrapanapiAPIBaseVM, VMInfo
+from .exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
 class RHEVMSystem(WrapanapiAPIBaseVM):
@@ -119,10 +118,10 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         # test() will return false if the connection timeouts, catch it and force it to re-init
         try:
             if self._api is None or (self._api is not None and not self._api.test()):
-                self._api = API(**self._api_kwargs)
+                self._api = sdk.Connection(**self._api_kwargs)
         # if the connection was disconnected, force it to re-init
-        except DisconnectedError:
-            self._api = API(**self._api_kwargs)
+        except sdk.Error:
+            self._api = sdk.Connection(**self._api_kwargs)
         return self._api
 
     def _get_vm(self, vm_name=None):
@@ -222,11 +221,11 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             try:
                 vm = self._get_vm(vm_name)
                 vm.delete()
-            except RequestError as e:
+            except sdk.Error as e:
                 # Handle some states that can occur and can be circumvented
-                if e.status == 409 and "Related operation" in e.detail:
+                if e.code == 409 and "Related operation" in e.fault:
                     self.logger.info("Waiting for RHEV: {}:{} ({})".format(
-                        e.status, e.reason, e.detail))
+                        e.code, e.message, e.fault))
                     return True
                 else:
                     raise  # Raise other so we can see them and eventually add them into handling
@@ -396,15 +395,16 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             'template': self.api.templates.get(template)
         }
         if 'placement_policy_host' in kwargs and 'placement_policy_affinity' in kwargs:
-            host = params.Host(name=kwargs['placement_policy_host'])
-            policy = params.VmPlacementPolicy(host=host,
+            host = sdk.types.Host(name=kwargs['placement_policy_host'])
+            policy = sdk.types.VmPlacementPolicy(host=host,
                 affinity=kwargs['placement_policy_affinity'])
             vm_kwargs['placement_policy'] = policy
         if 'cpu' in kwargs:
-            vm_kwargs['cpu'] = params.CPU(topology=params.CpuTopology(cores=int(kwargs['cpu'])))
+            vm_kwargs['cpu'] = sdk.types.CPU(
+                topology=sdk.types.CpuTopology(cores=int(kwargs['cpu'])))
         if 'ram' in kwargs:
             vm_kwargs['memory'] = int(kwargs['ram']) * 1024 * 1024  # MB
-        self.api.vms.add(params.VM(**vm_kwargs))
+        self.api.vms.add(sdk.types.VM(**vm_kwargs))
         self.wait_vm_stopped(kwargs['vm_name'], num_sec=timeout)
         if power_on:
             self.start_vm(kwargs['vm_name'])
@@ -445,7 +445,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
                     self.stop_vm(vm_name)
                     vm = self._get_vm(vm_name)
                     actual_cluster = vm.get_cluster()
-                    new_template = params.Template(
+                    new_template = sdk.types.Template(
                         name=temp_template_name, vm=vm, cluster=actual_cluster)
                     self.api.templates.add(new_template)
                     # First it has to appear
