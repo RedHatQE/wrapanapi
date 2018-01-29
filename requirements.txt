@@ -20,6 +20,7 @@ dateparser
 boto3
 packaging
 azure>=2.0.0
+pyvcloud
 ###
 # Libraries with compiled components, and their related devel packages
 ###
