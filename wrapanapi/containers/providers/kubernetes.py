@@ -93,24 +93,34 @@ class Kubernetes(WrapanapiAPIBase):
                     entities.append(cont)
         return entities
 
-    def list_container_group(self):
-        """Returns list of container groups (pods)"""
+    def list_container_group(self, project_name=None):
+        """Returns list of container groups (pods).
+        If project_name is passed, only the pods under the selected project will be returned"""
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Pod(self, meta['name'], meta['namespace'])
-            entities.append(entity)
+            if project_name:
+                meta = entity_j['metadata']
+                if project_name and project_name != meta['namespace']:
+                    continue
+                entities.append(Pod(self, meta['name'], meta['namespace']))
         return entities
 
-    def list_service(self):
-        """Returns list of services"""
+    def list_service(self, project_name=None):
+        """Returns list of services.
+        If project name is passed, only the services under the selected project will be returned"""
         entities = []
         entities_j = self.api.get('service')[1]['items']
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Service(self, meta['name'], meta['namespace'])
-            entities.append(entity)
+            if project_name:
+                meta = entity_j['metadata']
+                if project_name and project_name != meta['namespace']:
+                    continue
+                entities.append(Service(self, meta['name'], meta['namespace']))
         return entities
 
     def list_replication_controller(self):
@@ -129,9 +139,10 @@ class Kubernetes(WrapanapiAPIBase):
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
             imgs_j = entity_j['status'].get('containerStatuses', [])
+            img_project_name = entity_j['metadata'].get('namespace', [])
             for img_j in imgs_j:
                 _, name, _ = self._parse_image_info(img_j['image'])
-                img = Image(self, name, img_j['imageID'])
+                img = Image(self, name, img_j['imageID'], img_project_name)
                 if img not in entities:
                     entities.append(img)
         return entities
