@@ -10,7 +10,9 @@ try:
     from ovirtsdk.api import API
     from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
     from ovirtsdk.xml import params
-except ImportError:
+except (ImportError, SyntaxError) as e:
+    import warnings
+    warnings.warn(UserWarning(str(e)))
     API = None
 from wait_for import wait_for, TimedOutError
 
