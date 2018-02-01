@@ -102,11 +102,9 @@ class Kubernetes(WrapanapiAPIBase):
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Pod(self, meta['name'], meta['namespace'])
-            if project_name:
-                meta = entity_j['metadata']
-                if project_name and project_name != meta['namespace']:
-                    continue
-                entities.append(Pod(self, meta['name'], meta['namespace']))
+            if project_name and project_name != meta['namespace']:
+                continue
+            entities.append(Pod(self, meta['name'], meta['namespace']))
         return entities
 
     def list_service(self, project_name=None):
@@ -117,11 +115,9 @@ class Kubernetes(WrapanapiAPIBase):
         for entity_j in entities_j:
             meta = entity_j['metadata']
             entity = Service(self, meta['name'], meta['namespace'])
-            if project_name:
-                meta = entity_j['metadata']
-                if project_name and project_name != meta['namespace']:
-                    continue
-                entities.append(Service(self, meta['name'], meta['namespace']))
+            if project_name and project_name != meta['namespace']:
+                continue
+            entities.append(Service(self, meta['name'], meta['namespace']))
         return entities
 
     def list_replication_controller(self):
