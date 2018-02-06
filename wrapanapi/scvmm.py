@@ -8,7 +8,6 @@ import json
 import winrm
 import tzlocal
 import pytz
-from cStringIO import StringIO
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -154,18 +153,18 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
             "Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_hosts(self, **kwargs):
         data = self.run_script(
             "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_cluster(self, **kwargs):
         """List all clusters' names."""
         data = self.run_script(
             "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def all_vms(self, **kwargs):
         vm_list = []
@@ -192,7 +191,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             }
             $outputCollection | ConvertTo-Xml -as String
             """)
-        vms = etree.parse(StringIO(data)).getroot()
+        vms = etree.fromstring(data)
         for vm in vms:
             VMId = vm.xpath("./Property[@Name='VMId']/text()")[0],
             Name = vm.xpath("./Property[@Name='Name']/text()")[0],
@@ -209,7 +208,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     def list_template(self):
         data = self.run_script(
             "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath("./Object/Property[@Name='Name']/text()")
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
         raise NotImplementedError('list_flavor not implemented.')
@@ -217,14 +216,14 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     def list_network(self):
         data = self.run_script(
             "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.parse(StringIO(data)).getroot().xpath(
+        return etree.fromstring(data).xpath(
             "./Object/Property[@Name='Name']/text()")
 
     def vm_creation_time(self, vm_name):
         xml = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\""
             " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
-        xml_time = etree.parse(StringIO(xml)).getroot().xpath(
+        xml_time = etree.fromstring(xml).xpath(
             "./Object/Property[@Name='CreationTime']/text()")[0]
         creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
         return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
@@ -250,7 +249,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
-        return etree.parse(StringIO(data)).getroot().xpath(
+        return etree.fromstring(data).xpath(
             "./Object/Property[@Name='StatusString']/text()")[0]
 
     def is_vm_running(self, vm_name):
@@ -395,7 +394,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server|"
             "select VmHost | ConvertTo-Xml -as String".format(vm_name))
-        return etree.parse(StringIO(data)).getroot().xpath(
+        return etree.fromstring(data).xpath(
             "./Object/Property[@Name='VMHost']/text()")
 
     def get_ip_address(self, vm_name, **kwargs):
@@ -425,7 +424,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         data = self.run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
             .format(vm_name))
-        return self.SCVMMDataHolderDict(etree.parse(StringIO(data)).getroot().xpath("./Object")[0])
+        return self.SCVMMDataHolderDict(etree.fromstring(data).xpath("./Object")[0])
 
     ##
     # Classes and functions used to access detailed SCVMM Data
