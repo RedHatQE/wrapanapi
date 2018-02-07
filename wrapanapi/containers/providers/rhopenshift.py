@@ -163,6 +163,8 @@ class Openshift(Kubernetes):
         Args:
             template: (str) The name of the template to deploy
             tags: (dict) dict with tags if some tag isn't passed it is set to 'latest'
+            since input tags are image stream tags whereas template expects its own tags.
+            So, input tags should match stream2template_tags_mapping.
             password: this password will be set as default everywhere
         Returns: dict with parameters necessary for appliance setup or None if deployment failed
         """
@@ -183,7 +185,7 @@ class Openshift(Kubernetes):
         # create project
         # assuming this is cfme installation and generating project name
         proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
-        proj_name = "{t}-project-{pid}".format(pid=proj_id, t=template)
+        proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
         proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
         self.logger.info("unique id %s, project name %s", proj_id, proj_name)
         self.create_project(name=proj_name)
