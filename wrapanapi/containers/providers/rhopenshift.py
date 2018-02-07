@@ -12,6 +12,7 @@ from kubernetes.client.rest import ApiException
 from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
+from wrapanapi.base import WrapanapiAPIBase
 from wrapanapi.containers.providers.rhkubernetes import Kubernetes
 from wrapanapi.rest_client import ContainerClient
 from wrapanapi.containers.route import Route
@@ -21,20 +22,8 @@ from wrapanapi.containers.template import Template
 from wrapanapi.containers.image import Image
 from wrapanapi.containers.deployment_config import DeploymentConfig
 
-# --------------------
-# TODO: remove logging when everything is done
-import logging
-import sys
-formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setFormatter(formatter)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logger.addHandler(stdout_handler)
-# -------------------------
 
-
-class Openshift(Kubernetes):
+class Openshift(WrapanapiAPIBase):
 
     _stats_available = Kubernetes._stats_available.copy()
     _stats_available.update({
@@ -59,8 +48,8 @@ class Openshift(Kubernetes):
     not_required_project_pods = ('cloudforms-backend', 'ansible')
 
     def __init__(self, hostname, protocol="https", port=8443, k_entry="api/v1", o_entry="oapi/v1",
-                 logger=logger, debug=False, verify_ssl=False, **kwargs):
-        self.logger = logger
+                 debug=False, verify_ssl=False, **kwargs):
+        super(Openshift, self).__init__(kwargs)
         self.hostname = hostname
         self.username = kwargs.get('username', '')
         self.password = kwargs.get('password', '')
@@ -206,8 +195,7 @@ class Openshift(Kubernetes):
             got_users = old_scc.users if old_scc.users else []
             got_users.append('system:serviceaccount:{proj}:{usr}'.format(proj=proj_name,
                                                                          usr=mapping['user']))
-            self.logger.debug("adding users {u} to scc {scc}".format(u=got_users,
-                                                                     scc=mapping['scc']))
+            self.logger.debug("adding users %r to scc %r", got_users, mapping['scc'])
             security_api.patch_security_context_constraints(name=mapping['scc'],
                                                             body={'users': got_users})
 
@@ -247,7 +235,7 @@ class Openshift(Kubernetes):
                           "prepare list of required project entities"))
         template_entities = self.process_template(name=template, namespace=self.default_namespace,
                                                   parameters=processing_params)
-        self.logger.debug("template entities:\n {e}".format(e=template_entities))
+        self.logger.debug("template entities:\n %r", template_entities)
         kinds = set([e['kind'] for e in template_entities])
         entity_names = {e: inflection.underscore(e) for e in kinds}
         proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
