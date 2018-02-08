@@ -115,15 +115,10 @@ class Openshift(WrapanapiAPIBase):
             entities.append(entity)
         return entities
 
-    def list_template(self):
+    def list_template(self, namespace=None):
         """Returns list of templates"""
-        entities = []
-        entities_j = self.o_api.get('template')[1]['items']
-        for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Template(self, meta['name'], meta['namespace'])
-            entities.append(entity)
-        return entities
+        namespace = namespace if namespace else self.default_namespace
+        return [t.metadata.name for t in self.o_api.list_namespaced_template(namespace).items]
 
     def list_docker_image(self):
         """Returns list of images (Docker registry only)"""
