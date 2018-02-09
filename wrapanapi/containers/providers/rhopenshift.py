@@ -18,9 +18,32 @@ from wrapanapi.rest_client import ContainerClient
 from wrapanapi.containers.route import Route
 from wrapanapi.containers.image_registry import ImageRegistry
 from wrapanapi.containers.project import Project
-from wrapanapi.containers.template import Template
 from wrapanapi.containers.image import Image
 from wrapanapi.containers.deployment_config import DeploymentConfig
+
+
+# this service allows to access db outside of openshift
+common_service = """
+{
+  "api_version": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "common-service"
+  },
+  "spec": {
+    "ports": [
+      {
+        "name": "postgresql",
+        "port": "5432"
+      }
+    ],
+    "type": "LoadBalancer",
+    "selector": {
+      "name": "postgresql"
+    }
+  }
+}
+"""
 
 
 class Openshift(WrapanapiAPIBase):
@@ -38,13 +61,18 @@ class Openshift(WrapanapiAPIBase):
         'cfme-openshift-embedded-ansible': 'ANSIBLE_IMG_TAG',
         'cfme-openshift-memcached': 'MEMCACHED_IMG_TAG',
         'cfme-openshift-postgresql': 'POSTGRESQL_IMG_TAG',
+        'cfme58-openshift-app': 'APPLICATION_IMG_TAG',
+        'cfme58-openshift-memcached': 'MEMCACHED_IMG_TAG',
+        'cfme58-openshift-postgresql': 'POSTGRESQL_IMG_TAG',
     }
+
     template_tags = [tag for tag in stream2template_tags_mapping.values()]
     stream_tags = [tag for tag in stream2template_tags_mapping.keys()]
 
     default_namespace = 'openshift'
     required_project_pods = ('httpd', 'memcached', 'postgresql',
                              'cloudforms', 'cloudforms-backend')
+    required_project_pods58 = ('memcached', 'postgresql', 'cloudforms')
     not_required_project_pods = ('cloudforms-backend', 'ansible')
 
     def __init__(self, hostname, protocol="https", port=8443, k_entry="api/v1", o_entry="oapi/v1",
@@ -222,6 +250,10 @@ class Openshift(WrapanapiAPIBase):
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
         self._restore_missing_project_role_bindings(namespace=proj_name)
 
+        # creating common service with external ip
+        service_obj = self.kclient.V1Service(**json.loads(common_service))
+        self.k_api.create_namespaced_service(namespace=proj_name, body=service_obj)
+
         # creating pods and etc
         processing_params = {'DATABASE_PASSWORD': password,
                              'APPLICATION_DOMAIN': proj_url}
@@ -243,7 +275,7 @@ class Openshift(WrapanapiAPIBase):
             else:
                 self.logger.error("some entity %s isn't present in entity creation list", entity)
 
-        # obtaining db ip
+        # creating and obtaining db ip
         common_svc = self.k_api.read_namespaced_service(name='common-service',
                                                         namespace=proj_name)
         ext_ip = common_svc.spec.external_i_ps[0]
@@ -473,6 +505,21 @@ class Openshift(WrapanapiAPIBase):
         self.wait_service_account_exist(namespace=namespace, name=sa_name)
         return output
 
+    def create_image_stream(self, namespace, **kwargs):
+        """Creates Image Stream entity using REST API.
+
+        Args:
+            namespace: openshift namespace where entity has to be created
+            kwargs: Image Stream data
+        Return: data if entity was created w/o errors
+        """
+        image_stream = self.ociclient.V1ImageStream(**kwargs)
+        is_name = image_stream.to_dict()['metadata']['name']
+        self.logger.info("creating image stream %s", is_name)
+        output = self.o_api.create_namespaced_image_stream(namespace=namespace, body=image_stream)
+        self.wait_image_stream_exist(namespace=namespace, name=is_name)
+        return output
+
     def create_secret(self, namespace, **kwargs):
         """Creates Secret entity using REST API.
 
@@ -614,6 +661,20 @@ class Openshift(WrapanapiAPIBase):
         """
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_service_account,
+                                     'name': name,
+                                     'namespace': namespace})[0]
+
+    def wait_image_stream_exist(self, namespace, name, wait=10):
+        """Checks whether Image Stream exists within some time.
+
+        Args:
+            name: entity name
+            namespace: openshift namespace where entity should exist
+            wait: entity should appear for this time then - True, otherwise False
+        Return: True/False
+        """
+        return wait_for(self._does_exist, num_sec=wait,
+                        func_kwargs={'func': self.o_api.read_namespaced_image_stream,
                                      'name': name,
                                      'namespace': namespace})[0]
 
