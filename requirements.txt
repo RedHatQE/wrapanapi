@@ -3,7 +3,9 @@ cached_property
 enum34
 fauxfactory>=2.0.7
 google-api-python-client
+inflection
 ovirt-engine-sdk-python<4.0.0
+openshift
 pyvmomi>=6.5.0.2017.5.post1
 python-cinderclient
 python-ironicclient
