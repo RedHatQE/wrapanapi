@@ -12,7 +12,6 @@ from kubernetes.client.rest import ApiException
 from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
-from wrapanapi.base import WrapanapiAPIBase
 from wrapanapi.containers.providers.rhkubernetes import Kubernetes
 from wrapanapi.rest_client import ContainerClient
 from wrapanapi.containers.route import Route
@@ -46,7 +45,7 @@ common_service = """
 """
 
 
-class Openshift(WrapanapiAPIBase):
+class Openshift(Kubernetes):
 
     _stats_available = Kubernetes._stats_available.copy()
     _stats_available.update({

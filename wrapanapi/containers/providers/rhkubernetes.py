@@ -56,6 +56,7 @@ class Kubernetes(WrapanapiAPIBase):
         self.token = kwargs.get('token', '')
         self.auth = self.token if self.token else (self.username, self.password)
         self.api = ContainerClient(hostname, self.auth, protocol, port, entry)
+        super(Kubernetes, self).__init__(kwargs)
 
     def disconnect(self):
         pass
