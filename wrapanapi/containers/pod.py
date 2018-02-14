@@ -3,6 +3,7 @@ from wrapanapi.containers import ContainersResourceBase
 
 class Pod(ContainersResourceBase):
     RESOURCE_TYPE = 'pod'
+    CREATABLE = True
 
     @property
     def restart_policy(self):
