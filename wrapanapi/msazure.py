@@ -155,7 +155,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         vm_list = []
         for res_group in self.list_resource_groups():
             vms = self.vms_collection.list(resource_group_name=res_group)
-            vm_list += [vm.name for vm in vms if vm.location == self.region]
+            vm_list.extend([vm.name for vm in vms if vm.location == self.region])
         return vm_list
 
     def list_vm_by_resource_group(self, resource_group=None):
