@@ -58,7 +58,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         self.storage_account = kwargs.get("storage_account")
         self.storage_key = kwargs.get("storage_key")
         self.template_container = kwargs['provisioning']['template_container']
-        self.region = kwargs["provisioning"]["region_api"]
+        self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
 
         self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
                                                        secret=self.client_secret,
@@ -372,7 +372,47 @@ class AzureSystem(WrapanapiAPIBaseVM):
         raise NotImplementedError('list_flavor not implemented.')
 
     def list_network(self):
-        raise NotImplementedError('list_network not implemented.')
+        self.logger.info("Attempting to list Azure Virtual Private Networks in '%s'", self.region)
+        # Azure API returns all networks from all regions, and there is options to filter by region.
+        # In CFME only the networks of the provider regions are displayed.
+        all_networks = self.network_client.virtual_networks.list_all()
+        networks_in_region = []
+        for network in all_networks:
+            if network.location == self.region:
+                networks_in_region.append(network.name)
+        return networks_in_region
+
+    def list_subnet(self):
+        self.logger.info("Attempting to List Azure Subnets")
+        # There is no way to list all the subnets from a network filtered by location, and there
+        # is only one network in the resource_group defined in cfme_data.
+        all_networks = self.network_client.virtual_networks.list_all()
+        subnets = []
+        for network in all_networks:
+            if network.location == self.region:
+                for subnet in network.subnets:
+                    subnets.append(subnet.name)
+        return subnets
+
+    def list_security_group(self):
+        self.logger.info("Attempting to List Azure security groups")
+        all_sec_groups = self.network_client.network_security_groups.list_all()
+        location = self.region.replace(' ', '').lower()
+        sec_groups_in_location = []
+        for sec_gp in all_sec_groups:
+            if sec_gp.location == location:
+                sec_groups_in_location.append(sec_gp.name)
+        return sec_groups_in_location
+
+    def list_router(self):
+        self.logger.info("Attempting to List Azure routes table")
+        all_routers = self.network_client.route_tables.list_all()
+        location = self.region.replace(' ', '').lower()
+        routers_in_location = []
+        for router in all_routers:
+            if router.location == location:
+                routers_in_location.append(router.name)
+        return routers_in_location
 
     def disconnect(self):
         pass
@@ -450,7 +490,13 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List Azure Load Balancers")
-        return [lb.name for lb in self.network_client.load_balancers.list_all()]
+        location = self.region.replace(' ', '').lower()
+        all_lbs = self.network_client.load_balancers.list_all()
+        lbs_in_location = []
+        for lb in all_lbs:
+            if lb.location == location:
+                lbs_in_location.append(lb.name)
+        return lbs_in_location
 
     def does_load_balancer_exist(self, lb_name):
         return lb_name in self.list_load_balancer()

@@ -77,6 +77,7 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
         super(GoogleCloudSystem, self).__init__(kwargs)
         self._project = project
         self._zone = zone
+        self._region = kwargs.get('region')
         scope = kwargs.get('scope', self.default_scope)
 
         service_account = kwargs.get('service_account', None)
@@ -567,3 +568,39 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
         instance = self._find_instance_by_name(instance_name)
         if instance.get('machineType', None):
             return instance['machineType'].split('/')[-1]
+
+    def list_network(self):
+        self.logger.info("Attempting to List GCE Virtual Private Networks")
+        networks = self._compute.networks().list(project=self._project).execute()['items']
+
+        return [net['name'] for net in networks]
+
+    def list_subnet(self):
+        self.logger.info("Attempting to List GCE Subnets")
+        networks = self._compute.networks().list(project=self._project).execute()['items']
+        subnetworks = [net['subnetworks'] for net in networks]
+        subnets_names = []
+
+        # Subnetworks is a bi dimensional array, containing urls of subnets.
+        # The only way to have the subnet name is to take the last part of the url.
+        # self._compute.subnetworks().list() returns just the subnets of the given region,
+        # and CFME displays networks with subnets from all regions.
+        for urls in subnetworks:
+            for url in urls:
+                subnets_names.append(url.split('/')[-1])
+
+        return subnets_names
+
+    def list_load_balancer(self):
+        self.logger.info("Attempting to List GCE loadbalancers")
+        load_balancers = self._compute.targetPools().list(project=self._project).execute()['items']
+        return [lb['name'] for lb in load_balancers]
+
+    def list_router(self):
+        self.logger.info("Attempting to List GCE routers")
+        routers = self._compute.routers().list(project=self._project,
+                                               region=self._region).execute()['items']
+        return [router['name'] for router in routers]
+
+    def list_security_group(self):
+        raise NotImplementedError('start_vm not implemented.')
