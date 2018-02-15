@@ -148,7 +148,17 @@ class AzureSystem(WrapanapiAPIBaseVM):
         operation.wait()
         return operation.status()
 
-    def list_vm(self, resource_group=None):
+    def list_vm(self):
+        """
+        Returns list of Instances from all Resource Groups available in current Region
+        """
+        vm_list = []
+        for res_group in self.list_resource_groups():
+            vms = self.vms_collection.list(resource_group_name=res_group)
+            vm_list += [vm.name for vm in vms if vm.location == self.region]
+        return vm_list
+
+    def list_vm_by_resource_group(self, resource_group=None):
         vms = self.vms_collection.list(resource_group_name=resource_group or self.resource_group)
         return [vm.name for vm in vms]
 
@@ -229,7 +239,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         raise NotImplementedError('NIE - clone_vm not implemented.')
 
     def does_vm_exist(self, vm_name, resource_group=None):
-        return vm_name in self.list_vm(resource_group=resource_group)
+        return vm_name in self.list_vm_by_resource_group(resource_group=resource_group)
 
     def wait_vm_running(self, vm_name, resource_group=None, num_sec=300):
         wait_for(
@@ -457,7 +467,8 @@ class AzureSystem(WrapanapiAPIBaseVM):
                          container_client.account_name)
 
     def list_blob_images(self, container):
-        return [blob.name for blob in self.container_client.list_blobs(container_name=container)]
+        return [blob.name for blob in self.container_client.list_blobs(container_name=container)
+                if blob.name.endswith("vhd" or "vhdx")]
 
     def remove_blob_image(self, blob, container):
         self.logger.info("Removing Blob '%s' from containter '%s'", blob, container)
@@ -478,8 +489,13 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return operation.status
 
     def list_template(self):
-        self.logger.info("Attempting to List Azure VHDs in templates directory")
-        return self.list_blob_images(container=self.template_container)
+        """
+        Returns a list of VHDs/Images which might be used as provision template for Instance
+        """
+        self.logger.info("Attempting to List Azure VHDs/Images")
+        return self.list_blob_images(container=self.template_container)\
+            + [item.name for item in self.resource_client.resources.list(
+                filter="resourceType eq 'Microsoft.Compute/images'")]
 
     @contextmanager
     def with_vm(self, *args, **kwargs):
