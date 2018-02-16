@@ -38,28 +38,11 @@ class NuageSystem(WrapanapiAPIBase):
     def auth(self):
         if not self._auth:
             login_url = self.url + "/me"
-            print("Calling " + login_url)
+            response = requests.request('get', login_url, auth=HTTPBasicAuth(*self.login_auth),
                 headers=self.common_headers, verify=False)
             response.raise_for_status()
             r = response.json()[0]
             self._auth = (r.get('userName'), r.get('APIKey'))
-            response = requests.request('get', login_url,
-                                        auth=HTTPBasicAuth(self.login_auth[0], self.login_auth[1]),
-                                        headers=self.NUAGE_HEADERS,
-                                        verify=False
-                                        )
-
-            if response.ok:
-                print("Status code = " + str(response.status_code))
-                byteifyed_response_json = json_utils.json_loads_byteified(response.text)
-                print(byteifyed_response_json)
-                self._auth = (byteifyed_response_json[0].get('APIKey'),
-                              byteifyed_response_json[0].get('enterpriseID'))
-            else:
-                raise StandardError(
-                    "Login unsuccessful. Response status code: %s, response message: %s" %
-                    (response.status_code, response.content)
-                )
         return self._auth
 
     @property
