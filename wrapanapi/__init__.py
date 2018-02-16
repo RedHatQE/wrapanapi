@@ -10,7 +10,7 @@ from .scvmm import SCVMMSystem  # NOQA
 from .msazure import AzureSystem  # NOQA
 from .virtualcenter import VMWareSystem  # NOQA
 from .google import GoogleCloudSystem  # NOQA
-from .containers.providers.kubernetes import Kubernetes  # NOQA
+from .containers.providers.rhkubernetes import Kubernetes  # NOQA
 from .containers.providers.rhopenshift import Openshift  # NOQA
 from .hawkular import Hawkular  # NOQA
 from .lenovo import LenovoSystem  # NOQA
