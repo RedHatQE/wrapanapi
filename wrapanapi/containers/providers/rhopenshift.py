@@ -8,9 +8,9 @@ import string
 
 import inflection
 from collections import Iterable
-from .kubernetes import client as kubeclient
-from .kubernetes.client.rest import ApiException
-from .openshift import client as ociclient
+from kubernetes import client as kubeclient
+from kubernetes.client.rest import ApiException
+from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
 from wrapanapi.containers.providers.rhkubernetes import Kubernetes
