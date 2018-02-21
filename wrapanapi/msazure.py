@@ -730,7 +730,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         # removing managed disks
         removed_disks = []
         for disk in self.compute_client.disks.list_by_resource_group(resource_group):
-            if disk.name.startswith('test') and disk.owner_id is None:
+            if disk.name.startswith('test') and disk.managed_by is None:
                 self.logger.info("Removing disk '%s'", disk.name)
                 self.compute_client.disks.delete(resource_group_name=resource_group,
                                                  disk_name=disk.name)
