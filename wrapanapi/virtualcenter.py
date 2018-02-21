@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 try:
     # In Fedora 22, we see SSL errors when connecting to vSphere, this prevents the error.
     import ssl
@@ -23,8 +24,8 @@ from wait_for import wait_for, TimedOutError
 from pyVmomi import vim, vmodl
 from pyVim.connect import SmartConnect, Disconnect
 
-from base import WrapanapiAPIBaseVM, VMInfo
-from exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
+from .base import WrapanapiAPIBaseVM, VMInfo
+from .exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
     HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
 
 

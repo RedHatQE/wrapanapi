@@ -1,10 +1,11 @@
+from __future__ import absolute_import
 import requests
 import os
 import json
 import six
 import logging
 
-from exceptions import RestClientException
+from .exceptions import RestClientException
 
 requests.packages.urllib3.disable_warnings()
 

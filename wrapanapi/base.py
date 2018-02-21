@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager

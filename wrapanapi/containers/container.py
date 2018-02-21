@@ -1,4 +1,5 @@
-from pod import Pod
+from __future__ import absolute_import
+from .pod import Pod
 
 
 class Container(object):

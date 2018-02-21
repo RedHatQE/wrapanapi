@@ -1,4 +1,5 @@
 # coding: utf-8
+from __future__ import absolute_import
 from datetime import datetime
 
 import boto
@@ -16,8 +17,8 @@ import re
 from wait_for import wait_for
 import os
 
-from base import WrapanapiAPIBaseVM
-from exceptions import (
+from .base import WrapanapiAPIBaseVM
+from .exceptions import (
     ActionTimedOutError, ActionNotSupported,
     MultipleInstancesError, VMInstanceNotFound,
     MultipleImagesError, ImageNotFoundError
