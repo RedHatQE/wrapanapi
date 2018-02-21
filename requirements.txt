@@ -1,3 +1,4 @@
+six
 boto
 cached_property
 enum34

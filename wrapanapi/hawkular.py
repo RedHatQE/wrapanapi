@@ -2,8 +2,8 @@ from __future__ import absolute_import
 from .base import WrapanapiAPIBaseVM
 from collections import namedtuple
 from .rest_client import ContainerClient
-from urllib import quote as urlquote
-from urllib import unquote as urlunquote
+
+from six.moves.urllib.parse import quote as urlquote, unquote as urlunquote
 from packaging import version
 from enum import Enum
 from .websocket_client import HawkularWebsocketClient
