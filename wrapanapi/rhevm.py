@@ -3,15 +3,21 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import fauxfactory
 import pytz
-from ovirtsdk.api import API
-from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
-from ovirtsdk.xml import params
+try:
+    from ovirtsdk.api import API
+    from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
+    from ovirtsdk.xml import params
+except (ImportError, SyntaxError) as e:
+    import warnings
+    warnings.warn(UserWarning(str(e)))
+    API = None
 from wait_for import wait_for, TimedOutError
 
-from base import WrapanapiAPIBaseVM, VMInfo
-from exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
+from .base import WrapanapiAPIBaseVM, VMInfo
+from .exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
 class RHEVMSystem(WrapanapiAPIBaseVM):
@@ -95,6 +101,8 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
 
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
+        if API is None:
+            raise RuntimeError("RHEVMSystem is not availiable on python3")
         super(RHEVMSystem, self).__init__(kwargs)
         less_than_rhv_4 = float(kwargs['version']) < 4.0
         url_component = 'api' if less_than_rhv_4 else 'ovirt-engine/api'

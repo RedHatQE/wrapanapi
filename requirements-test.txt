@@ -1,5 +1,6 @@
 -r ./requirements.txt
 
+mock # bad imports in hawcular
 pytest
 pytest-cov
 pytest-mock

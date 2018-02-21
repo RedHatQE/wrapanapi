@@ -6,7 +6,7 @@ import json
 
 import requests
 from requests.auth import HTTPBasicAuth
-from base import WrapanapiAPIBase
+from .base import WrapanapiAPIBase
 
 
 class NuageSystem(WrapanapiAPIBase):

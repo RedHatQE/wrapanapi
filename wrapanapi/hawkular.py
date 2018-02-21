@@ -1,17 +1,16 @@
-from base import WrapanapiAPIBaseVM
+from __future__ import absolute_import
+from .base import WrapanapiAPIBaseVM
 from collections import namedtuple
-from rest_client import ContainerClient
-from urllib import quote as urlquote
-from urllib import unquote as urlunquote
+from .rest_client import ContainerClient
+from six.moves.urllib_parse import quote as urlquote, unquote as urlunquote
 from packaging import version
 from enum import Enum
-from websocket_client import HawkularWebsocketClient
+from .websocket_client import HawkularWebsocketClient
 
 import re
 import sys
 import json
-import gzip
-from StringIO import StringIO
+import zlib
 import base64
 
 """
@@ -1157,13 +1156,13 @@ class HawkularInventoryInMetrics(HawkularService):
         """
         Builds the whole data from several chunks.
         """
-        result = ''
+        result = b''
 
         if not data_node:
-            return ''
+            return b''
 
         master_data = data_node[0]
-        result = "{}{}".format(result, self._decode(master_data['value']))
+        result += self._decode(master_data['value'])
         # if data is not in chunks, then return the first node's value
         if 'tags' not in master_data or 'chunks' not in master_data['tags']:
             return result
@@ -1172,14 +1171,14 @@ class HawkularInventoryInMetrics(HawkularService):
         last_chunk = int(master_data['tags']['chunks'])
         for chunk_id in range(1, last_chunk):
             slave_data = data_node[chunk_id]
-            result = "{}{}".format(result, self._decode(slave_data['value']))
+            result += self._decode(slave_data['value'])
         return result
 
     def _decode(self, raw):
         return base64.b64decode(raw)
 
     def _decompress(self, raw):
-        return json.loads(gzip.GzipFile(fileobj=StringIO(raw)).read())
+        return json.loads(zlib.decode(raw))
 
 
 class HawkularMetric(HawkularService):

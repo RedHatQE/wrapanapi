@@ -3,6 +3,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
@@ -24,8 +25,8 @@ from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
 from wait_for import wait_for
 
-from base import WrapanapiAPIBaseVM, VMInfo
-from exceptions import (
+from .base import WrapanapiAPIBaseVM, VMInfo
+from .exceptions import (
     NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
     ActionTimedOutError, VMError, KeystoneVersionNotSupported
 )

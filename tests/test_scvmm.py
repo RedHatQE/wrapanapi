@@ -16,11 +16,11 @@ def first_vm(mgmtsys):
 
 
 def test_list_vm(mgmtsys):
-    print mgmtsys.list_vm()
+    print(mgmtsys.list_vm())
 
 
 def test_list_hosts(mgmtsys):
-    print mgmtsys.list_hosts()
+    print(mgmtsys.list_hosts())
 
 
 def test_all_vms(mgmtsys):
