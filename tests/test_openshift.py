@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Openshift client."""
+from __future__ import absolute_import
 import os
 from random import choice
 

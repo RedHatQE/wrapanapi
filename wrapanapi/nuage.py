@@ -2,11 +2,12 @@
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
+from __future__ import absolute_import
 import json
 
 import requests
 from requests.auth import HTTPBasicAuth
-from base import WrapanapiAPIBase
+from .base import WrapanapiAPIBase
 
 
 class NuageSystem(WrapanapiAPIBase):

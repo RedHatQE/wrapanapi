@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from wrapanapi.containers import ContainersResourceBase
 from wrapanapi.exceptions import RequestFailedException
 from wrapanapi.containers.image import Image
