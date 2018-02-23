@@ -226,9 +226,15 @@ class EC2System(WrapanapiAPIBaseVM):
         return result
 
     def stack_exist(self, stack_name):
-        stacks = [stack for stack in self.describe_stack(stack_name)
-            if stack.stack_name == stack_name]
-        if stacks:
+        try:
+            stacks = [stack for stack in self.describe_stack(stack_name)
+                      if stack.stack_name == stack_name]
+        except boto.exception.BotoServerError as e:
+            if e.message == 'Stack with id {} does not exist'.format(stack_name):
+                return False
+            else:
+                raise
+        else:
             return bool(stacks)
 
     def delete_stack(self, stack_name):
