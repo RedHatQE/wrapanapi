@@ -936,3 +936,101 @@ class Openshift(Kubernetes):
         Return: True/False
         """
         return self._does_exist(func=self.o_api.read_project, name=name)
+
+    def is_vm_stopped(self, vm_name):
+        """Check whether vm isn't running.
+        There is no such state stopped for vm in openshift therefore
+        it just checks that vm isn't running
+        Args:
+            vm_name: project name
+        Return: True/False
+        """
+        return not self.is_vm_running(vm_name)
+
+    def wait_vm_running(self, vm_name, num_sec=360):
+        """Checks whether all project pods are in ready state.
+
+        Args:
+            vm_name: project name
+            num_sec: all pods should get ready for this time then - True, otherwise False
+        Return: True/False
+        """
+        wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
+        return True
+
+    def wait_vm_stopped(self, vm_name, num_sec=360):
+        """Checks whether all project pods are stopped.
+
+        Args:
+            vm_name: project name
+            num_sec: all pods should not be ready for this time then - True, otherwise False
+        Return: True/False
+        """
+        wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
+        return True
+
+    def current_ip_address(self, vm_name):
+        """Tries to retrieve project's external ip
+
+        Args:
+            vm_name: project name
+        Return: ip address or None
+        """
+        try:
+            common_svc = self.k_api.read_namespaced_service(name='common-service',
+                                                            namespace=vm_name)
+            return common_svc.spec.external_i_ps[0]
+        except:
+            return None
+
+    def is_vm_suspended(self, vm_name):
+        """There is no such state in openshift
+
+        Args:
+            vm_name: project name
+        Return: False
+        """
+        return False
+
+    def in_steady_state(self, vm_name):
+        """Return whether the specified virtual machine is in steady state
+
+        Args:
+            vm_name: VM name
+        Returns: True/False
+        """
+        return (self.is_vm_running(vm_name) or self.is_vm_stopped(vm_name) or
+                self.is_vm_suspended(vm_name))
+
+    @property
+    def can_rename(self):
+        return hasattr(self, "rename_vm")
+
+    def list_project_(self):
+        """Obtains project names
+
+        Returns: list of project names
+        """
+        projects = self.o_api.list_project().items
+        return [proj.metadata.name for proj in projects]
+
+    list_vm = list_project_
+
+    def delete_template(self, template_name, namespace='openshift'):
+        """Deletes template
+
+            Args:
+                template_name: stored openshift template name
+                namespace: project name
+        Returns: result of delete operation
+        """
+        options = self.kclient.V1DeleteOptions()
+        return self.o_api.delete_namespaced_template(name=template_name, namespace=namespace,
+                                                     body=options)
+
+    def get_meta_value(self, instance, key):
+        raise NotImplementedError(
+            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+
+    def vm_status(self, vm_name):
+        raise NotImplementedError('vm_status not implemented.')
