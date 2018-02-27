@@ -1069,35 +1069,39 @@ class Openshift(Kubernetes):
             source, destination, str(progress)))
 
     def vm_hardware_configuration(self, vm_name):
-        return {
-            'ram': vm.config.hardware.memoryMB,
-            'cpu': vm.config.hardware.numCPU,
-        }
+        """Collects project's cpu and ram usage
+            Args:
+                vm_name: openshift's data
+        Returns: collected data
+        """
+        hw_config = {'ram': 0,
+                     'cpu': 0}
+        if not self.does_vm_exist(vm_name):
+            return hw_config
+
+        proj_pods = self.k_api.list_namespaced_pod(vm_name)
+        for pod in proj_pods.items:
+            for container in pod.spec.containers:
+                cpu = container.resources.requests['cpu']
+                hw_config['cpu'] += float(cpu[:-1]) / 1000 if cpu.endswith('m') else float(cpu)
+
+                ram = container.resources.requests['memory']
+                if ram.endswith('Mi'):
+                    hw_config['ram'] += float(ram[:-2])
+                elif ram.endswith('Gi'):
+                    hw_config['ram'] += float(ram[:-2]) * 1024
+                elif ram.endswith('Ki'):
+                    hw_config['ram'] += float(ram[:-2]) / 1024
+                else:
+                    hw_config['ram'] += ram
+        return hw_config
 
     def usage_and_quota(self):
         installed_ram = 0
         installed_cpu = 0
         used_ram = 0
         used_cpu = 0
-        for host in self._get_obj_list(vim.HostSystem):
-            installed_ram += host.systemResources.config.memoryAllocation.limit
-            installed_cpu += host.summary.hardware.numCpuCores
-
-        property_spec = vmodl.query.PropertyCollector.PropertySpec()
-        property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template']
-        property_spec.type = 'VirtualMachine'
-        pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
-        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
-        for vm in object_contents:
-            vm_props = {p.name: p.val for p in vm.propSet}
-            if vm_props.get('config.template'):
-                continue
-            if vm.obj.summary.runtime.powerState.lower() != 'poweredon':
-                continue
-            used_ram += vm.obj.summary.config.memorySizeMB
-            used_cpu += vm.obj.summary.config.numCpu
-
+        # todo: finish this method later
         return {
             # RAM
             'ram_used': used_ram,
