@@ -887,6 +887,8 @@ class Openshift(Kubernetes):
             vm_name: project(namespace) name
         Return: True/False
         """
+        if not self.does_vm_exist(vm_name):
+            return False
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
         for pod_name in self.required_project_pods:
             if self.is_deployment_config(name=pod_name, namespace=vm_name):
@@ -1054,6 +1056,10 @@ class Openshift(Kubernetes):
         raise NotImplementedError(
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
+    def set_meta_value(self, instance, key):
+        raise NotImplementedError(
+            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+
     def vm_status(self, vm_name):
         raise NotImplementedError('vm_status not implemented.')
 
@@ -1061,3 +1067,44 @@ class Openshift(Kubernetes):
     def _progress_log_callback(logger, source, destination, progress):
         logger.info("Provisioning progress {}->{}: {}".format(
             source, destination, str(progress)))
+
+    def vm_hardware_configuration(self, vm_name):
+        return {
+            'ram': vm.config.hardware.memoryMB,
+            'cpu': vm.config.hardware.numCPU,
+        }
+
+    def usage_and_quota(self):
+        installed_ram = 0
+        installed_cpu = 0
+        used_ram = 0
+        used_cpu = 0
+        for host in self._get_obj_list(vim.HostSystem):
+            installed_ram += host.systemResources.config.memoryAllocation.limit
+            installed_cpu += host.summary.hardware.numCpuCores
+
+        property_spec = vmodl.query.PropertyCollector.PropertySpec()
+        property_spec.all = False
+        property_spec.pathSet = ['name', 'config.template']
+        property_spec.type = 'VirtualMachine'
+        pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
+        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        for vm in object_contents:
+            vm_props = {p.name: p.val for p in vm.propSet}
+            if vm_props.get('config.template'):
+                continue
+            if vm.obj.summary.runtime.powerState.lower() != 'poweredon':
+                continue
+            used_ram += vm.obj.summary.config.memorySizeMB
+            used_cpu += vm.obj.summary.config.numCpu
+
+        return {
+            # RAM
+            'ram_used': used_ram,
+            'ram_total': installed_ram,
+            'ram_limit': None,
+            # CPU
+            'cpu_used': used_cpu,
+            'cpu_total': installed_cpu,
+            'cpu_limit': None,
+        }
