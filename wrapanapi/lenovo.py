@@ -49,10 +49,11 @@ class LenovoSystem(WrapanapiAPIBase):
     HEALTH_WARNING = ("warning")
     HEALTH_CRITICAL = ("critical", "minor-failure", "major-failure", "non-recoverable", "fatal")
 
-    def __init__(self, hostname, username, password, protocol="https", port=443, **kwargs):
+    def __init__(self, hostname, username, password, protocol="https", port=None, **kwargs):
         super(LenovoSystem, self).__init__(kwargs)
+        self.port = port or kwargs.get('api_port', 443)
         self.auth = (username, password)
-        self.url = '{}://{}:{}/'.format(protocol, hostname, port)
+        self.url = '{}://{}:{}/'.format(protocol, hostname, self.port)
         self._servers_list = None
         self.kwargs = kwargs
 
