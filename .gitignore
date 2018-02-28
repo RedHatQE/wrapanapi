@@ -1,9 +1,13 @@
 *.pyc
 .cache/
+.pytest_cache/
 .coverage
-.venv
+.venv*
 .eggs
 *.egg-info
 .env/
 .idea/
 *.vars.json
+.tox/
+AUTHORS
+ChangeLog

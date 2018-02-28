@@ -12,7 +12,6 @@ import re
 import sys
 import json
 import gzip
-from StringIO import StringIO
 import base64
 
 """
@@ -1180,7 +1179,7 @@ class HawkularInventoryInMetrics(HawkularService):
         return base64.b64decode(raw)
 
     def _decompress(self, raw):
-        return json.loads(gzip.GzipFile(fileobj=StringIO(raw)).read())
+        return json.loads(gzip.decompress(raw))
 
 
 class HawkularMetric(HawkularService):
