@@ -1,7 +1,8 @@
 from __future__ import absolute_import
+from functools import partial
+from random import choice
 import copy
 import json
-from random import choice
 import six
 import string
 
@@ -175,6 +176,8 @@ class Openshift(Kubernetes):
         Args:
             template: (str) The name of the template to deploy
             tags: (dict) dict with tags if some tag isn't passed it is set to 'latest'
+            vm_name: (str) is used as project name if passed. otherwise, name is generated (sprout)
+            progress_callback: (func) function to return current progress (sprout)
             since input tags are image stream tags whereas template expects its own tags.
             So, input tags should match stream2template_tags_mapping.
             password: this password will be set as default everywhere
@@ -197,10 +200,22 @@ class Openshift(Kubernetes):
         # create project
         # assuming this is cfme installation and generating project name
         proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
-        proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
+
+        # for sprout
+        if 'vm_name' in kwargs:
+            proj_name = kwargs['vm_name']
+        else:
+            proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
+
         proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
         self.logger.info("unique id %s, project name %s", proj_id, proj_name)
+
+        default_progress_callback = partial(self._progress_log_callback, self.logger, template,
+                                            proj_name)
+        progress_callback = kwargs.get('progress_callback', default_progress_callback)
+
         self.create_project(name=proj_name)
+        progress_callback("Created Project `{}`".format(proj_name))
 
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
@@ -221,6 +236,7 @@ class Openshift(Kubernetes):
             self.logger.debug("adding users %r to scc %r", got_users, mapping['scc'])
             security_api.patch_security_context_constraints(name=mapping['scc'],
                                                             body={'users': got_users})
+        progress_callback("Added service accounts to appropriate scc")
 
         # grant roles to orchestrator
         self.logger.info("assigning additional roles to cfme-orchestrator")
@@ -249,10 +265,12 @@ class Openshift(Kubernetes):
 
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
         self._restore_missing_project_role_bindings(namespace=proj_name)
+        progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
 
         # creating common service with external ip
         service_obj = self.kclient.V1Service(**json.loads(common_service))
         self.k_api.create_namespaced_service(namespace=proj_name, body=service_obj)
+        progress_callback("Common Service has been added")
 
         # creating pods and etc
         processing_params = {'DATABASE_PASSWORD': password,
@@ -266,6 +284,7 @@ class Openshift(Kubernetes):
         kinds = set([e['kind'] for e in template_entities])
         entity_names = {e: inflection.underscore(e) for e in kinds}
         proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
+        progress_callback("Template has been processed")
         for entity in template_entities:
             if entity['kind'] in kinds:
                 procedure = getattr(self, proc_names[entity['kind']], None)
@@ -275,16 +294,19 @@ class Openshift(Kubernetes):
             else:
                 self.logger.error("some entity %s isn't present in entity creation list", entity)
 
+        progress_callback("All template entities have been created")
         # creating and obtaining db ip
         common_svc = self.k_api.read_namespaced_service(name='common-service',
                                                         namespace=proj_name)
         ext_ip = common_svc.spec.external_i_ps[0]
 
         self.logger.info("verifying that all created entities are up and running")
+        progress_callback("Waiting for all pods to be ready and running")
         try:
             wait_for(self.is_vm_running, num_sec=600,
                      func_kwargs={'vm_name': proj_name})
             self.logger.info("all pods look up and running")
+            progress_callback("Everything has been deployed w/o errors")
             return {'url': proj_url,
                     'external_ip': ext_ip,
                     'project': proj_name,
@@ -865,6 +887,8 @@ class Openshift(Kubernetes):
             vm_name: project(namespace) name
         Return: True/False
         """
+        if not self.does_vm_exist(vm_name):
+            return False
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
         for pod_name in self.required_project_pods:
             if self.is_deployment_config(name=pod_name, namespace=vm_name):
@@ -1032,5 +1056,59 @@ class Openshift(Kubernetes):
         raise NotImplementedError(
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
+    def set_meta_value(self, instance, key):
+        raise NotImplementedError(
+            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+
     def vm_status(self, vm_name):
         raise NotImplementedError('vm_status not implemented.')
+
+    @staticmethod
+    def _progress_log_callback(logger, source, destination, progress):
+        logger.info("Provisioning progress {}->{}: {}".format(
+            source, destination, str(progress)))
+
+    def vm_hardware_configuration(self, vm_name):
+        """Collects project's cpu and ram usage
+            Args:
+                vm_name: openshift's data
+        Returns: collected data
+        """
+        hw_config = {'ram': 0,
+                     'cpu': 0}
+        if not self.does_vm_exist(vm_name):
+            return hw_config
+
+        proj_pods = self.k_api.list_namespaced_pod(vm_name)
+        for pod in proj_pods.items:
+            for container in pod.spec.containers:
+                cpu = container.resources.requests['cpu']
+                hw_config['cpu'] += float(cpu[:-1]) / 1000 if cpu.endswith('m') else float(cpu)
+
+                ram = container.resources.requests['memory']
+                if ram.endswith('Mi'):
+                    hw_config['ram'] += float(ram[:-2])
+                elif ram.endswith('Gi'):
+                    hw_config['ram'] += float(ram[:-2]) * 1024
+                elif ram.endswith('Ki'):
+                    hw_config['ram'] += float(ram[:-2]) / 1024
+                else:
+                    hw_config['ram'] += ram
+        return hw_config
+
+    def usage_and_quota(self):
+        installed_ram = 0
+        installed_cpu = 0
+        used_ram = 0
+        used_cpu = 0
+        # todo: finish this method later
+        return {
+            # RAM
+            'ram_used': used_ram,
+            'ram_total': installed_ram,
+            'ram_limit': None,
+            # CPU
+            'cpu_used': used_cpu,
+            'cpu_total': installed_cpu,
+            'cpu_limit': None,
+        }
