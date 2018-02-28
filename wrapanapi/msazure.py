@@ -11,6 +11,7 @@ from cached_property import cached_property
 
 from azure.common.credentials import ServicePrincipalCredentials
 from azure.common.exceptions import CloudError
+from azure.common import AzureConflictHttpError
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.compute.models import (VirtualMachineCaptureParameters, DiskCreateOptionTypes,
                                        VirtualMachineSizeTypes, VirtualHardDisk)
@@ -697,6 +698,19 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def info(self):
         pass
 
+    def remove_container_blob(self, container_client, container, blob, remove_snapshots=True):
+        self.logger.info("Removing Blob '%s' from containter '%s'", blob.name, container.name)
+        try:
+            container_client.delete_blob(
+                container_name=container.name, blob_name=blob.name)
+        except AzureConflictHttpError as e:
+            if 'SnapshotsPresent' in str(e) and remove_snapshots:
+                self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
+                container_client.delete_blob(
+                    container_name=container.name, blob_name=blob.name, delete_snapshots="include")
+            else:
+                raise
+
     def remove_unused_blobs(self, resource_group=None):
         """
         Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
@@ -719,10 +733,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 for blob in container_client.list_blobs(container_name=container.name,
                                                         prefix='test'):
                     if blob.properties.lease.status == 'unlocked':
-                        self.logger.info("Removing Blob '%s' from containter '%s'", blob.name,
-                                         container.name)
-                        container_client.delete_blob(container_name=container.name,
-                                                     blob_name=blob.name)
+                        self.remove_container_blob(container_client, container, blob)
                         removed_blobs[resource_group][storage_account][container.name].append(
                             blob.name)
             # also delete unused 'bootdiag' containers
