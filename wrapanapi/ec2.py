@@ -64,6 +64,19 @@ class EC2System(WrapanapiAPIBaseVM):
         'deleted': ('terminated',),
     }
 
+    stack_states = {
+        'active': ('CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
+                   'UPDATE_ROLLBACK_COMPLETE'),
+        'complete': ('CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'),
+        'failed': ('ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
+                   'UPDATE_ROLLBACK_FAILED'),
+        'deleted': ('DELETE_COMPLETE',),
+        'in_progress': ('CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
+                        'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
+                        'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
+                        'REVIEW_IN_PROGRESS')
+    }
+
     can_suspend = False
 
     def __init__(self, **kwargs):
@@ -236,6 +249,16 @@ class EC2System(WrapanapiAPIBaseVM):
                 raise
         else:
             return bool(stacks)
+
+    def list_stacks(self, stack_status_filter=stack_states['active']):
+        """
+        Returns a list of Stack objects
+        stack_status_filter:  filters stacks in certain status. check EC2System:stack_states for
+        details
+        """
+        stack_list = [stack for stack in self.stackapi.list_stacks(stack_status_filter)]
+        return stack_list
+
 
     def delete_stack(self, stack_name):
         """Deletes stack
