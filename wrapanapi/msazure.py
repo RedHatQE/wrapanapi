@@ -376,6 +376,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         # Azure API returns all networks from all regions, and there is options to filter by region.
         # In CFME only the networks of the provider regions are displayed.
         all_networks = self.network_client.virtual_networks.list_all()
+        self.logger.debug('self.region {}'.format(self.region))
         networks_in_region = []
         for network in all_networks:
             if network.location == self.region:
@@ -387,6 +388,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         # There is no way to list all the subnets from a network filtered by location, and there
         # is only one network in the resource_group defined in cfme_data.
         all_networks = self.network_client.virtual_networks.list_all()
+        self.logger.debug('self.region {}'.format(self.region))
         subnets = []
         for network in all_networks:
             if network.location == self.region:
@@ -397,6 +399,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def list_security_group(self):
         self.logger.info("Attempting to List Azure security groups")
         all_sec_groups = self.network_client.network_security_groups.list_all()
+        self.logger.debug('self.region {}'.format(self.region))
         location = self.region.replace(' ', '').lower()
         sec_groups_in_location = []
         for sec_gp in all_sec_groups:
@@ -407,10 +410,10 @@ class AzureSystem(WrapanapiAPIBaseVM):
     def list_router(self):
         self.logger.info("Attempting to List Azure routes table")
         all_routers = self.network_client.route_tables.list_all()
-        location = self.region.replace(' ', '').lower()
+        self.logger.debug('self.region {}'.format(self.region))
         routers_in_location = []
         for router in all_routers:
-            if router.location == location:
+            if router.location == self.region:
                 routers_in_location.append(router.name)
         return routers_in_location
 
@@ -490,11 +493,11 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List Azure Load Balancers")
-        location = self.region.replace(' ', '').lower()
+        self.logger.debug('self.region {}'.format(self.region))
         all_lbs = self.network_client.load_balancers.list_all()
         lbs_in_location = []
         for lb in all_lbs:
-            if lb.location == location:
+            if lb.location == self.region:
                 lbs_in_location.append(lb.name)
         return lbs_in_location
 
