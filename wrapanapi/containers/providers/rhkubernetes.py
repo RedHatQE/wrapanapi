@@ -82,11 +82,15 @@ class Kubernetes(WrapanapiAPIBase):
             aggregate_mem += node.memory
         return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
 
-    def list_container(self):
-        """Returns list of containers (derived from pods)"""
+    def list_container(self, project_name=None):
+        """Returns list of containers (derived from pods)
+        If project_name is passed, only the containers under the selected project will be returned
+        """
         entities = []
         entities_j = self.api.get('pod')[1]['items']
         for entity_j in entities_j:
+            if project_name and project_name != entity_j['metadata']['namespace']:
+                continue
             pod = Pod(self, entity_j['metadata']['name'], entity_j['metadata']['namespace'])
             conts_j = entity_j['spec']['containers']
             for cont_j in conts_j:
