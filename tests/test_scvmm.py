@@ -7,7 +7,7 @@ from wrapanapi import SCVMMSystem
 def mgmtsys(variables):
     data = variables.get("scvmm")
     if data:
-        return SCVMMSystem(**data)
+        return SCVMMSystem(**data["system"])
     pytest.skip("scvmm variables missing")
 
 
