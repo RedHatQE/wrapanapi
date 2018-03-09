@@ -23,7 +23,8 @@ tzlocal
 wait_for
 websocket_client
 dateparser
-boto3
+boto3==1.6.6
+botocore==1.9.6
 packaging
 azure>=3.0.0
 azure-storage-common>=1.0
