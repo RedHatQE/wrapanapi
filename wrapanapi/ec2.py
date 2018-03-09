@@ -11,7 +11,7 @@ from boto.ec2 import elb
 from boto import cloudformation
 from boto.ec2.elb import ELBConnection
 import boto3
-from botocore.client import Config
+from botocore.config import Config
 import pytz
 import re
 from wait_for import wait_for
@@ -70,6 +70,12 @@ class EC2System(WrapanapiAPIBaseVM):
         super(EC2System, self).__init__(kwargs)
         username = kwargs.get('username')
         password = kwargs.get('password')
+        connection_config = Config(
+            signature_version='s3v4',
+            retries=dict(
+                max_attempts=10
+            )
+        )
 
         regionname = kwargs.get('region')
         region = get_region(kwargs.get('region'))
@@ -79,13 +85,13 @@ class EC2System(WrapanapiAPIBaseVM):
         self.elb_connection = ELBConnection(username, password, region=_regions(
             regionmodule=elb, regionname=regionname))
         self.s3_connection = boto3.resource('s3', aws_access_key_id=username,
-            aws_secret_access_key=password, region_name=regionname, config=Config(
-                signature_version='s3v4'))
+            aws_secret_access_key=password, region_name=regionname, config=connection_config)
         self.ec2_connection = boto3.client('ec2', aws_access_key_id=username,
-            aws_secret_access_key=password, region_name=regionname,
-                config=Config(signature_version='s3v4'))
+            aws_secret_access_key=password, region_name=regionname, config=connection_config)
         self.stackapi = CloudFormationConnection(username, password, region=_regions(
             regionmodule=cloudformation, regionname=regionname))
+        self.cloudformation_connection = boto3.client('cloudformation', aws_access_key_id=username,
+            aws_secret_access_key=password, region_name=regionname, config=connection_config)
         self.sns_connection = boto3.client('sns', region_name=regionname)
         self.kwargs = kwargs
 
@@ -245,7 +251,7 @@ class EC2System(WrapanapiAPIBaseVM):
         """
         self.logger.info(" Terminating EC2 stack {}" .format(stack_name))
         try:
-            self.stackapi.delete_stack(stack_name)
+            self.cloudformation_connection.delete_stack(StackName=stack_name)
             return True
         except ActionTimedOutError:
             return False
