@@ -482,7 +482,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
         # todo: weird method to refactor it later
         container_client = BlockBlobService(storage_account, self.storage_key)
         src_uri = container_client.make_blob_url(container_name=template_container,
-                                                 blob_name=template.split("/")[-1])
+                                                 blob_name=template)
         operation = container_client.copy_blob(container_name=storage_container,
                                                blob_name=vm_name + ".vhd",
                                                copy_source=src_uri)
