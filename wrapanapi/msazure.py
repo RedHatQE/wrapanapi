@@ -388,12 +388,13 @@ class AzureSystem(WrapanapiAPIBaseVM):
         # There is no way to list all the subnets from a network filtered by location, and there
         # is only one network in the resource_group defined in cfme_data.
         all_networks = self.network_client.virtual_networks.list_all()
+
         self.logger.debug('self.region {}'.format(self.region))
-        subnets = []
+        subnets = dict()
         for network in all_networks:
             if network.location == self.region:
-                for subnet in network.subnets:
-                    subnets.append(subnet.name)
+                subnets[network.name] = [subnet.name for subnet in network.subnets]
+
         return subnets
 
     def list_security_group(self):

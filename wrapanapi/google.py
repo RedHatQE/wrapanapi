@@ -593,11 +593,18 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List GCE loadbalancers")
-        load_balancers = self._compute.targetPools().list(project=self._project).execute()['items']
+        # The result here is different of what is displayed in CFME, because in CFME the
+        # forwarding rules are displayed instead of loadbalancers, and the regions are neglected.
+        # see: https://bugzilla.redhat.com/show_bug.cgi?id=1547465
+        # https://bugzilla.redhat.com/show_bug.cgi?id=1433062
+        load_balancers = self._compute.targetPools().list(project=self._project,
+                                                          region=self._region).execute()['items']
         return [lb['name'] for lb in load_balancers]
 
     def list_router(self):
         self.logger.info("Attempting to List GCE routers")
+        # routers are not shown on CFME
+        # https://bugzilla.redhat.com/show_bug.cgi?id=1543938
         routers = self._compute.routers().list(project=self._project,
                                                region=self._region).execute()['items']
         return [router['name'] for router in routers]
