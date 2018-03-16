@@ -313,7 +313,7 @@ class EC2System(WrapanapiAPIBaseVM):
         try:
             running = self.vm_status(instance_id) in self.states['running']
             return running
-        except:
+        except Exception: # noqa
             return False
 
     def wait_vm_running(self, instance_id, num_sec=360):
@@ -824,3 +824,50 @@ class EC2System(WrapanapiAPIBaseVM):
         except Exception:
             self.logger.exception("Copy snapshot with id {} failed.".format(source_snapshot_id))
             return False
+
+    def list_load_balancer(self):
+        self.logger.info("Attempting to List EC2 Load Balancers")
+        return [loadbalancer.name for loadbalancer in self.elb_connection.get_all_load_balancers()]
+
+    def list_network(self):
+        self.logger.info("Attempting to List EC2 Virtual Private Networks")
+        networks = self.ec2_connection.describe_network_acls()['NetworkAcls']
+        # EC2 api does not return the tags of the networks.... so returns only the IDs.
+        return [vpc_id['VpcId'] for vpc_id in networks]
+
+    def list_subnet(self):
+        self.logger.info("Attempting to List EC2 Subnets")
+        subnets = self.ec2_connection.describe_subnets()['Subnets']
+        subnets_names = []
+
+        # Subnets are not having mandatory tags names. They can have multiple tags, but only the tag
+        # 'Name' will be taken as the subnet name. If not tag is given, CFME displays the SubnetId
+        for subnet in subnets:
+            if 'Tags' in subnet and len(subnet['Tags']):
+                for tag in subnet['Tags']:
+                    if 'Name' in tag.values():
+                        subnets_names.append(tag['Value'])
+            else:
+                subnets_names.append(subnet['SubnetId'])
+        return subnets_names
+
+    def list_security_group(self):
+        self.logger.info("Attempting to List EC2 security groups")
+        return [sec_gp.name for sec_gp in self.api.get_all_security_groups()]
+
+    def list_router(self):
+        route_tables = self.ec2_connection.describe_route_tables()['RouteTables']
+        routers_names = []
+
+        # Routers names are tags which are not mandatory, and tag with key called Name will be
+        # used to name the router. If no tag name is provided, the routerTableId will be
+        # displayed as name in CFME.
+        for route in route_tables:
+            if len(route['Tags']):
+                for tag in route['Tags']:
+                    if 'Name' in tag.values():
+                        routers_names.append(tag['Value'])
+            else:
+                routers_names.append(route['RouteTableId'])
+
+        return routers_names
