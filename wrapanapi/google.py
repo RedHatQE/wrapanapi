@@ -42,6 +42,10 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
     Client to Google Cloud Platform API
 
     """
+    # gcloud technically does support suspend but the methods are not implemented below
+    # for now, 'can_suspend' will be false until those methods are implemented.
+    can_suspend = False
+    can_pause = False
 
     _stats_available = {
         'num_vm': lambda self: len(self.all_vms()),
