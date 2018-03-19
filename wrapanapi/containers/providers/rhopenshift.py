@@ -830,7 +830,7 @@ class Openshift(Kubernetes):
         if self.does_project_exist(name=name):
             self.o_api.delete_project(name=name)
             try:
-                wait_for(lambda: not self.does_project_exist, num_sec=wait,
+                wait_for(lambda name: not self.does_project_exist(name=name), num_sec=wait,
                          func_kwargs={'name': name})
             except TimedOutError:
                 raise TimedOutError('project {n} was not removed within {w} sec'.format(n=name,
