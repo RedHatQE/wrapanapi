@@ -239,7 +239,7 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
             bucket_name: Name of bucket
         """
         if self.bucket_exists(bucket_name):
-            self._buckets.delete("{}".format(bucket_name)).execute()
+            self._buckets.delete(bucket=bucket_name).execute()
             self.logger.info("Bucket {} was deleted".format(bucket_name))
         else:
             self.logger.info("Bucket {} was not deleted, not found".format(bucket_name))
