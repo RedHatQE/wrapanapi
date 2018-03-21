@@ -64,6 +64,7 @@ class EC2System(WrapanapiAPIBaseVM):
         'deleted': ('terminated',),
     }
 
+    # Possible stack states for reference
     stack_states = {
         'active': ('CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
                    'UPDATE_ROLLBACK_COMPLETE'),
@@ -253,12 +254,11 @@ class EC2System(WrapanapiAPIBaseVM):
     def list_stacks(self, stack_status_filter=stack_states['active']):
         """
         Returns a list of Stack objects
-        stack_status_filter:  filters stacks in certain status. check EC2System:stack_states for
-        details
+        stack_status_filter:  filters stacks in certain status. Can be a either a single valid stack
+        status code or a list of them.  Check EC2System:stack_states for details.
         """
         stack_list = [stack for stack in self.stackapi.list_stacks(stack_status_filter)]
         return stack_list
-
 
     def delete_stack(self, stack_name):
         """Deletes stack
