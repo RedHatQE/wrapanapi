@@ -102,6 +102,16 @@ class VMInstanceNotFound(Exception):
         return 'Could not find a VM/instance named %s.' % self.vm_name
 
 
+class ItemNotFound(Exception):
+    """Raised if an item is not found."""
+    def __init__(self, name, item_type):
+        self.name = name
+        self.item_type = item_type
+
+    def __str__(self):
+        return 'Could not find a {} named {}.'.format(self.item_type, self.name)
+
+
 class VMInstanceNotSuspended(Exception):
     """Raised if a VM or instance is not able to be suspended."""
     def __init__(self, vm_name):

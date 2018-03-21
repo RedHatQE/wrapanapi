@@ -6,19 +6,12 @@ Used to communicate with providers without using CFME facilities
 from __future__ import absolute_import
 import fauxfactory
 import pytz
-import socket
-try:
-    from ovirtsdk.api import API
-    from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
-    from ovirtsdk.xml import params
-except (ImportError, SyntaxError) as e:
-    import warnings
-    warnings.warn(UserWarning(str(e)))
-    API = None
+from ovirtsdk4 import Connection, Error, types
 from wait_for import wait_for, TimedOutError
 
 from .base import WrapanapiAPIBaseVM, VMInfo
-from .exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
+from .exceptions import (
+    ItemNotFound, VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP)
 
 
 class RHEVMSystem(WrapanapiAPIBaseVM):
@@ -102,8 +95,6 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
 
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
-        if API is None:
-            raise RuntimeError("RHEVMSystem is not availiable on python3")
         super(RHEVMSystem, self).__init__(kwargs)
         less_than_rhv_4 = float(kwargs['version']) < 4.0
         url_component = 'api' if less_than_rhv_4 else 'ovirt-engine/api'
@@ -120,56 +111,55 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             'username': username,
             'password': password,
             'insecure': True,
-            'filter': True if less_than_rhv_4 else False}
+        }
         self.kwargs = kwargs
 
     @property
     def api(self):
         # test() will return false if the connection timeouts, catch it and force it to re-init
         try:
-            if self._api is None or (self._api is not None and not self._api.test()):
-                self._api = API(**self._api_kwargs)
+            if self._api is None or not self._api.test():
+                self._api = Connection(**self._api_kwargs)
         # if the connection was disconnected, force it to re-init
-        except DisconnectedError:
-            self._api = API(**self._api_kwargs)
+        except Error:
+            self._api = Connection(**self._api_kwargs)
         return self._api
 
-    def _get_vm(self, vm_name=None):
-        """ Returns a vm from the RHEVM object.
+    @property
+    def _vms_service(self):
+        return self.api.system_service().vms_service()
 
+    def _get_vm_service(self, vm_name):
+        """
         Args:
             vm_name: The name of the VM.
 
-        Returns: an ovirtsdk vm object.
+        Returns: ``ovirtsdk4.services.VmService`` object.
         """
-        if vm_name is None:
+        query = 'name={}'.format(vm_name)
+        query_result = self._vms_service.list(search=query)
+        if not query_result:
             raise VMInstanceNotFound(vm_name)
         else:
-            vm = self.api.vms.get(name=vm_name)
-            if vm is None:
-                raise VMInstanceNotFound(vm_name)
-            return vm
+            vm = query_result[0]
+            return self._vms_service.vm_service(vm.id)
 
-    def current_ip_address(self, vm_name, ensure_ipv4=False):
-        info = self._get_vm(vm_name).get_guest_info()
-        if info is None:
-            return None
-        try:
-            ip = info.get_ips().get_ip()[0].get_address()
-        except (AttributeError, IndexError):
-            return None
-        if ensure_ipv4:
-            try:
-                socket.inet_aton(ip)
-                return ip
-            except:
-                return None
-        else:
-            return ip
+    def _get_vm(self, vm_name=None):
+        return self._get_vm_service(vm_name).get()
 
-    def get_ip_address(self, vm_name, timeout=600, ensure_ipv4=False):
+    def current_ip_address(self, vm_name):
+        vm_service = self._get_vm_service(vm_name)
+        rep_dev_service = vm_service.reported_devices_service()
         try:
-            return wait_for(lambda: self.current_ip_address(vm_name, ensure_ipv4=ensure_ipv4),
+            first = rep_dev_service.list()[0]
+            return first.ips[0].address
+        except IndexError:
+            return None
+
+    def get_ip_address(self, vm_name, timeout=600):
+        try:
+            return wait_for(
+                lambda: self.current_ip_address(vm_name),
                 fail_condition=None, delay=5, num_sec=timeout,
                 message="get_ip_address from rhevm")[0]
         except TimedOutError:
@@ -184,33 +174,32 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             ip: The ip address of the vm.
         Returns: The vm name for the corresponding IP."""
 
-        vms = self.api.vms.list()
-
+        vms = self._vms_service.list()
         for vm in vms:
-            if vm.get_guest_info() is None or vm.get_guest_info().get_ips() is None:
-                continue
-            else:
-                for addr in vm.get_guest_info().get_ips().get_ip():
-                    if ip in addr.get_address():
+            vm_service = self._vms_service.vm_service(vm.id)
+
+            rep_dev_service = vm_service.reported_devices_service()
+            for dev in rep_dev_service.list():
+                for listed_ip in dev.ips:
+                    if listed_ip.address == ip:
                         return vm.name
         raise VMNotFoundViaIP('The requested IP is not known as a VM')
 
     def does_vm_exist(self, name):
         try:
-            self._get_vm(name)
-            return True
+            return bool(self._get_vm_service(name))
         except VMInstanceNotFound:
             return False
 
-    def start_vm(self, vm_name=None):
+    def start_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
         self.logger.info(' Starting RHEV VM %s' % vm_name)
-        vm = self._get_vm(vm_name)
-        if vm.status.get_state() == 'up':
+        if self.is_vm_running(vm_name):
             self.logger.info(' RHEV VM %s os already running.' % vm_name)
             return True
         else:
-            vm.start()
+            vm_service = self._get_vm_service(vm_name)
+            vm_service.start()
             self.wait_vm_running(vm_name)
             return True
 
@@ -221,12 +210,12 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             self.logger.info(' RHEV VM %s os already stopped.' % vm_name)
             return True
         else:
-            vm = self._get_vm(vm_name)
-            vm.stop()
+            vm_service = self._get_vm_service(vm_name)
+            vm_service.stop()
             self.wait_vm_stopped(vm_name)
             return True
 
-    def delete_vm(self, vm_name):
+    def delete_vm(self, vm_name, **kwargs):
         self.wait_vm_steady(vm_name)
         if not self.is_vm_stopped(vm_name):
             self.stop_vm(vm_name)
@@ -237,17 +226,11 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             if not self.does_vm_exist(vm_name):
                 return False
             try:
-                vm = self._get_vm(vm_name)
-                vm.delete()
-            except RequestError as e:
+                vm_service = self._get_vm_service(vm_name)
+                vm_service.remove()
+            except Error:
                 # Handle some states that can occur and can be circumvented
-                if e.status == 409 and "Related operation" in e.detail:
-                    self.logger.info("Waiting for RHEV: {}:{} ({})".format(
-                        e.status, e.reason, e.detail))
-                    return True
-                else:
-                    raise  # Raise other so we can see them and eventually add them into handling
-                # TODO: handle 400 - but I haven't seen the error message, it was empty.
+                raise  # Raise other so we can see them and eventually add them into handling
             else:
                 return False
 
@@ -261,88 +244,44 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         )
         return True
 
-    def create_vm(self, vm_name):
+    def create_vm(self, vm_name, **kwargs):
         raise NotImplementedError('This function has not yet been implemented.')
-    # Heres the code but don't have a need and no time to test it to get it right
-    #   including for inclusion later
-    #
-    # def create_vm(self, vm_name, *args, **kwargs):
-    #     MB = 1024 * 1024
-    #     try:
-    #         self.api.vms.add(
-    #             params.VM(
-    #                 name=vm_name,
-    #                 memory=kwargs['memory_in_mb'] * MB,
-    #                 cluster=self.api.clusters.get(kwargs['cluster_name']),
-    #                 template=self.api.templates.get('Blank')))
-    #         print 'VM created'
-    #         self.api.vms.get(vm_name).nics.add(params.NIC(name='eth0',
-    #             network=params.Network(name='ovirtmgmt'), interface='virtio'))
-    #         print 'NIC added to VM'
-    #         self.api.vms.get(vm_name).disks.add(params.Disk(
-    #             storage_domains=params.StorageDomains(
-    #                 storage_domain=[self.api.storagedomains.get(kwargs['storage_domain'])],
-    #                 size=512 * MB,
-    #                 status=None,
-    #                 interface='virtio',
-    #                 format='cow',
-    #                 sparse=True,
-    #                 bootable=True)))
-    #         print 'Disk added to VM'
-    #         print 'Waiting for VM to reach Down status'
-    #         while self.api.vms.get(vm_name).status.state != 'down':
-    #             time.sleep(1)
-    #     except Exception as e:
-    #         print 'Failed to create VM with disk and NIC\n%s' % str(e)
 
     def restart_vm(self, vm_name):
         self.logger.debug(' Restarting RHEV VM %s' % vm_name)
         return self.stop_vm(vm_name) and self.start_vm(vm_name)
 
-    def list_vm(self, **kwargs):
-        # list vm based on kwargs can be buggy
-        # i.e. you can't return a list of powered on vm
-        # but you can return a vm w/ a matched name
-        vm_list = self.api.vms.list(**kwargs)
+    def list_vm(self):
+        vm_list = self._vms_service.list()
         return [vm.name for vm in vm_list]
 
     def all_vms(self):
         result = []
-        for vm in self.api.vms.list():
-            try:
-                ip = vm.get_guest_info().get_ips().get_ip()[0].get_address()
-            except (AttributeError, IndexError):
-                ip = None
-            result.append(
-                VMInfo(
-                    vm.get_id(),
-                    vm.get_name(),
-                    vm.get_status().get_state(),
-                    ip,
-                )
-            )
+        for vm in self._vms_service.list():
+            ip = self.get_ip_address(vm.name, timeout=5)
+            result.append(VMInfo(vm.id, vm.name, vm.status.value, ip))
         return result
 
     def get_vm_guid(self, vm_name):
-        return self._get_vm(vm_name).get_id()
+        return self._get_vm(vm_name).id
 
     def list_host(self, **kwargs):
-        host_list = self.api.hosts.list(**kwargs)
+        host_list = self.api.system_service().hosts_service().list(**kwargs)
         return [host.name for host in host_list]
 
     def list_datastore(self, **kwargs):
-        datastore_list = self.api.storagedomains.list(**kwargs)
-        return [ds.name for ds in datastore_list if ds.get_status() is None]
+        datastore_list = self.api.system_service().storage_domains_service().list(**kwargs)
+        return [ds.name for ds in datastore_list if ds.status is None]
 
     def list_cluster(self, **kwargs):
-        cluster_list = self.api.clusters.list(**kwargs)
+        cluster_list = self.api.system_service().clusters_service().list(**kwargs)
         return [cluster.name for cluster in cluster_list]
 
     def list_template(self, **kwargs):
         """
         Note: CFME ignores the 'Blank' template, so we do too
         """
-        template_list = self.api.templates.list(**kwargs)
+        template_list = self.api.system_service().templates_service().list(**kwargs)
         return [template.name for template in template_list if template.name != "Blank"]
 
     def list_flavor(self):
@@ -353,14 +292,13 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         pass
 
     def disconnect(self):
-        self.api.disconnect()
+        self.api.close()
 
     def vm_status(self, vm_name=None):
-        return self._get_vm(vm_name).get_status().get_state()
+        return self._get_vm(vm_name).status.value
 
     def vm_creation_time(self, vm_name):
-        vm = self._get_vm(vm_name)
-        return vm.get_creation_time().astimezone(pytz.UTC)
+        return self._get_vm(vm_name).creation_time.astimezone(pytz.UTC)
 
     def in_steady_state(self, vm_name):
         return self.vm_status(vm_name) in {"up", "down", "suspended"}
@@ -389,13 +327,13 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     def suspend_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
         self.logger.debug(' Suspending RHEV VM %s' % vm_name)
-        vm = self._get_vm(vm_name)
-        if vm.status.get_state() == 'down':
+        if self.is_vm_stopped(vm_name):
             raise VMInstanceNotSuspended(vm_name)
-        elif vm.status.get_state() == 'suspended':
+        elif self.is_vm_suspended(vm_name):
             self.logger.info(' RHEV VM %s is already suspended.' % vm_name)
             return True
         else:
+            vm = self._get_vm_service(vm_name)
             vm.suspend()
             self.wait_vm_suspended(vm_name)
             return True
@@ -403,25 +341,52 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     def clone_vm(self, source_name, vm_name):
         raise NotImplementedError('This function has not yet been implemented.')
 
+    def _get_vm_nic_service(self, vm_name, nic_name):
+        vm_service = self._get_vm_service(vm_name)
+        for nic in vm_service.nics_service().list():
+            if nic.name == nic_name:
+                return vm_service.nics_service().nic_service(nic.id)
+
+    def _get_vm_nic(self, vm_name, nic_name):
+        return self._get_vm_nic_service(vm_name, nic_name).get()
+
+    def update_vm_nic(self, vm_name, network_name, nic_name='nic1',
+                      interface=types.NicInterface.VIRTIO):
+        nic = self._get_vm_nic(vm_name, nic_name)
+        nic_service = self._get_vm_nic_service(vm_name, nic_name)
+        nic.network = types.Network(name=network_name)
+        nic.interface = interface
+        nic_service.update(nic)
+
+    def _get_cluster(self, cluster_name):
+        cluster = 'name={}'.format(cluster_name)
+        return self.api.system_service().clusters_service().list(search=cluster)[0]
+
     def deploy_template(self, template, *args, **kwargs):
         self.logger.debug(' Deploying RHEV template %s to VM %s' % (template, kwargs["vm_name"]))
         timeout = kwargs.pop('timeout', 900)
         power_on = kwargs.pop('power_on', True)
         vm_kwargs = {
             'name': kwargs['vm_name'],
-            'cluster': self.api.clusters.get(kwargs['cluster']),
-            'template': self.api.templates.get(template)
+            'cluster': self._get_cluster(kwargs['cluster']),
+            'template': self._get_template(template)
         }
         if 'placement_policy_host' in kwargs and 'placement_policy_affinity' in kwargs:
-            host = params.Host(name=kwargs['placement_policy_host'])
-            policy = params.VmPlacementPolicy(host=host,
+            host = types.Host(name=kwargs['placement_policy_host'])
+            policy = types.VmPlacementPolicy(
+                hosts=[host],
                 affinity=kwargs['placement_policy_affinity'])
             vm_kwargs['placement_policy'] = policy
         if 'cpu' in kwargs:
-            vm_kwargs['cpu'] = params.CPU(topology=params.CpuTopology(cores=int(kwargs['cpu'])))
+            vm_kwargs['cpu'] = types.Cpu(
+                topology=types.CpuTopology(
+                    cores=kwargs['cpu'],
+                    sockets=kwargs.pop('sockets')
+                )
+            )
         if 'ram' in kwargs:
             vm_kwargs['memory'] = int(kwargs['ram']) * 1024 * 1024  # MB
-        self.api.vms.add(params.VM(**vm_kwargs))
+        self._vms_service.add(types.Vm(**vm_kwargs))
         self.wait_vm_stopped(kwargs['vm_name'], num_sec=timeout)
         if power_on:
             self.start_vm(kwargs['vm_name'])
@@ -430,8 +395,8 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     def remove_host_from_cluster(self, hostname):
         raise NotImplementedError('remove_host_from_cluster not implemented')
 
-    def mark_as_template(
-            self, vm_name, delete=True, temporary_name=None, delete_on_error=True, **kwargs):
+    def mark_as_template(self, vm_name, delete=True, temporary_name=None,
+            cluster=None, delete_on_error=True):
         """Turns the VM off, creates template from it and deletes the original VM.
 
         Mimics VMware behaviour here.
@@ -440,6 +405,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             vm_name: Name of the VM to be turned to template
             delete: Whether to delete the VM (default: True)
             temporary_name: If you want, you can specific an exact temporary name for renaming.
+            delete_on_error: delete on timeout as well.
         """
         temp_template_name = temporary_name or "templatize_{}".format(
             fauxfactory.gen_alphanumeric(8))
@@ -454,24 +420,24 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
                     else:
                         create_new_template = False
                         if self.does_vm_exist(vm_name) and delete:
-                            self.delete_vm(vm_name)
+                            self.delete_vm(vm_name, )
                         if delete:  # We can only rename to the original name if we delete the vm
                             self._rename_template(temp_template_name, vm_name)
 
                 if create_new_template:
                     self.stop_vm(vm_name)
-                    vm = self._get_vm(vm_name)
-                    actual_cluster = vm.get_cluster()
-                    new_template = params.Template(
+                    vm = self._get_vm_service(vm_name)
+                    actual_cluster = self._get_cluster(cluster) if cluster else vm.get_cluster()
+                    new_template = types.Template(
                         name=temp_template_name, vm=vm, cluster=actual_cluster)
-                    self.api.templates.add(new_template)
+                    self.api.system_service().templates_service().add(new_template)
                     # First it has to appear
                     self._wait_template_exists(temp_template_name)
                     # Then the process has to finish
                     self._wait_template_ok(temp_template_name)
                     # Delete the original VM
                     if self.does_vm_exist(vm_name) and delete:
-                        self.delete_vm(vm_name)
+                        self.delete_vm(vm_name, )
                     if delete:  # We can only rename to the original name if we delete the vm
                         self._rename_template(temp_template_name, vm_name)
         except TimedOutError:
@@ -480,31 +446,36 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             raise
 
     def _rename_template(self, old_name, new_name):
-        template = self.api.templates.get(name=old_name)
-        if template is None:
-            raise VMInstanceNotFound("Template {} not found!".format(old_name))
-        template.set_name(new_name)
-        template.update()
+        template_service = self._get_template_service(old_name)
+        template_service.update(types.Template(name=new_name))
 
     def rename_vm(self, vm_name, new_vm_name):
-        vm = self._get_vm(vm_name)
+        vm_service = self._get_vm_service(vm_name)
         try:
-            vm.set_name(new_vm_name)
-            vm.update()
+            vm_service.update(types.Vm(name=new_vm_name))
         except Exception as e:
             self.logger.exception(e)
             return vm_name
         else:
             return new_vm_name
 
+    def _get_template_service(self, template_name):
+        query = 'name={}'.format(template_name or '')
+        templates_service = self.api.system_service().templates_service()
+        query_result = templates_service.list(search=query)
+        if not query_result:
+            raise ItemNotFound(template_name, 'template')
+        else:
+            template = query_result[0]
+            return templates_service.template_service(template.id)
+
+    def _get_template(self, template_name):
+        return self._get_template_service(template_name).get()
+
     def _wait_template_ok(self, template_name):
-        try:
-            wait_for(
-                lambda:
-                self.api.templates.get(name=template_name).get_status().state == "ok",
-                num_sec=30 * 60, message="template is OK", delay=45)
-        except AttributeError:  # .get() returns None when template not found
-            raise VMInstanceNotFound("Template {} not found!".format(template_name))
+        wait_for(
+            lambda: self._get_template(template_name).status == types.TemplateStatus.OK,
+            num_sec=30 * 60, message="template is OK", delay=45)
 
     def _wait_template_exists(self, template_name):
         wait_for(
@@ -512,26 +483,24 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             num_sec=30 * 60, message="template exists", delay=45)
 
     def does_template_exist(self, template_name):
-        return self.api.templates.get(name=template_name) is not None
+        try:
+            return bool(self._get_template_service(template_name))
+        except ItemNotFound:
+            return False
 
     def delete_template(self, template_name):
-        template = self.api.templates.get(name=template_name)
-        if template is None:
-            self.logger.info(
-                " Template {} is already not present on the RHEV-M provider".format(template_name))
-            return
+        template_service = self._get_template_service(template_name)
         self._wait_template_ok(template_name)
-        template.delete()
+        template_service.remove()
         wait_for(
             lambda: not self.does_template_exist(template_name),
             num_sec=15 * 60, delay=20)
 
     def vm_hardware_configuration(self, vm_name):
         vm = self._get_vm(vm_name)
-        cpu = vm.get_cpu()
         return {
-            'ram': vm.get_memory() / 1024 / 1024,
-            'cpu': cpu.topology.cores * cpu.topology.sockets,
+            'ram': vm.memory / 1024 / 1024,
+            'cpu': vm.cpu.topology.cores * vm.cpu.topology.sockets
         }
 
     def usage_and_quota(self):
@@ -539,17 +508,19 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         host_cpu = 0
         used_ram = 0
         used_cpu = 0
-        for host in self.api.hosts.list():
-            host_ram += host.get_memory() / 1024 / 1024
-            topology = host.get_cpu().get_topology()
+        for host in self.api.system_service().hosts_service().list():
+            host_ram += host.memory / 1024 / 1024
+            topology = host.cpu.topology
             host_cpu += topology.cores * topology.sockets
 
-        for vm in self.api.vms.list():
-            if vm.get_status().state != 'up':
+        for vm in self._vms_service.list():
+            assert isinstance(vm, types.Vm)
+            if vm.status != types.VmStatus.UP:
                 continue
 
-            used_ram += vm.get_memory() / 1024 / 1024
-            topology = vm.get_cpu().get_topology()
+            used_ram += vm.memory / 1024 / 1024
+            assert isinstance(vm.cpu.topology, types.CpuTopology)
+            topology = vm.cpu.topology
             used_cpu += topology.cores * topology.sockets
 
         return {
@@ -562,3 +533,208 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             'cpu_total': host_cpu,
             'cpu_limit': None,
         }
+
+    @property
+    def _glance_servers_service(self):
+        return self.api.system_service().openstack_image_providers_service()
+
+    def _get_glance_server_service(self, name):
+        for glance_server in self._glance_servers_service.list():
+            if glance_server.name == name:
+                return self._glance_servers_service.provider_service(glance_server.id)
+        raise ItemNotFound(name, 'glance server')
+
+    def _get_glance_server(self, name):
+        return self._get_glance_server_service(name).get()
+
+    def does_glance_server_exist(self, name):
+        try:
+            return bool(self._get_glance_server_service(name))
+        except ItemNotFound:
+            return False
+
+    def add_glance_server(self, authentication_url=None, certificates=None, comment=None,
+            description=None, id=None, images=None, name=None, password=None, properties=None,
+            requires_authentication=None, tenant_name=None, url=None, username=None):
+        self._glance_servers_service.add(
+            types.OpenStackImageProvider(
+                name=name,
+                description=description,
+                url=url,
+                requires_authentication=requires_authentication,
+                authentication_url=authentication_url,
+                username=username,
+                password=password,
+                tenant_name=tenant_name,
+                certificates=certificates,
+                comment=comment,
+                id=id,
+                images=images,
+                properties=properties
+            )
+        )
+        wait_for(self.does_glance_server_exist, func_args=[name], delay=5, num_sec=240)
+
+    @property
+    def _storage_domains_service(self):
+        return self.api.system_service().storage_domains_service()
+
+    def _get_storage_domain_service(self, name):
+        query = 'name={}'.format(name)
+        query_result = self._storage_domains_service.list(search=query)
+        if not query_result:
+            raise ItemNotFound(name, 'storage domain')
+        else:
+            storage_domain = query_result[0]
+            return self._storage_domains_service.storage_domain_service(storage_domain.id)
+
+    def _get_storage_domain(self, name):
+        return self._get_storage_domain_service(name).get()
+
+    def _get_images_service(self, storage_domain_name):
+        return self._get_storage_domain(storage_domain_name).images_service()
+
+    def _get_image_service(self, storage_domain_name, image_name):
+        for image in self._get_images_service(storage_domain_name).list():
+            if image.name == image_name:
+                return self._get_images_service(storage_domain_name).image_service(image.id)
+
+    def import_glance_image(self, storage_domain_name, cluster_name, temp_template_name,
+                            template_name, async=True, import_as_template=True):
+        image_service = self._get_image_service(storage_domain_name, template_name)
+        image_service.import_(
+            async=async,
+            import_as_template=import_as_template,
+            template=types.Template(name=temp_template_name),
+            cluster=types.Cluster(name=cluster_name),
+            storage_domain=types.StorageDomain(name=storage_domain_name)
+        )
+        wait_for(self.does_template_exist, func_args=[temp_template_name], delay=5, num_sec=240)
+
+    def _get_disk_attachments_service(self, vm_name):
+        vm_id = self.get_vm_guid(vm_name)
+        return self._vms_service.vm_service(vm_id).disk_attachments_service()
+
+    def _get_disk_attachment_service(self, vm_name, disk_name):
+        disk_attachments_service = self._get_disk_attachments_service(vm_name)
+        for disk_attachment_service in disk_attachments_service.list():
+            disk = self.api.follow_link(disk_attachment_service.disk)
+            if disk.name == disk_name:
+                return disk_attachments_service.service(disk.id)
+        raise ItemNotFound(disk_name, 'disk')
+
+    def is_disk_attached_to_vm(self, vm_name, disk_name):
+        try:
+            return bool(self._get_disk_attachment_service(vm_name, disk_name))
+        except ItemNotFound:
+            return False
+
+    def get_vm_disks_count(self, vm_name):
+        return len(self._get_disk_attachments_service(vm_name).list())
+
+    def _get_disk_service(self, disk_name):
+        disks_service = self.api.system_service().disks_service()
+        query_result = disks_service.list(search="name={}".format(disk_name))
+        if not query_result:
+            raise ItemNotFound(disk_name, 'disk')
+        else:
+            disk = query_result[0]
+            return disks_service.service(disk.id)
+
+    def does_disk_exist(self, disk_name):
+        try:
+            return bool(self._get_disk_service(disk_name))
+        except ItemNotFound:
+            return False
+
+    def _check_disk(self, disk_id):
+        disks_service = self.api.system_service().disks_service()
+        disk_service = disks_service.disk_service(disk_id)
+        disk = disk_service.get()
+        return disk.status == types.DiskStatus.OK
+
+    def add_disk_to_vm(self, vm_name, storage_domain=None, size=None, interface=None, format=None,
+            active=True):
+        """
+
+        Args:
+            vm_name: string name
+            storage_domain: string name of the storage domain (datastore)
+            size: integer size of disk in bytes, ex 8GB: 8*1024*1024
+            interface: string disk interface type
+            format: string disk format type
+            active: boolean whether the disk is active
+
+        Returns: None
+
+        Notes:
+            Disk format and interface type definitions, and their valid values,
+            can be found in ovirtsdk documentation:
+            http://ovirt.github.io/ovirt-engine-sdk/4.1/types.m.html#ovirtsdk4.types.DiskInterface
+            http://ovirt.github.io/ovirt-engine-sdk/4.1/types.m.html#ovirtsdk4.types.DiskFormat
+        """
+        disk_attachments_service = self._get_disk_attachments_service(vm_name)
+        disk_attachment = disk_attachments_service.add(
+            types.DiskAttachment(
+                disk=types.Disk(
+                    format=types.DiskFormat(format),
+                    provisioned_size=size,
+                    storage_domains=[
+                        types.StorageDomain(
+                            name=storage_domain,
+                        )
+                    ]
+                ),
+                interface=types.DiskInterface(interface),
+                active=active
+            )
+        )
+        wait_for(self._check_disk, func_args=[disk_attachment.disk.id], delay=5, num_sec=900,
+                 message="check if disk is attached")
+
+    def connect_direct_lun_to_appliance(self, vm_name, disconnect, lun_name=None, lun_ip_addr=None,
+                                        lun_port=None, lun_iscsi_target=None):
+        """Connects or disconnects the direct lun disk to an appliance.
+
+        Args:
+            vm_name: Name of the VM with the appliance.
+            disconnect: If False, it will connect, otherwise it will disconnect
+            lun_name: name of LUN
+            lun_ip_addr: LUN ip address
+            lun_port: LUN port
+            lun_iscsi_target: iscsi target
+        """
+        if not disconnect:
+            disk_attachments_service = self._get_vm_service(vm_name).disk_attachments_service()
+            if not self.does_disk_exist(lun_name):
+                disk_attachment = types.DiskAttachment(
+                    disk=types.Disk(
+                        name=lun_name,
+                        shareable=True,
+                        format='raw',
+                        lun_storage=types.HostStorage(
+                            type=types.StorageType.ISCSI,
+                            logical_units=[
+                                types.LogicalUnit(
+                                    address=lun_ip_addr,
+                                    port=lun_port,
+                                    target=lun_iscsi_target
+                                )
+                            ]
+                        )
+                    ),
+                    interface=types.DiskInterface.VIRTIO,
+                    active=True
+                )
+            else:
+                disk_attachment = self._get_disk_attachment_service(vm_name, lun_name).get()
+            disk_attachments_service.add(disk_attachment)
+            wait_for(self._check_disk, func_args=[disk_attachment.disk.id], delay=5, num_sec=900,
+                     message="check if disk is attached")
+        # remove it
+        else:
+            if not self.is_disk_attached_to_vm(vm_name, lun_name):
+                return
+            else:
+                disk_attachment_service = self._get_disk_attachment_service(vm_name, lun_name)
+                disk_attachment_service.remove(detach_only=True)
