@@ -251,7 +251,7 @@ class EC2System(WrapanapiAPIBaseVM):
         else:
             return bool(stacks)
 
-    def list_stacks(self, stack_status_filter=stack_states['active']):
+    def list_stack(self, stack_status_filter=stack_states['active']):
         """
         Returns a list of Stack objects
         stack_status_filter:  filters stacks in certain status. Can be a either a single valid stack
