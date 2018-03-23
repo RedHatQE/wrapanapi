@@ -15,7 +15,7 @@ def make_rhevm(variables):
 
 
 @pytest.fixture(name="first_vm_name")
-def fetch_first_first_vm_name(rhevm):
+def fetch_first_vm_name(rhevm):
     return rhevm.list_vm()[0]
 
 
@@ -179,7 +179,6 @@ def test__clone_vm(rhevm, vm):
 
 @pytest.mark.skip
 def test__deploy_template(rhevm, small_template_name):
-
     pass  # for now ignored
 
 
@@ -229,4 +228,4 @@ def test__vm_hardware_configuration():
 
 
 def test__usage_and_quota(rhevm):
-    print(rhevm.usage_and_quota())
+    print(rhevm.usage_and_quota)
