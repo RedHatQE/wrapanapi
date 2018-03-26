@@ -4,7 +4,7 @@ Provides method/class definitions for handling any named entity on a provider
 """
 from abc import ABCMeta, abstractmethod, abstractproperty
 
-class BaseEntity(LogMixin):
+class BaseEntity(object):
     """Represents any named object on a provider system.
 
     Provides properties/methods that should be applicable
