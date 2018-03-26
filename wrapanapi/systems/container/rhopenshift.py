@@ -1,22 +1,21 @@
 from __future__ import absolute_import
 
 import copy
-import inflection
 import json
-import six
 import string
-
+from collections import Iterable
 from functools import partial, wraps
 from random import choice
 
-from collections import Iterable
+import inflection
+import six
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
-from openshift import client as ociclient
-from wait_for import wait_for, TimedOutError
-
 from miq_version import TemplateName, Version
-from wrapanapi.base import WrapanapiAPIBase
+from openshift import client as ociclient
+from wait_for import TimedOutError, wait_for
+
+from wrapanapi.systems.base import System
 
 
 # this service allows to access db outside of openshift
@@ -73,7 +72,7 @@ def unauthenticated_error_handler(method):
 
 
 @reconnect(unauthenticated_error_handler)
-class Openshift(WrapanapiAPIBase):
+class Openshift(System):
 
     _stats_available = {
         'num_container': lambda self: len(self.list_container()),
@@ -126,6 +125,13 @@ class Openshift(WrapanapiAPIBase):
 
         self._connect()
 
+    def _identifying_attrs(self):
+        """
+        Return a dict with key, value pairs for each kwarg that is used to
+        uniquely identify this system.
+        """
+        return {'hostname': self.hostname, 'port': self.port}
+
     def _connect(self):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
                                                port=self.port)
@@ -143,6 +149,11 @@ class Openshift(WrapanapiAPIBase):
         self.kapi_client = kubeclient.ApiClient(config=config)
         self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
         self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
+
+    def info(self):
+        url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
+                                               port=self.port)
+        return "rhopenshift {}".format(url)
 
     def list_route(self, namespace=None):
         """Returns list of routes"""

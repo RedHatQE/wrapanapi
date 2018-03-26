@@ -1,18 +1,20 @@
 from __future__ import absolute_import
-from .base import WrapanapiAPIBaseVM
-from collections import namedtuple
-from .rest_client import ContainerClient
 
-from six.moves.urllib.parse import quote as urlquote, unquote as urlunquote
-from packaging import version
-from enum import Enum
-from .websocket_client import HawkularWebsocketClient
-
+import base64
+import gzip
+import json
 import re
 import sys
-import json
-import gzip
-import base64
+from collections import namedtuple
+from enum import Enum
+
+from packaging import version
+
+from six.moves.urllib.parse import quote as urlquote
+from six.moves.urllib.parse import unquote as urlunquote
+
+from wrapanapi.clients import ContainerClient, HawkularWebsocketClient
+from wrapanapi.systems.base import System
 
 """
 Related yaml structures:
@@ -96,7 +98,7 @@ class CanonicalPath(object):
     """
 
     def __init__(self, path):
-        if path is None or len(path) == 0:
+        if not path:
             raise KeyError("CanonicalPath should not be None or empty!")
         self._path_ids = []
         r_paths = re.split(r'(/\w+;)', path)
@@ -158,7 +160,7 @@ class CanonicalPath(object):
         return c_path
 
 
-class Hawkular(WrapanapiAPIBaseVM):
+class HawkularSystem(System):
     """Hawkular management system
 
     Hawkular REST API method calls.
@@ -176,7 +178,7 @@ class Hawkular(WrapanapiAPIBaseVM):
 
     def __init__(self,
                  hostname, protocol="http", port=8080, **kwargs):
-        super(Hawkular, self).__init__(kwargs)
+        super(HawkularSystem, self).__init__(**kwargs)
         self.hostname = hostname
         self.port = port
         self.username = kwargs.get('username', 'jdoe')
@@ -203,6 +205,10 @@ class Hawkular(WrapanapiAPIBaseVM):
         'num_datasource': lambda self: len(self.inventory.list_server_datasource()),
         'num_messaging': lambda self: len(self.inventory.list_messaging()),
     }
+
+    @property
+    def _identifying_attrs(self):
+        return {'hostname': self.hostname, 'tenant_id': self.tenant_id}
 
     @property
     def alert(self):
@@ -237,74 +243,8 @@ class Hawkular(WrapanapiAPIBaseVM):
     def info(self):
         raise NotImplementedError('info not implemented.')
 
-    def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('clone_vm not implemented.')
-
-    def create_vm(self, vm_name):
-        raise NotImplementedError('create_vm not implemented.')
-
-    def current_ip_address(self, vm_name):
-        raise NotImplementedError('current_ip_address not implemented.')
-
-    def delete_vm(self, vm_name):
-        raise NotImplementedError('delete_vm not implemented.')
-
-    def deploy_template(self, template, *args, **kwargs):
-        raise NotImplementedError('deploy_template not implemented.')
-
     def disconnect(self):
         pass
-
-    def does_vm_exist(self, name):
-        raise NotImplementedError('does_vm_exist not implemented.')
-
-    def get_ip_address(self, vm_name):
-        raise NotImplementedError('get_ip_address not implemented.')
-
-    def is_vm_running(self, vm_name):
-        raise NotImplementedError('is_vm_running not implemented.')
-
-    def is_vm_stopped(self, vm_name):
-        raise NotImplementedError('is_vm_stopped not implemented.')
-
-    def is_vm_suspended(self, vm_name):
-        raise NotImplementedError('is_vm_suspended not implemented.')
-
-    def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
-
-    def list_template(self):
-        raise NotImplementedError('list_template not implemented.')
-
-    def list_vm(self, **kwargs):
-        raise NotImplementedError('list_vm not implemented.')
-
-    def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented.')
-
-    def restart_vm(self, vm_name):
-        raise NotImplementedError('restart_vm not implemented.')
-
-    def start_vm(self, vm_name):
-        raise NotImplementedError('start_vm not implemented.')
-
-    def stop_vm(self, vm_name):
-        raise NotImplementedError('stop_vm not implemented.')
-
-    def suspend_vm(self, vm_name):
-        raise NotImplementedError('restart_vm not implemented.')
-
-    def vm_status(self, vm_name):
-        raise NotImplementedError('vm_status not implemented.')
-
-    def wait_vm_running(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_running not implemented.')
-
-    def wait_vm_stopped(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_stopped not implemented.')
-
-    def wait_vm_suspended(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_suspended not implemented.')
 
     def status(self):
         """Returns status of hawkular services"""
@@ -360,8 +300,10 @@ class HawkularService(object):
 
     def _post_raw(self, path, data):
         """runs POST request and returns result as JSON"""
-        return self._api.raw_post(path, data,
-            headers={"Hawkular-Tenant": self.tenant_id, "Content-Type": "application/json"})
+        return self._api.raw_post(
+            path, data,
+            headers={"Hawkular-Tenant": self.tenant_id, "Content-Type": "application/json"}
+        )
 
 
 class HawkularAlert(HawkularService):
@@ -440,13 +382,17 @@ class HawkularAlert(HawkularService):
             return entities
         return []
 
-    def list_trigger(self, ids=[], tags=[]):
+    def list_trigger(self, ids=None, tags=None):
         """Lists defined triggers in the system
         Args:
             ids: List of trigger ids. If provided, limits to the given triggers
             tags: List of tags. If provided, limits to the given tags. Individual
                     tags are of the format # key|value
         """
+        if not ids:
+            ids = []
+        if not tags:
+            tags = []
         params = {'triggerIds': ids, 'tags': tags}
         entities = self._get(path='triggers', params=params)
         triggers = []
@@ -480,8 +426,12 @@ class HawkularAlert(HawkularService):
                 trigger.dampenings.append(self._convert_dampening(d_entity))
         return trigger
 
-    def create_trigger(self, trigger, conditions=[], dampenings=[]):
+    def create_trigger(self, trigger, conditions=None, dampenings=None):
         """Creates the trigger definition."""
+        if not conditions:
+            conditions = []
+        if not dampenings:
+            dampenings = []
         full_trigger = {'trigger': trigger, 'conditions': conditions, 'dampenings': dampenings}
         self._post(path='triggers/trigger', data=full_trigger)
 
@@ -763,14 +713,19 @@ class HawkularInventory(HawkularService):
             raise KeyError('Variable "feed_id" id mandatory field!')
 
         resource_id = urlquote(resource.id, safe='')
-        r = self._post('entity/f;{}/resource'.format(kwargs['feed_id']),
-                       data={"name": resource.name, "id": resource.id,
-                             "resourceTypePath": "rt;{}"
-                       .format(resource_type.path.resource_type_id)})
+        r = self._post(
+            'entity/f;{}/resource'.format(kwargs['feed_id']),
+            data={
+                "name": resource.name,
+                "id": resource.id,
+                "resourceTypePath": "rt;{}".format(resource_type.path.resource_type_id)
+            }
+        )
         if r:
-            r = self._post('entity/f;{}/r;{}/data'
-                           .format(kwargs['feed_id'], resource_id),
-                           data={'role': 'configuration', "value": resource_data.value})
+            r = self._post(
+                'entity/f;{}/r;{}/data'.format(kwargs['feed_id'], resource_id),
+                data={'role': 'configuration', "value": resource_data.value}
+            )
         else:
             # if resource or it's data was not created correctly, delete resource
             self._delete('entity/f;{}/r;{}'.format(kwargs['feed_id'], resource_id))
@@ -817,16 +772,16 @@ class HawkularInventoryInMetrics(HawkularService):
           Args:
             feed_id: Feed id of the resource (optional)
         """
-        servers = self.list_resource(feed_id=feed_id,
-                                    resource_type_id='WildFly Server',
-                                    cls=Server,
-                                    include_data=True)
-        servers.extend(self.list_resource(
-            feed_id=feed_id,
-            resource_type_id='Domain WildFly Server',
-            cls=Server,
-            list_children=True,
-            include_data=True))
+        servers = self.list_resource(
+            feed_id=feed_id, resource_type_id='WildFly Server',
+            cls=Server, include_data=True
+        )
+        servers.extend(
+            self.list_resource(
+                feed_id=feed_id, resource_type_id='Domain WildFly Server',
+                cls=Server, list_children=True, include_data=True
+            )
+        )
         return servers
 
     def list_domain(self, feed_id=None):
@@ -835,11 +790,10 @@ class HawkularInventoryInMetrics(HawkularService):
           Args:
             feed_id: Feed id of the resource (optional)
         """
-        domains = self.list_resource(feed_id=feed_id,
-                                    resource_type_id='Domain Host',
-                                    cls=Domain,
-                                    list_children=True,
-                                    include_data=True)
+        domains = self.list_resource(
+            feed_id=feed_id, resource_type_id='Domain Host',
+            cls=Domain, list_children=True, include_data=True
+        )
         return domains
 
     def list_server_group(self, feed_id):
@@ -848,11 +802,10 @@ class HawkularInventoryInMetrics(HawkularService):
           Args:
             feed_id: Feed id of the resource (optional)
         """
-        server_groups = self.list_resource(feed_id=feed_id,
-                                       resource_type_id='Domain Server Group',
-                                       cls=ServerGroup,
-                                       list_children=True,
-                                       include_data=True)
+        server_groups = self.list_resource(
+            feed_id=feed_id, resource_type_id='Domain Server Group',
+            cls=ServerGroup, list_children=True, include_data=True
+        )
         return server_groups
 
     def list_server_deployment(self, feed_id=None):
@@ -861,15 +814,16 @@ class HawkularInventoryInMetrics(HawkularService):
         Args:
             feed_id: Feed id of the resource (optional)
         """
-        deployments = self.list_resource(feed_id=feed_id,
-                                       resource_type_id='Deployment',
-                                       cls=Deployment,
-                                       list_children=True)
-        deployments.extend(self.list_resource(
-            feed_id=feed_id,
-            resource_type_id='SubDeployment',
-            cls=Deployment,
-            list_children=True))
+        deployments = self.list_resource(
+            feed_id=feed_id, resource_type_id='Deployment',
+            cls=Deployment, list_children=True
+        )
+        deployments.extend(
+            self.list_resource(
+                feed_id=feed_id, resource_type_id='SubDeployment',
+                cls=Deployment, list_children=True
+            )
+        )
         return deployments
 
     def list_messaging(self, feed_id=None):
@@ -878,15 +832,16 @@ class HawkularInventoryInMetrics(HawkularService):
           Args:
             feed_id: Feed id of the resource (optional)
         """
-        messagings = self.list_resource(feed_id=feed_id,
-                                       resource_type_id='JMS Queue',
-                                       cls=Messaging,
-                                       list_children=True)
-        messagings.extend(self.list_resource(
-            feed_id=feed_id,
-            resource_type_id='JMS Topic',
-            cls=Messaging,
-            list_children=True))
+        messagings = self.list_resource(
+            feed_id=feed_id, resource_type_id='JMS Queue',
+            cls=Messaging, list_children=True
+        )
+        messagings.extend(
+            self.list_resource(
+                feed_id=feed_id, resource_type_id='JMS Topic',
+                cls=Messaging, list_children=True
+            )
+        )
         return messagings
 
     def list_server_datasource(self, feed_id=None):
@@ -895,15 +850,16 @@ class HawkularInventoryInMetrics(HawkularService):
          Args:
              feed_id: Feed id of the datasource (optional)
         """
-        datasources = self.list_resource(feed_id=feed_id,
-                                       resource_type_id='Datasource',
-                                       cls=Datasource,
-                                       list_children=True)
-        datasources.extend(self.list_resource(
-            feed_id=feed_id,
-            resource_type_id='XA Datasource',
-            cls=Datasource,
-            list_children=True))
+        datasources = self.list_resource(
+            feed_id=feed_id, resource_type_id='Datasource',
+            cls=Datasource, list_children=True
+        )
+        datasources.extend(
+            self.list_resource(
+                feed_id=feed_id, resource_type_id='XA Datasource',
+                cls=Datasource, list_children=True
+            )
+        )
         return datasources
 
     def list_resource(self, resource_type_id, cls, feed_id=None,
@@ -921,14 +877,17 @@ class HawkularInventoryInMetrics(HawkularService):
         resources = []
         if not feed_id:
             for feed in self.list_feed():
-                resources.extend(self._list_resource(feed_id=feed.path.feed_id,
-                                                     resource_type_id=resource_type_id,
-                                                     list_children=list_children,
-                                                     include_data=include_data))
+                resources.extend(
+                    self._list_resource(
+                        feed_id=feed.path.feed_id, resource_type_id=resource_type_id,
+                        list_children=list_children, include_data=include_data
+                    )
+                )
         else:
-            resources = self._list_resource(feed_id=feed_id, resource_type_id=resource_type_id,
-                                       list_children=list_children,
-                                       include_data=include_data)
+            resources = self._list_resource(
+                feed_id=feed_id, resource_type_id=resource_type_id,
+                list_children=list_children, include_data=include_data
+            )
         for resource in resources:
             kwargs = dict(
                 id=resource.id, name=resource.name, path=resource.path
@@ -972,22 +931,28 @@ class HawkularInventoryInMetrics(HawkularService):
                 parent_resource_id = entity_data['id']
                 if not list_children:
                     # return only parent resource
-                    entities.append(ResourceWithData(entity_data['id'], entity_data['name'],
-                                                     self._get_canonical_path(
-                                                         types_index, entity_data['id'],
-                                                         entity_data['resourceTypePath'],
-                                                         parent_resource_id),
-                                                     self._get_child_data_value(
-                                                         include_data,
-                                                         entity_value['inventoryStructure'])))
+                    entities.append(
+                        ResourceWithData(
+                            entity_data['id'],
+                            entity_data['name'],
+                            self._get_canonical_path(
+                                types_index, entity_data['id'],
+                                entity_data['resourceTypePath'],
+                                parent_resource_id),
+                            self._get_child_data_value(
+                                include_data,
+                                entity_value['inventoryStructure'])
+                        )
+                    )
                 else:
                     # recursivelly search in child resources
-                    entities.extend(self._list_child_resource(
-                        entity_value['inventoryStructure']['children']['resource'],
-                        include_data,
-                        resource_type_id,
-                        types_index,
-                        parent_resource_id))
+                    entities.extend(
+                        self._list_child_resource(
+                            entity_value['inventoryStructure']['children']['resource'],
+                            include_data, resource_type_id, types_index,
+                            parent_resource_id
+                        )
+                    )
         return entities
 
     def _list_child_resource(self, children_j, include_data,
@@ -1008,21 +973,26 @@ class HawkularInventoryInMetrics(HawkularService):
             child_data = child_j['data']
             if child_data['name'].startswith('{} ['.format(resource_type_id)):
                 # chose those children which name starts with provided resource type id
-                entities.append(ResourceWithData(child_data['id'], child_data['name'],
-                                                 self._get_canonical_path(
-                                                     types_index,
-                                                     child_data['id'],
-                                                     child_data['resourceTypePath'],
-                                                     parent_resource_id),
-                                                 self._get_child_data_value(include_data, child_j)))
+                entities.append(
+                    ResourceWithData(
+                        child_data['id'],
+                        child_data['name'],
+                        self._get_canonical_path(
+                            types_index,
+                            child_data['id'],
+                            child_data['resourceTypePath'],
+                            parent_resource_id),
+                        self._get_child_data_value(include_data, child_j)
+                    )
+                )
             elif 'resource' in child_j['children']:
                 # otherwise recursively search in children resources
-                entities.extend(self._list_child_resource(
-                    child_j['children']['resource'],
-                    include_data,
-                    resource_type_id,
-                    types_index,
-                    parent_resource_id))
+                entities.extend(
+                    self._list_child_resource(
+                        child_j['children']['resource'], include_data,
+                        resource_type_id, types_index, parent_resource_id
+                    )
+                )
         return entities
 
     def get_config_data(self, feed_id, resource_id):
@@ -1034,10 +1004,15 @@ class HawkularInventoryInMetrics(HawkularService):
          """
         if not feed_id or not resource_id:
             raise KeyError("'feed_id' and 'resource_id' are mandatory field!")
-        result = self._post_raw('strings/raw/query',
-            data={"fromEarliest": "true", "order": "DESC",
+        result = self._post_raw(
+            'strings/raw/query',
+            data={
+                "fromEarliest": "true",
+                "order": "DESC",
                 "tags": "feed:{},type:r,id:{}".format(
-                    feed_id, self._get_parent_resource_id(resource_id))})
+                    feed_id, self._get_parent_resource_id(resource_id))
+            }
+        )
         if result.status_code == 200:
             entity_j = json.loads(result.content)
             if entity_j:
@@ -1060,8 +1035,10 @@ class HawkularInventoryInMetrics(HawkularService):
                                                     resource_j['data']['resourceTypePath']),
                                                 data_value)
                 except Exception:
-                    raise KeyError('Resource data not found for resource {} in feed '.format(
-                        resource_id, feed_id))
+                    raise KeyError(
+                        'Resource data not found for resource {} in feed {}'
+                        .format(resource_id, feed_id)
+                    )
         return None
 
     def _filter_types_index(self, types_index, resource_type_id):
@@ -1179,7 +1156,10 @@ class HawkularInventoryInMetrics(HawkularService):
         return base64.b64decode(raw)
 
     def _decompress(self, raw):
-        return json.loads(gzip.decompress(raw))
+        try:
+            return json.loads(gzip.decompress(raw))
+        except AttributeError:
+            raise Exception("gzip.decompress only available in python3")
 
 
 class HawkularMetric(HawkularService):

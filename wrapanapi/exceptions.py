@@ -7,22 +7,50 @@ class ActionTimedOutError(Exception):
     pass
 
 
-class ForwardingRuleNotFound(Exception):
+class NotFoundError(Exception):
+    """
+    General exception when raised when something is not found
+    """
+    pass
+
+
+class VMInstanceNotFound(NotFoundError):
+    """Raised if a VM or instance is not found."""
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+
+    def __str__(self):
+        return 'Could not find a VM/instance named %s.' % self.vm_name
+
+
+class ItemNotFound(NotFoundError):
+    """Raised if an item is not found."""
+    def __init__(self, name, item_type):
+        self.name = name
+        self.item_type = item_type
+
+    def __str__(self):
+        return 'Could not find a {} named {}.'.format(self.item_type, self.name)
+
+
+class VMNotFoundViaIP(NotFoundError):
+    """
+    Raised if a specific VM cannot be found.
+    """
+    pass
+
+
+class ForwardingRuleNotFound(NotFoundError):
     """Raised if a Forwarding Rule for loadbalancers not found."""
     def __init__(self, forwarding_rule_name):
         self.vm_name = forwarding_rule_name
 
 
-class ImageNotFoundError(Exception):
+class ImageNotFoundError(NotFoundError):
     pass
 
 
-class InvalidValueException(Exception):
-    """Raises when invalid value provided. E.g. invalid OpenShift project name"""
-    pass
-
-
-class LabelNotFoundException(Exception):
+class LabelNotFoundException(NotFoundError):
     """Raised when trying to delete a label which doesn't exist"""
     def __init__(self, label_key):
         self._label_key = label_key
@@ -30,6 +58,15 @@ class LabelNotFoundException(Exception):
     def __str__(self):
         return 'Could not delete label "{}" (label does not exist).'.format(
             self._label_key)
+
+
+class NetworkNameNotFound(NotFoundError):
+    pass
+
+
+class InvalidValueException(ValueError):
+    """Raises when invalid value provided. E.g. invalid OpenShift project name"""
+    pass
 
 
 class KeystoneVersionNotSupported(Exception):
@@ -41,20 +78,24 @@ class KeystoneVersionNotSupported(Exception):
         return "Provided version of Keystone is not supported: {}".format(self.version)
 
 
-class MultipleImagesError(Exception):
-    pass
-
-
 class NoMoreFloatingIPs(Exception):
     """Raised when provider runs out of FIPs."""
 
 
-class MultipleInstancesError(Exception):
+class MultipleItemsError(Exception):
+    pass
+
+
+class MultipleInstancesError(MultipleItemsError):
     def __init__(self, value):
         self.value = value
 
     def __str__(self):
         return repr(self.value)
+
+
+class MultipleImagesError(MultipleItemsError):
+    pass
 
 
 class RestClientException(Exception):
@@ -71,10 +112,6 @@ class ResourceAlreadyExistsException(Exception):
     pass
 
 
-class NetworkNameNotFound(Exception):
-    pass
-
-
 class UncreatableResourceException(Exception):
     """Raised when trying to create uncreatable resource"""
     def __init__(self, resource):
@@ -85,31 +122,12 @@ class UncreatableResourceException(Exception):
 
 
 class VMInstanceNotCloned(Exception):
-    """Raised if a VM or instance is not found."""
+    """Raised if a VM or instance is not cloned."""
     def __init__(self, template):
         self.template = template
 
     def __str__(self):
         return 'Could not clone %s' % self.template
-
-
-class VMInstanceNotFound(Exception):
-    """Raised if a VM or instance is not found."""
-    def __init__(self, vm_name):
-        self.vm_name = vm_name
-
-    def __str__(self):
-        return 'Could not find a VM/instance named %s.' % self.vm_name
-
-
-class ItemNotFound(Exception):
-    """Raised if an item is not found."""
-    def __init__(self, name, item_type):
-        self.name = name
-        self.item_type = item_type
-
-    def __str__(self):
-        return 'Could not find a {} named {}.'.format(self.item_type, self.name)
 
 
 class VMInstanceNotSuspended(Exception):
@@ -119,13 +137,6 @@ class VMInstanceNotSuspended(Exception):
 
     def __str__(self):
         return 'Could not suspend %s because it\'s not running.' % self.vm_name
-
-
-class VMNotFoundViaIP(Exception):
-    """
-    Raised if a specific VM cannot be found.
-    """
-    pass
 
 
 class HostNotRemoved(Exception):

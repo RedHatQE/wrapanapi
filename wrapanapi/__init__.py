@@ -1,16 +1,25 @@
-# Imports for backward compatility and convenience
-# NOQA all the things because
+# Imports for convenience
 from __future__ import absolute_import
-from .base import *  # NOQA
-from .exceptions import *  # NOQA
-from .ec2 import EC2System  # NOQA
-from .openstack import OpenstackSystem  # NOQA
-from .rhevm import RHEVMSystem  # NOQA
-from .scvmm import SCVMMSystem  # NOQA
-from .msazure import AzureSystem  # NOQA
-from .virtualcenter import VMWareSystem  # NOQA
-from .google import GoogleCloudSystem  # NOQA
-from wrapanapi.containers.providers.rhopenshift import Openshift  # NOQA
-from .hawkular import Hawkular  # NOQA
-from .lenovo import LenovoSystem  # NOQA
-from .nuage import NuageSystem # NOQA
+
+from .systems.ec2 import EC2System
+from .systems.google import GoogleCloudSystem
+from .systems.hawkular import HawkularSystem
+from .systems.lenovo import LenovoSystem
+from .systems.msazure import AzureSystem
+from .systems.nuage import NuageSystem
+from .systems.openstack import OpenstackSystem
+from .systems.openstack_infra import OpenstackInfraSystem
+from .systems.rhevm import RHEVMSystem
+from .systems.scvmm import SCVMMSystem
+from .systems.vcloud import VmwareCloudSystem
+from .systems.virtualcenter import VMWareSystem
+from .systems.container.rhopenshift import Openshift
+
+from .entities.vm import VmState
+
+__all__ = [
+    'EC2System', 'GoogleCloudSystem', 'HawkularSystem',
+    'LenovoSystem', 'AzureSystem', 'NuageSystem', 'OpenstackSystem',
+    'OpenstackInfraSystem', 'RHEVMSystem', 'SCVMMSystem', 'VmwareCloudSystem',
+    'VMWareSystem', 'Openshift', 'VmState'
+]

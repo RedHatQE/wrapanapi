@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Hawkular client."""
 from __future__ import absolute_import
-import json
-from six.moves.urllib.parse import urlparse
 
+import json
 import os
-import pytest
-from wrapanapi import hawkular
-from mock import patch
 from random import sample
-from wrapanapi.hawkular import CanonicalPath
+
+import pytest
+from mock import patch
+
+from six.moves.urllib.parse import urlparse
+from wrapanapi.systems import HawkularSystem
+from wrapanapi.systems.hawkular import (CanonicalPath, Resource, ResourceData,
+                                        ResourceType)
 
 
 def fake_urlopen(c_client, url, headers, params):
@@ -67,16 +70,17 @@ def provider():
     the filesystem.
     """
     if not os.getenv('HAWKULAR_HOSTNAME'):
-        patcher = patch('wrapanapi.rest_client.ContainerClient.get_json', fake_urlopen)
+        patcher = patch('wrapanapi.clients.rest_client.ContainerClient.get_json', fake_urlopen)
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.delete_status', fake_urldelete)
+        patcher = patch('wrapanapi.clients.rest_client.ContainerClient.delete_status',
+                        fake_urldelete)
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.post_status', fake_urlpost)
+        patcher = patch('wrapanapi.clients.rest_client.ContainerClient.post_status', fake_urlpost)
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.put_status', fake_urlput)
+        patcher = patch('wrapanapi.clients.rest_client.ContainerClient.put_status', fake_urlput)
         patcher.start()
 
-    hwk = hawkular.Hawkular(
+    hwk = HawkularSystem(
         hostname=os.getenv('HAWKULAR_HOSTNAME', 'localhost'),
         protocol=os.getenv('HAWKULAR_PROTOCOL', 'http'),
         port=os.getenv('HAWKULAR_PORT', 8080),
@@ -104,15 +108,15 @@ def datasource(provider):
         assert r_data
 
         name_ext = "MWTest"
-        new_datasource = hawkular.Resource(name="{}{}".format(datasource.name, name_ext),
-                                id="{}{}".format(datasource.id, name_ext),
-                                path=hawkular.CanonicalPath(
-                                    "{}{}".format(datasource.path.to_string, name_ext)))
+        new_datasource = Resource(name="{}{}".format(datasource.name, name_ext),
+                                  id="{}{}".format(datasource.id, name_ext),
+                                  path=CanonicalPath(
+                                      "{}{}".format(datasource.path.to_string, name_ext)))
         new_datasource.path.resource_id = new_datasource.path.resource_id[1]
-        resource_type = hawkular.ResourceType(id=None, name=None,
-                                              path=CanonicalPath("/rt;Datasource"))
+        resource_type = ResourceType(id=None, name=None,
+                                     path=CanonicalPath("/rt;Datasource"))
 
-        new_datasource_data = hawkular.ResourceData(name=None, path=None, value=r_data.value)
+        new_datasource_data = ResourceData(name=None, path=None, value=r_data.value)
         new_datasource_data.value.update(
             {"JNDI Name": "{}{}".format(r_data.value["JNDI Name"], name_ext),
              "Enabled": "true"
