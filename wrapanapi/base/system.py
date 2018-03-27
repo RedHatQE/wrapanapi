@@ -58,7 +58,7 @@ class BaseSystem(LoggerMixin):
         subclass.list_all_on_system(system=self)
 
     @abstractmethod
-    def get_entity(self, entity_type, *args, **kwargs):
+    def get_entity(self, entity_cls, *args, **kwargs):
         """
         Return an entity instance of type 'entity_type' which exists on system.
 
@@ -66,7 +66,7 @@ class BaseSystem(LoggerMixin):
 
         args and kwargs are passed along to the entity's __init__ method
         """
-        subclass = self._get_subclass_for_type(entity_type)
+        subclass = self._get_subclass_for_type(entity_cls)
         return subclass.get(system=self, *args, **kwargs)
 
     def stats(self, *requested_stats):
