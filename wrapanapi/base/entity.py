@@ -26,7 +26,7 @@ class Entity(LoggerMixin):
 
     @classmethod
     @abstractproperty
-    def system_type(cls):
+    def system_cls(cls):
         """
         Returns the class of the system this Entity is associated with
 
