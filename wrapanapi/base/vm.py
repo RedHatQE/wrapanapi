@@ -6,7 +6,7 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 
 from wait_for import wait_for, TimedOutError
 
-from .entity import BaseEntity
+from .entity import Entity
 
 
 class VMState(object):
@@ -20,13 +20,17 @@ class VMState(object):
     DELETED = 'deleted'
 
 
-class BaseVM(BaseEntity):
+class VM(Entity):
     """
     Represents a single VM/instance on a management system.
 
     Must be implemented by each system type
     """
     __metaclass__ = ABCMeta
+
+    def __init__(self, system, name, *args, **kwargs):
+        super(VM, self).__init__(system)
+        self.name = name
 
     @property
     def exists(self):
@@ -35,12 +39,13 @@ class BaseVM(BaseEntity):
         Returns:
             True if it exists
             False if not
-            False if system's list_templates() method is not implemented.
+        Raises:
+            NotImplementedError if system's list_vms() method undefined.
         """
-        try:
-            return (self.name in v.name for v in self.system.list_vms())
-        except NotImplementedError:
-            return False
+        for vm in self.system.list_vms():
+            if self.name == vm.name:
+                return True
+        return False
 
     @abstractproperty
     def state_map(self):
@@ -58,12 +63,10 @@ class BaseVM(BaseEntity):
     @abstractproperty
     def state(self):
         """Returns VMState object representing the VM's current state"""
-        raise NotImplementedError
 
     @abstractproperty
     def ip(self):
         """Returns IP address of the VM/instance"""
-        raise NotImplementedError
 
     @abstractmethod
     def wait_for_state(self, state, num_sec):
@@ -73,7 +76,6 @@ class BaseVM(BaseEntity):
             state: desired VMState
             num_sec: number of seconds before timeout
         """
-        raise NotImplementedError('wait_for_state not implemented.')
 
     @abstractmethod
     def ensure_state(self, state, num_sec):
@@ -83,7 +85,6 @@ class BaseVM(BaseEntity):
             state: desired VMState
             num_sec: number of seconds before timeout
         """
-        raise NotImplementedError('ensure_state not implemented.')
 
     def in_steady_state(self):
         """Return whether the virtual machine is in a steady state
@@ -92,20 +93,23 @@ class BaseVM(BaseEntity):
         """
         return self.state in [VMState.RUNNING, VMState.STOPPED, VMState.SUSPENDED]
 
-    def wait_for_steady_state(self):
+    def wait_for_steady_state(self, num_sec=None):
         """
         Waits for the system's steady_wait_time for VM to reach a steady state
+
+        Args:
+            num_sec: Time to wait to override default steady_wait_time
         """
         try:
             return wait_for(
-                lambda: self.in_steady_state(),
-                num_sec=self.system.steady_wait_time,
+                self.in_steady_state(),
+                num_sec=num_sec if num_sec else self.system.steady_wait_time,
                 delay=2,
                 message="VM/Instance %s in steady state" % self.name
             )
         except TimedOutError:
             self.logger.exception(
-                "VM {} got stuck in {} state when waiting for steady state.".format(
+                "VM '{}' stuck in '{}' while waiting for steady state.".format(
                     self.name, self.state))
             raise
 
@@ -115,7 +119,6 @@ class BaseVM(BaseEntity):
 
         Returns: True if vm action has been initiated properly
         """
-        raise NotImplementedError('start not implemented.')
 
     @abstractmethod
     def stop(self):
@@ -123,7 +126,6 @@ class BaseVM(BaseEntity):
 
         Returns: True if vm action has been initiated properly
         """
-        raise NotImplementedError('stop_vm not implemented.')
 
     @abstractmethod
     def restart(self):
@@ -131,7 +133,6 @@ class BaseVM(BaseEntity):
 
         Returns: True if vm action has been initiated properly
         """
-        raise NotImplementedError('restart_vm not implemented.')
 
     def suspend(self):
         """Suspend the VM/instance.  Blocks until task completes.
@@ -139,7 +140,6 @@ class BaseVM(BaseEntity):
         Returns: True if vm action has been initiated properly
         """
         raise NotImplementedError('suspend not implemented.')
-
 
     def pause(self, vm_name):
         """Pauses the VM/instance.  Blocks until task completes.
@@ -158,7 +158,27 @@ class BaseVM(BaseEntity):
         raise NotImplementedError('clone not implemented.')
 
     def get_hardware_configuration(self):
+        """Return hardware configuration of the VM."""
         raise NotImplementedError(
             'Provider {} does not implement get_hardware_configuration'
             .format(type(self.system).__name__)
         )
+
+    def set_meta_value(self, key, value):
+        """
+        Set meta value for VM/instance.
+        
+        Args:
+            key: key
+            value: value
+        """
+        raise NotImplementedError('set_meta_value not implemented')
+
+    def get_meta_value(self, key):
+        """
+        Get meta value for VM/instance.
+
+        Args:
+            key: key
+        """
+        raise NotImplementedError('get_meta_value not implemented')

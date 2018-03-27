@@ -5,14 +5,69 @@ Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
 from abc import ABCMeta, abstractmethod, abstractproperty
-from contextlib import contextmanager
+
+from .util import LoggerMixin
+from .entity import Entity
 
 
-class BaseSystem(object):
+class BaseSystem(LoggerMixin):
     """Represents any system that wrapanapi interacts with."""
-    @property
-    def logger(self):
-        return logging.getLogger(self.__class__.__module__ + "." + self.__class__.__name__)
+    @classmethod
+    def supported_entities(cls):
+        """
+        Return all entity types implemented for this system.
+        """
+        supported_entities = []
+        for subclass in Entity.get_all_subclasses():
+            if subclass.system_cls == cls:
+                supported_entities.append(subclass)
+
+    @classmethod
+    def _get_subclass_for_type(cls, entity_cls):
+        if not isinstance(entity_cls, Entity):
+            raise ValueError("entity_cls must be derived from wrapanapi.base.entity.Entity")
+
+        for subclass in entity_cls.get_all_subclasses():
+            if subclass.system_type == cls:
+                return subclass
+        raise ValueError(
+            "Unable to find any {} defined for system {}".format(entity_cls, cls)
+        )
+
+    def entity(self, entity_cls, *args, **kwargs):
+        """
+        Return a new entity instance of class 'entity_cls' for this system.
+
+        Does not check to see if entity exists on the provider. Simply builds
+        an instance of the class. You must use 'entity.exists' property to verify
+        it exists on the provider backend.
+
+        args and kwargs are passed along to the entity's factory() method
+        """
+        subclass = self._get_subclass_for_type(entity_cls)
+        return subclass.factory(system=self, *args, **kwargs)
+
+    @abstractmethod
+    def list_entities(self, entity_cls):
+        """
+        Return a list of instances of type 'entity_cls' for this system.
+
+        args and kwargs are passed along to the entity's __init__ method
+        """
+        subclass = self._get_subclass_for_type(entity_cls)
+        subclass.list_all_on_system(system=self)
+
+    @abstractmethod
+    def get_entity(self, entity_type, *args, **kwargs):
+        """
+        Return an entity instance of type 'entity_type' which exists on system.
+
+        Verifies the entity exists on the system before returning.
+
+        args and kwargs are passed along to the entity's __init__ method
+        """
+        subclass = self._get_subclass_for_type(entity_type)
+        return subclass.get(system=self, *args, **kwargs)
 
     def stats(self, *requested_stats):
         """Returns all available stats, if none are explicitly requested
@@ -30,6 +85,7 @@ class BaseSystem(object):
         return {stat: self._stats_available[stat](self) for stat in requested_stats}
 
     def disconnect(self):
+        """Disconnects the API from mgmt system"""
         pass
 
 
@@ -44,7 +100,6 @@ class BaseVMSystem(BaseSystem):
 
     """
     __metaclass__ = ABCMeta
-    STEADY_WAIT_MINS = 3
 
     @classmethod
     @abstractproperty
@@ -64,50 +119,23 @@ class BaseVMSystem(BaseSystem):
         """Returns default secs to wait for VM to move into a steady state."""
         return 120
 
-    @abstractmethod
-    def list_vms(self, **kwargs):
-        """Returns a list of VM objects
-
-        Returns: list of BaseVM
-        """
-        raise NotImplementedError('list_vm not implemented.')
-
-    @abstractmethod
-    def create_vm(self, vm_name, *args, **kwargs):
-        """Creates a vm.
-
-        Args:
-            vm_name: name of the vm to be created
-        Returns: BaseVM if creation successful
-        """
-        raise NotImplementedError('create_vm not implemented.')
-
-    @abstractmethod
-    def list_templates(self):
-        """Returns a list of templates/images.
-
-        Returns: list of template/image names
-        """
-        raise NotImplementedError('list_template not implemented.')
-
-    @abstractmethod
     def list_flavors(self):
         """Returns a list of flavors.
 
-        Only valid for OpenStack and Amazon
+        Only valid for some systems.
 
         Returns: list of flavor names
         """
-        raise NotImplementedError('list_flavor not implemented.')
+        raise NotImplementedError('list_flavors not implemented.')
 
     def list_networks(self):
         """Returns a list of networks.
 
-        Only valid for OpenStack
+        Only valid for some systems.
 
         Returns: list of network names
         """
-        raise NotImplementedError('list_network not implemented.')
+        raise NotImplementedError('list_networks not implemented.')
 
     @abstractmethod
     def info(self):
@@ -118,48 +146,15 @@ class BaseVMSystem(BaseSystem):
         raise NotImplementedError('info not implemented.')
 
     @abstractmethod
-    def disconnect(self):
-        """Disconnects the API from mgmt system"""
-        raise NotImplementedError('disconnect not implemented.')
-
-    @abstractmethod
     def remove_host_from_cluster(self, hostname):
-        """remove a host from it's cluster
-
-        :param hostname: The hostname of the system
-        :type  hostname: str
-        :return: True if successful, False if failed
-        :rtype: boolean
-
-        """
-        raise NotImplementedError('remove_host_from_cluster not implemented.')
-
-    @contextmanager
-    def steady_wait(self, minutes):
-        """Overrides original STEADY_WAIT_MINS variable in the object.
-
-        This is useful eg. when creating templates in RHEV as it has long Image Locked period
+        """Remove a host from it's cluster
 
         Args:
-            minutes: How many minutes to wait
+            hostname (str): The hostname of the system
+        Returns:
+            True if successful, False if failed
         """
-        original = None
-        if "STEADY_WAIT_MINS" in self.__dict__:
-            original = self.__dict__["STEADY_WAIT_MINS"]
-        self.__dict__["STEADY_WAIT_MINS"] = minutes
-        yield
-        if original is None:
-            del self.__dict__["STEADY_WAIT_MINS"]
-        else:
-            self.__dict__["STEADY_WAIT_MINS"] = original
-
-    def set_meta_value(self, instance, key, value):
-        raise NotImplementedError(
-            'Provider {} does not implement set_meta_value'.format(type(self).__name__))
-
-    def get_meta_value(self, instance, key):
-        raise NotImplementedError(
-            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+        raise NotImplementedError('remove_host_from_cluster not implemented.')
 
     def usage_and_quota(self):
         raise NotImplementedError(

@@ -4,11 +4,15 @@ Methods/classes pertaining to performing actions on a template
 """
 from abc import ABCMeta, abstractmethod, abstractproperty
 
-from .entity import BaseEntity
+from .entity import Entity
 
 
-class BaseTemplate(BaseEntity):
+class Template(Entity):
     __metaclass__ = ABCMeta
+
+    def __init__(self, system, name, *args, **kwargs):
+        super(Template, self).__init__(system)
+        self.name = name
 
     @property
     def exists(self):
@@ -17,12 +21,13 @@ class BaseTemplate(BaseEntity):
         Returns:
             True if it exists
             False if not
-            False if system's list_templates() method is not implemented.
+        Raises:
+            NotImplementedError if system's list_templates() method undefined.
         """
-        try:
-            return (self.name in t.name for t in self.system.list_templates())
-        except NotImplementedError:
-            return False
+        for template in self.system.list_templates():
+            if self.name == template.name:
+                return True
+        return False
 
     @abstractmethod
     def deploy(self, *args, **kwargs):
