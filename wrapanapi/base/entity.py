@@ -35,7 +35,7 @@ class Entity(LoggerMixin):
 
     @classmethod
     @abstractmethod
-    def list_all(cls, system):
+    def list_all_on_system(cls, system):
         """
         Returns list of all entities of this type on 'system'
 
@@ -63,11 +63,9 @@ class Entity(LoggerMixin):
 
     @classmethod
     @abstractmethod
-    def get(cls, system, *args, **kwargs):
+    def find_on_system(cls, system, *args, **kwargs):
         """
-        Return entity of this type on 'system' if it exists.
-
-        Verifies the entity exists on the provider system.
+        Find and return entity of this type on 'system' if it exists.
 
         Args:
             system -- implementation of BaseSystem

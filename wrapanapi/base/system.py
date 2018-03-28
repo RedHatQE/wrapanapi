@@ -58,7 +58,7 @@ class BaseSystem(LoggerMixin):
         subclass.list_all_on_system(system=self)
 
     @abstractmethod
-    def get_entity(self, entity_cls, *args, **kwargs):
+    def find_entity(self, entity_cls, *args, **kwargs):
         """
         Return an entity instance of type 'entity_type' which exists on system.
 
@@ -67,7 +67,7 @@ class BaseSystem(LoggerMixin):
         args and kwargs are passed along to the entity's __init__ method
         """
         subclass = self._get_subclass_for_type(entity_cls)
-        return subclass.get(system=self, *args, **kwargs)
+        return subclass.find_on_system(system=self, *args, **kwargs)
 
     def stats(self, *requested_stats):
         """Returns all available stats, if none are explicitly requested
@@ -105,13 +105,13 @@ class BaseVMSystem(BaseSystem):
     @abstractproperty
     def can_suspend(cls):
         """Indicates whether this system can suspend VM's/instances."""
-        raise NotImplementedError
+        return False
 
     @classmethod
     @abstractproperty
     def can_pause(cls):
         """Indicates whether this system can pause VM's/instances."""
-        raise NotImplementedError
+        return False
 
     @classmethod
     @abstractproperty
@@ -145,7 +145,6 @@ class BaseVMSystem(BaseSystem):
         """
         raise NotImplementedError('info not implemented.')
 
-    @abstractmethod
     def remove_host_from_cluster(self, hostname):
         """Remove a host from it's cluster
 
