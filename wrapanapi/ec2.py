@@ -398,6 +398,10 @@ class EC2System(WrapanapiAPIBaseVM):
         # Make sure we only provision one VM
         kwargs.update({'min_count': 1, 'max_count': 1})
 
+        if vm_name and self.does_vm_exist(vm_name):
+            self.logger.warn("Instance '{}' already exists".format(vm_name))
+            raise MultipleInstancesError("Instance '{}' already exists".format(vm_name))
+
         # sanity-check inputs
         if 'instance_type' not in kwargs:
             kwargs['instance_type'] = 'm1.small'
@@ -412,11 +416,6 @@ class EC2System(WrapanapiAPIBaseVM):
         self.wait_vm_running(instances[0].id, num_sec=timeout)
 
         if vm_name:
-            if self.does_vm_exist(vm_name):
-                self.logger.warn("Instance '{}' already exists. Aborting instance "
-                                 "creation".format(vm_name))
-                self.api.terminate_instances(instances[0].id)
-                raise MultipleInstancesError("Instance '{}' already exists".format(vm_name))
             self.set_name(instances[0].id, vm_name)
         if power_on:
             self.start_vm(instances[0].id)
