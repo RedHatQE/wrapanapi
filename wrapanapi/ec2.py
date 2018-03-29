@@ -427,6 +427,10 @@ class EC2System(WrapanapiAPIBaseVM):
         # Make sure we only provision one VM
         kwargs.update({'min_count': 1, 'max_count': 1})
 
+        if vm_name and self.does_vm_exist(vm_name):
+            self.logger.warn("Instance '{}' already exists".format(vm_name))
+            raise MultipleInstancesError("Instance '{}' already exists".format(vm_name))
+
         # sanity-check inputs
         if 'instance_type' not in kwargs:
             kwargs['instance_type'] = 'm1.small'
@@ -460,7 +464,7 @@ class EC2System(WrapanapiAPIBaseVM):
         reservations = self.api.get_all_instances([instance_id])
         instances = self._get_instances_from_reservations(reservations)
         if len(instances) > 1:
-            raise MultipleInstancesError
+            raise MultipleInstancesError("Instance '{}' is not unique".format(instance_id))
 
         try:
             return instances[0]
@@ -490,7 +494,7 @@ class EC2System(WrapanapiAPIBaseVM):
         if not instances:
             raise VMInstanceNotFound(instance_name)
         elif len(instances) > 1:
-            raise MultipleInstancesError('Instance name "%s" is not unique' % instance_name)
+            raise MultipleInstancesError("Instance name '{}' is not unique".format(instance_name))
 
         # We have an instance! return its ID
         return instances[0].id
@@ -510,6 +514,7 @@ class EC2System(WrapanapiAPIBaseVM):
             self._get_instance_id_by_name(name)
             return True
         except MultipleInstancesError:
+            self.logger.warn("Multiple VMs with the same name found")
             return True
         except VMInstanceNotFound:
             return False
