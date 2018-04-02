@@ -290,7 +290,7 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
                                                       object=file_name).execute()
                 return data
             except errors.HttpError as error:
-                if "Not Found" in error.content:
+                if "No such object" in error.content:
                     self.logger.info(
                         "File {} was not found in bucket {}".format(file_name, bucket_name))
                 else:
