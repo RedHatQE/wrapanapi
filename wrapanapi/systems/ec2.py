@@ -457,7 +457,11 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             self.logger.exception("Unable to parse all InstanceId's from response json")
             raise
 
-        return [EC2Instance(system=self, id=id) for id in instance_ids]
+        instances = [EC2Instance(system=self, id=id) for id in instance_ids]
+        if len(instances) == 1:
+            return instances[0]
+        else:
+            return instances
 
     def list_stacks(self, stack_status_filter=stack_states['active']):
         """
@@ -481,7 +485,11 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         Returns:
             List of CloudFormationStack objects
         """
-        return self.stackapi.describe_stacks(name)
+        stack_list = [
+            CloudFormationStack(system=self, name=stack['StackName'], id=stack['StackId'])
+            for stack in self.stackapi.describe_stacks(name)
+        ]
+        return stack_list
 
     def get_stack(self, name):
         """
@@ -498,8 +506,6 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         if len(stacks) == 0:
             raise NotFoundError("Stack with name {} not found".format(name))
         return stacks[0]
-
-
 
 ####
 # EVERYTHING BELOW THIS LINE IS TODO
