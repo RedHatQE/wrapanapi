@@ -45,7 +45,7 @@ class EC2Instance(CloudInstance):
         VmState.STOPPED: 'stopped',
         VmState.PAUSED: None,
         VmState.SUSPENDED: None,
-        VmState.DELETED: 'terminated',,
+        VmState.DELETED: 'terminated',
     }
 
     def __init__(self, system, id, raw=None):
