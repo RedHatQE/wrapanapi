@@ -10,34 +10,14 @@ from .entity import Entity, EntityMixin
 class Template(Entity):
     __metaclass__ = ABCMeta
 
-    def __init__(self, system, name, *args, **kwargs):
-        super(Template, self).__init__(system)
-        self.name = name
-
-    @property
-    def exists(self):
-        """Checks if a template of this name exists
-
-        Returns:
-            True if it exists
-            False if not
-        Raises:
-            NotImplementedError if system's list_templates() method undefined.
-        """
-        for template in self.system.list_templates():
-            if self.name == template.name:
-                return True
-        return False
-
     @abstractmethod
     def deploy(self, *args, **kwargs):
         """Deploy a VM/instance from a template
 
         Args:
             template: The name of the template to deploy
-        Returns: a BaseVM object
+        Returns: an implementation of a BaseVM object
         """
-        raise NotImplementedError('deploy not implemented.')
 
 
 class TemplateMixin(EntityMixin):
@@ -65,7 +45,7 @@ class TemplateMixin(EntityMixin):
         """
 
     @abstractmethod
-    def list_template(self, *args, **kwargs):
+    def list_templates(self, *args, **kwargs):
         """
         List templates on system
 
@@ -74,7 +54,7 @@ class TemplateMixin(EntityMixin):
         """
 
     @abstractmethod
-    def find_template(self, *args, **kwargs):
+    def find_templates(self, *args, **kwargs):
         """
         Find a template on system based on args/kwargs
 

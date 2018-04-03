@@ -4,15 +4,16 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
+
+import json
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
 
-import json
-import time
 import pytz
-from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
+from cinderclient.v2 import client as cinderclient
 from heatclient import client as heat_client
 from keystoneauth1.identity import Password
 from keystoneauth1.session import Session
@@ -25,12 +26,11 @@ from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
 from wait_for import wait_for
 
-from .base import VMSystem, VMInfo
-from .exceptions import (
-    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
-    ActionTimedOutError, VMError, KeystoneVersionNotSupported
-)
-
+from wrapanapi.exceptions import (ActionTimedOutError,
+                                  KeystoneVersionNotSupported,
+                                  NetworkNameNotFound, NoMoreFloatingIPs,
+                                  VMError, VMInstanceNotFound, VMNotFoundViaIP)
+from wrapanapi.systems import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
 # greatly simplified if openstack made it easier to specify a custom
@@ -55,7 +55,7 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackSystem(VMSystem):
+class OpenstackSystem(System):
     """Openstack management system
 
     Uses novaclient.

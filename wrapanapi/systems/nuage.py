@@ -3,14 +3,16 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
+
 import json
 
 import requests
 from requests.auth import HTTPBasicAuth
-from .base import WrapanapiAPIBase
+
+from wrapanapi.systems import System
 
 
-class NuageSystem(WrapanapiAPIBase):
+class NuageSystem(System):
     """Client to Nuage API
     Args:
         hostname: The hostname of the system.

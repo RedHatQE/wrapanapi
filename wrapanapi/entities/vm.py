@@ -240,20 +240,6 @@ class Vm(Entity):
         raise NotImplementedError('get_meta_value not implemented')
 
 
-class CloudInstance(Vm):
-    """
-    Adds a few additional properties/methods pertaining to VMs hosted
-    on a cloud platform.
-    """
-    @abstractproperty
-    def type(self):
-        """
-        Return type or flavor of the VM
-
-        E.g. 'm1.micro' in ec2
-        """
-
-
 class VmMixin(EntityMixin):
     """
     Defines methods or properties a wrapanapi.systems.System that manages Vm's should have

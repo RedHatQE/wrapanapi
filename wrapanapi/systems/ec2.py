@@ -1,33 +1,28 @@
 # coding: utf-8
 from __future__ import absolute_import
+
+import os
+import re
 from datetime import datetime
 
 import boto
-from boto.ec2 import EC2Connection, get_region
-from boto.cloudformation import CloudFormationConnection
-from boto.sqs import connection
-from boto import sqs
-from boto.ec2 import elb
-from boto import cloudformation
-from boto.ec2.elb import ELBConnection
 import boto3
-from botocore.client import Config
 import pytz
-import re
+from boto import cloudformation, sqs
+from boto.cloudformation import CloudFormationConnection
+from boto.ec2 import EC2Connection, elb, get_region
+from boto.ec2.elb import ELBConnection
+from boto.sqs import connection
+from botocore.client import Config
 from wait_for import wait_for
-import os
 
-from wrapanapi.entities import (
-    CloudInstance, VmMixin, VmState,
-    Stack, StackMixin,
-    TemplateMixin
-)
+from wrapanapi.entities import (Instance, Stack, StackMixin, Template,
+                                TemplateMixin, VmMixin, VmState)
+from wrapanapi.exceptions import (ActionNotSupported, ActionTimedOutError,
+                                  ImageNotFoundError, MultipleImagesError,
+                                  MultipleInstancesError, MultipleItemsError,
+                                  NotFoundError, VMInstanceNotFound)
 from wrapanapi.systems import System
-from wrapanapi.exceptions import (
-    ActionTimedOutError, ActionNotSupported,
-    MultipleInstancesError, VMInstanceNotFound,
-    MultipleImagesError, ImageNotFoundError
-)
 
 
 def _regions(regionmodule, regionname):
@@ -37,16 +32,18 @@ def _regions(regionmodule, regionname):
     return None
 
 
-class EC2Instance(CloudInstance):
+class EC2Instance(Instance):
     @staticmethod
     @property
     def state_map():
-        VmState.RUNNING: 'running',
-        VmState.STOPPED: 'stopped',
-        VmState.PAUSED: None,
-        VmState.SUSPENDED: None,
-        VmState.DELETED: 'terminated',
-    }
+        return {
+            'pending': None,
+            'stopping': None,
+            'shutting-down': None,
+            'running': VmState.RUNNING,
+            'stopped': VmState.STOPPED,
+            'terminated': VmState.DELETED
+        }
 
     def __init__(self, system, id, raw=None):
         """
@@ -54,11 +51,11 @@ class EC2Instance(CloudInstance):
 
         Args:
             system: an EC2System object
-            instance: the boto.ec2.instance.Instance object if already obtained, or None
+            raw: the boto.ec2.instance.Instance object if already obtained, or None
         """
         super(EC2Instance, self).__init__(system)
-        self._raw = instance
-        self.id = raw.id
+        self.id = id
+        self._raw = raw
 
     @property
     def raw(self):
@@ -187,9 +184,23 @@ class EC2Instance(CloudInstance):
         return stopped and started
 
 
+class StackStates(object):
+    ACTIVE = ('CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
+              'UPDATE_ROLLBACK_COMPLETE'),
+    COMPLETE = ('CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'),
+    FAILED = ('ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
+              'UPDATE_ROLLBACK_FAILED'),
+    DELETED = ('DELETE_COMPLETE',),
+    IN_PROGRESS = ('CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
+                   'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
+                   'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
+                   'REVIEW_IN_PROGRESS')
+
+
 class CloudFormationStack(Stack):
-    def __init__(self, system, name):
-        super(CloudFormationStack, self).__init__(system, name, id)
+    def __init__(self, system, name, id):
+        super(CloudFormationStack, self).__init__(system, name)
+        self.id = id
 
     @property
     def exists(self):
@@ -215,7 +226,7 @@ class CloudFormationStack(Stack):
         Re-pull the data for this stack
         """
         details = self.get_details()
-        self.name = details['StackName']
+        self.name = details.stack_name
 
     def delete(self):
         """
@@ -227,7 +238,7 @@ class CloudFormationStack(Stack):
         """
         self.logger.info("terminating EC2 stack {}, id: {}" .format(self.name, self.id))
         try:
-            self.stackapi.delete_stack(self.id)
+            self.system.stackapi.delete_stack(self.id)
             return True
         except ActionTimedOutError:
             return False
@@ -237,6 +248,65 @@ class CloudFormationStack(Stack):
         Removes the stack on the provider and any of its associated resources
         """
         return self.delete()
+
+
+class EC2Image(Template):
+    def __init__(self, system, id, raw=None):
+        """
+        Constructor for an EC2Image tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the boto.ec2.image.Image object if already obtained, or None
+        """
+        super(EC2Image, self).__init__(system)
+        self.id = id
+        self._raw = raw
+
+    @property
+    def raw(self):
+        """
+        Returns raw boto.ec2.image.Image object associated with this instance
+        """
+        if not self._raw:
+            self._raw = self.system.get_template(id=self.id)
+        return self._raw
+
+    @property
+    def name(self):
+        return self.raw.tags.get('Name', self.raw.id)
+
+    def refresh(self):
+        self.raw.update(validate=True)
+
+    @property
+    def exists(self):
+        try:
+            self.refresh()
+            return True
+        except ValueError:
+            return False
+
+    def delete(self):
+        """
+        Deregister the EC2 image
+        """
+        return self.raw.deregister()
+
+    def cleanup(self):
+        """
+        Deregister the EC2 image and delete the snapshot
+        """
+        return self.raw.deregister(delete_snapshot=True)
+
+    def deploy(self, *args, **kwargs):
+        """
+        Deploy ec2 instance(s) using this template
+
+        Args/kwargs are passed to EC2System.create_vm(), the image_id arg
+        will be this image's ID
+        """
+        return self.system.create_vm(image_id=self.id, *args, **kwargs)
 
 
 class EC2System(System, VmMixin, TemplateMixin, StackMixin):
@@ -259,24 +329,13 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        'num_vm': lambda self: len(self.list_vms()),
+        'num_template': lambda self: len(self.list_templates()),
     }
 
 
     # Possible stack states for reference
-    stack_states = {
-        'active': ('CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
-                   'UPDATE_ROLLBACK_COMPLETE'),
-        'complete': ('CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'),
-        'failed': ('ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
-                   'UPDATE_ROLLBACK_FAILED'),
-        'deleted': ('DELETE_COMPLETE',),
-        'in_progress': ('CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
-                        'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
-                        'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
-                        'REVIEW_IN_PROGRESS')
-    }
+
 
     can_suspend = False
 
@@ -314,7 +373,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         """Returns the current versions of boto and the EC2 API being used"""
         return '%s %s' % (boto.UserAgent, self.api.APIVersion)
 
-    def _get_instances(**kwargs):
+    def _get_instances(self, **kwargs):
         """
         Gets instance reservations and parses instance objects
         """
@@ -380,10 +439,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             VMInstanceNotFound if no instance exists with this name/id
             MultipleInstancesError if name is not unique
         """
-        instances = self.find_vm(name=name)
+        instances = self.find_vms(name=name)
         if not instances:
             raise VMInstanceNotFound(name)
-        elif len(instances) > 1:e
+        elif len(instances) > 1:
             raise MultipleInstancesError('Instance name "%s" is not unique' % name)
         return instances[0]
 
@@ -463,15 +522,14 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         else:
             return instances
 
-    def list_stacks(self, stack_status_filter=stack_states['active']):
+    def list_stacks(self, stack_status_filter=StackStates.ACTIVE):
         """
         Returns a list of Stack objects
 
-        stack_status_filter:  filters stacks in certain status. Can be a either a single valid stack
-        status code or a list of them.  Check EC2System:stack_states for details.
+        stack_status_filter:  filters stacks in certain status. Check StackStates for details.
         """
         stack_list = [
-            CloudFormationStack(system=self, name=stack['StackName'], id=stack['StackId'])
+            CloudFormationStack(system=self, name=stack.stack_name, id=stack.stack_id)
             for stack in self.stackapi.list_stacks(stack_status_filter)
         ]
         return stack_list
@@ -486,7 +544,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             List of CloudFormationStack objects
         """
         stack_list = [
-            CloudFormationStack(system=self, name=stack['StackName'], id=stack['StackId'])
+            CloudFormationStack(system=self, name=stack.stack_name, id=stack.stack_id)
             for stack in self.stackapi.describe_stacks(name)
         ]
         return stack_list
@@ -507,77 +565,66 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             raise NotFoundError("Stack with name {} not found".format(name))
         return stacks[0]
 
-####
-# EVERYTHING BELOW THIS LINE IS TODO
-####
-    def list_template(self):
+    def list_templates(self):
         private_images = self.api.get_all_images(owners=['self'],
                                                  filters={'image-type': 'machine'})
         shared_images = self.api.get_all_images(executable_by=['self'],
                                                 filters={'image-type': 'machine'})
         combined_images = list(set(private_images) | set(shared_images))
-        # Try to pull the image name (might not exist), falling back on ID (must exist)
-        return map(lambda i: i.name or i.id, combined_images)
+        return [EC2Image(system=self, id=image.id, raw=image) for image in combined_images]
 
+    def find_templates(self, name=None, id=None, filters=None):
+        """
+        Find image on ec2 system
 
-    def deploy_template(self, template, *args, **kwargs):
-        """Instantiate the requested template image (ami id)
-
-        Accepts args/kwargs from boto's
-        :py:meth:`run_instances<boto:boto.ec2.connection.EC2Connection.run_instances>` method
-
-        Most important args are listed below.
+        Supported queries include searching by name, id, or passing
+        in a specific filters dict to the system API. You can only
+        select one of these methods.
 
         Args:
-            template: Template name (AMI ID) to instantiate
-            vm_name: Name of the instance (Name tag to set)
-            instance_type: Type (flavor) of the instance
+            name (str): name of image
+            id (str): id of image
+            filters (dict): filters to pass along to system.api.get_all_images()
 
-        Returns: Instance ID of the created instance
+        Returns:
+            List of EC2Image objects that match
+        """ 
+        # Validate args
+        filled_args = (arg for arg in (name, id, filters) if arg)
+        if len(filled_args) > 1 or len(filled_args) == 0:
+            raise ValueError(
+                "You must select one of these search methods: name, id, or filters")
 
-        Note: min_count and max_count args will be forced to '1'; if you're trying to do
-              anything fancier than that, you might be in the wrong place
+        if id:
+            kwargs = {'image_ids': [id]}
+        elif filters:
+            kwargs = {'filters': filters}
+        elif name:
+            # Quick validation that the image name isn't actually an ID
+            if name.startswith('ami-'):
+                # Switch to using the id search method
+                kwargs = {'image_ids': [name]}
+            else:
+                kwargs = {'filters': {'Name': name}}
 
-        """
-        # Enforce create_vm only creating one VM
-        self.logger.info(" Deploying EC2 template %s" % template)
+        images = self.api.get_all_images(**kwargs)
 
-        # strip out kwargs that ec2 doesn't understand
-        timeout = kwargs.pop('timeout', 900)
-        vm_name = kwargs.pop('vm_name', None)
-        power_on = kwargs.pop('power_on', True)
+        return [EC2Image(system=self, id=image.id, raw=image) for image in images]
 
-        # Make sure we only provision one VM
-        kwargs.update({'min_count': 1, 'max_count': 1})
+    def get_template(self, name_or_id):
+        matches = self.find_templates(name=name_or_id)
+        if len(matches) == 0:
+            raise ImageNotFoundError('Unable to find image {}'.format(name_or_id))
+        if len(matches) > 1:
+            raise MultipleImagesError(
+                'Image name {} returned more than one image '
+                'Use the ami-ID or remove duplicates from EC2'.format(name_or_id))
+        return matches[0]
 
-        # sanity-check inputs
-        if 'instance_type' not in kwargs:
-            kwargs['instance_type'] = 'm1.small'
-        if not template.startswith('ami'):
-            # assume this is a lookup by name, get the ami id
-            template = self._get_ami_id_by_name(template)
+    def create_template(self, *args, **kwargs):
+        raise NotImplementedError
 
-        # clone!
-        reservation = self.api.run_instances(template, *args, **kwargs)
-        instances = self._get_instances_from_reservations([reservation])
-        # Should have only made one VM; return its ID for use in other methods
-        self.wait_vm_running(instances[0].id, num_sec=timeout)
-
-        if vm_name:
-            self.set_name(instances[0].id, vm_name)
-        if power_on:
-            self.start_vm(instances[0].id)
-        return instances[0].id
-
-    def _get_ami_id_by_name(self, image_name):
-        matches = self.api.get_all_images(filters={'name': image_name})
-        if not matches:
-            raise ImageNotFoundError(image_name)
-        elif len(matches) > 1:
-            raise MultipleImagesError('Template name %s returned more than one image_name. '
-                'Use the ami-ID or remove duplicates from EC2' % image_name)
-
-        return matches[0].id
+    # TODO: Move everything below here into the entity/class-based structure
 
     def create_s3_bucket(self, bucket_name):
         self.logger.info("Creating bucket: {}".format(bucket_name))
@@ -716,6 +763,18 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             self.logger.exception("Import of {} image failed.".format(s3key))
             return False
 
+    def copy_image(self, source_region, source_image, image_id):
+        self.logger.info(" Copying image %s from region %s to region %s with image id %s",
+            source_image, source_region, self.kwargs.get('region'), image_id)
+        try:
+            copy_image = self.ec2_connection.copy_image(
+                SourceRegion=source_region, SourceImageId=source_image, Name=image_id)
+            return copy_image.image_id
+
+        except Exception:
+            self.logger.exception("Copy of {} image failed.".format(source_image))
+            return False
+
     def get_import_image_task(self, task_id):
         result = self.ec2_connection.describe_import_image_tasks(ImportTaskIds=[task_id])
         result_task = result.get("ImportImageTasks")
@@ -727,31 +786,6 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         if result_status == 'completed':
             return result.get("ImageId")
         else:
-            return False
-
-    def copy_image(self, source_region, source_image, image_id):
-        self.logger.info(" Copying image %s from region %s to region %s with image id %s",
-            source_image, source_region, self.kwargs.get('region'), image_id)
-        try:
-            self.ec2_connection.copy_image(SourceRegion=source_region, SourceImageId=source_image,
-                                       Name=image_id)
-            return True
-
-        except Exception:
-            self.logger.exception("Copy of {} image failed.".format(source_image))
-            return False
-
-    def deregister_image(self, image_id, delete_snapshot=True):
-        """Deregister the given AMI ID, only valid for self owned AMI's"""
-        images = self.api.get_all_images(owners=['self'], filters={'image-type': 'machine'})
-        matching_images = [image for image in images if image.id == image_id]
-
-        try:
-            for image in matching_images:
-                image.deregister(delete_snapshot=delete_snapshot)
-            return True
-        except Exception:
-            self.logger.exception('Deregister of image_id {} failed'.format(image_id))
             return False
 
     def list_topics(self):

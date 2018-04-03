@@ -25,15 +25,15 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from wait_for import wait_for
 
-from .exceptions import VMInstanceNotFound
-from .base import WrapanapiAPIBaseVMSystem
+from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.systems import System
 
 
 # TODO: add handler for logger msrest.service_client if needed
 # TODO: add better description to each method
 
 
-class AzureSystem(WrapanapiAPIBaseVMSystem):
+class AzureSystem(System):
     """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
     """
     STATE_RUNNING = "VM running"

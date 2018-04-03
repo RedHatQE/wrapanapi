@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from .system import System  # NOQA
 from .ec2 import EC2System  # NOQA
 from .openstack import OpenstackSystem  # NOQA
 from .rhevm import RHEVMSystem  # NOQA

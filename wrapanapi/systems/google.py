@@ -4,23 +4,24 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
+
 import os
 import random
 import time
-from apiclient.discovery import build
-from apiclient.http import MediaFileUpload
-from apiclient import errors
 from json import dumps as json_dumps
 
 import httplib2
 import iso8601
 import pytz
+from apiclient import errors
+from apiclient.discovery import build
+from apiclient.http import MediaFileUpload
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
-from .base import WrapanapiAPIBaseVMSystem, VMInfo
-from .exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
-    ForwardingRuleNotFound
+from wrapanapi.exceptions import (ActionNotSupported, ForwardingRuleNotFound,
+                                  ImageNotFoundError, VMInstanceNotFound)
+from wrapanapi.systems import System
 
 # Retry transport and file IO errors.
 RETRYABLE_ERRORS = (httplib2.HttpLib2Error, IOError)
@@ -37,7 +38,7 @@ IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'u
                 'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
 
-class GoogleCloudSystem(WrapanapiAPIBaseVMSystem):
+class GoogleCloudSystem(System):
     """
     Client to Google Cloud Platform API
 
