@@ -16,11 +16,11 @@ except (ImportError, SyntaxError) as e:
     API = None
 from wait_for import wait_for, TimedOutError
 
-from .base import WrapanapiAPIBaseVM, VMInfo
+from .base import VMSystem, VMInfo
 from .exceptions import VMInstanceNotFound, VMInstanceNotSuspended, VMNotFoundViaIP
 
 
-class RHEVMSystem(WrapanapiAPIBaseVM):
+class RHEVMSystem(VMSystem):
     """
     Client to RHEVM API
 

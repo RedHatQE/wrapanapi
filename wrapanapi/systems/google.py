@@ -18,7 +18,7 @@ import pytz
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
-from .base import WrapanapiAPIBaseVM, VMInfo
+from .base import WrapanapiAPIBaseVMSystem, VMInfo
 from .exceptions import VMInstanceNotFound, ImageNotFoundError, ActionNotSupported, \
     ForwardingRuleNotFound
 
@@ -37,7 +37,7 @@ IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'u
                 'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
 
-class GoogleCloudSystem(WrapanapiAPIBaseVM):
+class GoogleCloudSystem(WrapanapiAPIBaseVMSystem):
     """
     Client to Google Cloud Platform API
 

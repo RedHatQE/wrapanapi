@@ -7,22 +7,31 @@ class ActionTimedOutError(Exception):
     pass
 
 
-class ForwardingRuleNotFound(Exception):
+class NotFoundError(Exception):
+    """
+    General exception when raised when something is not found
+    """
+    pass
+
+
+class VMNotFoundViaIP(NotFoundError):
+    """
+    Raised if a specific VM cannot be found.
+    """
+    pass
+
+
+class ForwardingRuleNotFound(NotFoundError):
     """Raised if a Forwarding Rule for loadbalancers not found."""
     def __init__(self, forwarding_rule_name):
         self.vm_name = forwarding_rule_name
 
 
-class ImageNotFoundError(Exception):
+class ImageNotFoundError(NotFoundError):
     pass
 
 
-class InvalidValueException(Exception):
-    """Raises when invalid value provided. E.g. invalid OpenShift project name"""
-    pass
-
-
-class LabelNotFoundException(Exception):
+class LabelNotFoundException(NotFoundError):
     """Raised when trying to delete a label which doesn't exist"""
     def __init__(self, label_key):
         self._label_key = label_key
@@ -30,6 +39,24 @@ class LabelNotFoundException(Exception):
     def __str__(self):
         return 'Could not delete label "{}" (label does not exist).'.format(
             self._label_key)
+
+
+class NetworkNameNotFound(NotFoundError):
+    pass
+
+
+class VMInstanceNotFound(NotFoundError):
+    """Raised if a VM or instance is not found."""
+    def __init__(self, vm_name):
+        self.vm_name = vm_name
+
+    def __str__(self):
+        return 'Could not find a VM/instance named %s.' % self.vm_name
+
+
+class InvalidValueException(ValueError):
+    """Raises when invalid value provided. E.g. invalid OpenShift project name"""
+    pass
 
 
 class KeystoneVersionNotSupported(Exception):
@@ -40,21 +67,24 @@ class KeystoneVersionNotSupported(Exception):
     def __str__(self):
         return "Provided version of Keystone is not supported: {}".format(self.version)
 
-
-class MultipleImagesError(Exception):
-    pass
-
-
 class NoMoreFloatingIPs(Exception):
     """Raised when provider runs out of FIPs."""
 
 
-class MultipleInstancesError(Exception):
+class MultipleItemsError(Exception):
+    pass
+
+
+class MultipleInstancesError(MultipleItemsError):
     def __init__(self, value):
         self.value = value
 
     def __str__(self):
         return repr(self.value)
+
+
+class MultipleImagesError(MultipleItemsError):
+    pass
 
 
 class RestClientException(Exception):
@@ -68,10 +98,6 @@ class RequestFailedException(Exception):
 
 class ResourceAlreadyExistsException(Exception):
     """Raised when trying to create a resource that already exists"""
-    pass
-
-
-class NetworkNameNotFound(Exception):
     pass
 
 
@@ -93,15 +119,6 @@ class VMInstanceNotCloned(Exception):
         return 'Could not clone %s' % self.template
 
 
-class VMInstanceNotFound(Exception):
-    """Raised if a VM or instance is not found."""
-    def __init__(self, vm_name):
-        self.vm_name = vm_name
-
-    def __str__(self):
-        return 'Could not find a VM/instance named %s.' % self.vm_name
-
-
 class VMInstanceNotSuspended(Exception):
     """Raised if a VM or instance is not able to be suspended."""
     def __init__(self, vm_name):
@@ -109,13 +126,6 @@ class VMInstanceNotSuspended(Exception):
 
     def __str__(self):
         return 'Could not suspend %s because it\'s not running.' % self.vm_name
-
-
-class VMNotFoundViaIP(Exception):
-    """
-    Raised if a specific VM cannot be found.
-    """
-    pass
 
 
 class HostNotRemoved(Exception):

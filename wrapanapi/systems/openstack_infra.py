@@ -7,7 +7,7 @@ from novaclient import client as osclient
 from novaclient.client import HTTPClient
 from requests.exceptions import Timeout
 
-from .base import WrapanapiAPIBaseVM
+from .base import VMSystem
 
 
 Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
@@ -36,7 +36,7 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackInfraSystem(WrapanapiAPIBaseVM):
+class OpenstackInfraSystem(VMSystem):
     """Openstack Infrastructure management system
 
     # TODO

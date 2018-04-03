@@ -5,7 +5,7 @@ import json
 import six
 import logging
 
-from .exceptions import RestClientException
+from wrapanapi.exceptions import RestClientException
 
 requests.packages.urllib3.disable_warnings()
 

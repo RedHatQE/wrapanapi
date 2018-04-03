@@ -1,18 +1,20 @@
 from __future__ import absolute_import
-from .base import WrapanapiAPIBaseVM
-from collections import namedtuple
-from .rest_client import ContainerClient
 
-from six.moves.urllib.parse import quote as urlquote, unquote as urlunquote
-from packaging import version
-from enum import Enum
-from .websocket_client import HawkularWebsocketClient
-
+import base64
+import gzip
+import json
 import re
 import sys
-import json
-import gzip
-import base64
+from collections import namedtuple
+from enum import Enum
+
+from packaging import version
+
+from wrapanapi.clients import ContainerClient, HawkularWebsocketClient
+from wrapanapi.systems import System
+
+from six.moves.urllib.parse import quote as urlquote
+from six.moves.urllib.parse import unquote as urlunquote
 
 """
 Related yaml structures:
@@ -158,7 +160,7 @@ class CanonicalPath(object):
         return c_path
 
 
-class Hawkular(WrapanapiAPIBaseVM):
+class HawkularSystem(System):
     """Hawkular management system
 
     Hawkular REST API method calls.

@@ -24,7 +24,7 @@ from wait_for import wait_for, TimedOutError
 from pyVmomi import vim, vmodl
 from pyVim.connect import SmartConnect, Disconnect
 
-from .base import WrapanapiAPIBaseVM, VMInfo
+from .base import VMSystem, VMInfo
 from .exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
     HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
 
@@ -113,7 +113,7 @@ def get_task_error_message(task):
     return message
 
 
-class VMWareSystem(WrapanapiAPIBaseVM):
+class VMWareSystem(VMSystem):
     """Client to Vsphere API
 
     Args:

@@ -17,8 +17,13 @@ import re
 from wait_for import wait_for
 import os
 
-from .base import WrapanapiAPIBaseVM
-from .exceptions import (
+from wrapanapi.entities import (
+    CloudInstance, VmMixin, VmState,
+    Stack, StackMixin,
+    TemplateMixin
+)
+from wrapanapi.systems import System
+from wrapanapi.exceptions import (
     ActionTimedOutError, ActionNotSupported,
     MultipleInstancesError, VMInstanceNotFound,
     MultipleImagesError, ImageNotFoundError
@@ -32,11 +37,212 @@ def _regions(regionmodule, regionname):
     return None
 
 
-class EC2System(WrapanapiAPIBaseVM):
+class EC2Instance(CloudInstance):
+    @staticmethod
+    @property
+    def state_map():
+        VmState.RUNNING: 'running',
+        VmState.STOPPED: 'stopped',
+        VmState.PAUSED: None,
+        VmState.SUSPENDED: None,
+        VmState.DELETED: 'terminated',,
+    }
+
+    def __init__(self, system, id, raw=None):
+        """
+        Constructor for an EC2Instance tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            instance: the boto.ec2.instance.Instance object if already obtained, or None
+        """
+        super(EC2Instance, self).__init__(system)
+        self._raw = instance
+        self.id = raw.id
+
+    @property
+    def raw(self):
+        """
+        Returns raw boto.ec2.instance.Instance object associated with this instance
+        """
+        if not self._raw:
+            self._raw = self.system.get_vm(self.id)
+        return self._raw
+
+    @property
+    def name(self):
+        return self.raw.tags.get('Name', self.raw.id)
+
+    def refresh(self):
+        self.raw.update(validate=True)
+
+    @property
+    def exists(self):
+        try:
+            self.refresh()
+            return True
+        except ValueError:
+            return False
+
+    @property
+    def state(self):
+        self.refresh()
+        return self._api_state_to_vmstate(self.raw.state)
+
+    @property
+    def ip(self):
+        self.refresh()
+        return self.raw.ip_address
+
+    @property
+    def type(self):
+        return self.raw.instance_type
+
+    @property
+    def creation_time(self):
+        # Example instance.launch_time: 2014-08-13T22:09:40.000Z
+        launch_time = datetime.strptime(self.raw.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
+        # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
+        return launch_time.replace(tzinfo=pytz.UTC)
+
+    def rename(self, new_name):
+        self.logger.info("setting name of EC2 instance %s to %s" % (self.id, new_name))
+        self.raw.add_tag('Name', new_name)
+        return new_name
+
+    def delete(self):
+        """
+        Delete instance. Wait up to 90sec for it to move to 'deleted' state
+
+        Returns:
+            True if successful
+            False if otherwise, or action timed out
+        """
+        self.logger.info("terminating EC2 instance {}".format(self.id))
+        try:
+            self.raw.terminate()
+            self.wait_for_state(VmState.DELETED, num_sec=90)
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def cleanup(self):
+        return self.delete()
+
+    def start(self):
+        """
+        Start instance. Wait up to 90sec for it to move to 'running' state
+
+        Returns:
+            True if successful
+            False if otherwise, or action timed out
+        """
+        self.logger.info("starting EC2 instance '{}'".format(self.id))
+        try:
+            self.raw.start()
+            self.wait_for_state(VmState.RUNNING, num_sec=90)
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def stop(self):
+        """
+        Stop instance. Wait up to 360sec for it to move to 'stopped' state
+
+        Returns:
+            True if successful
+            False if otherwise, or action timed out
+        """
+        self.logger.info("stopping EC2 instance {}".format(self.id))
+        try:
+            self.raw.stop()
+            self.wait_for_state(VmState.STOPPED, num_sec=360)
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def restart(self):
+        """
+        Restart instance
+
+        The action is taken in two separate calls to EC2. A 'False' return can
+        indicate a failure of either the stop action or the start action.
+
+        Note: There is a reboot_instances call available on the API, but it provides
+            less insight than blocking on stop_vm and start_vm. Furthermore,
+            there is no "rebooting" state, so there are potential monitoring
+            issues that are avoided by completing these steps atomically
+
+        Returns:
+            True if stop and start succeeded
+            False if otherwise, or action timed out
+        """
+        self.logger.info("restarting EC2 instance {}".format(self.id))
+        stopped = self.stop()
+        if not stopped:
+            self.logger.error("Stopping instance {} failed or timed out".format(self.id))
+        started = self.start()
+        if not started:
+            self.logger.error("Starting instance {} failed or timed out".format(self.id))
+        return stopped and started
+
+
+class CloudFormationStack(Stack):
+    def __init__(self, system, name):
+        super(CloudFormationStack, self).__init__(system, name, id)
+
+    @property
+    def exists(self):
+        """
+        Checks if this stack exists on the system
+        """
+        try:
+            return len(self.get_details()) > 0
+        except boto.exception.BotoServerError as e:
+            if e.message == 'Stack with id {} does not exist'.format(self.id):
+                return False
+            else:
+                raise
+
+    def get_details(self):
+        """
+        Returns list of dicts with info about this stack
+        """
+        return self.system.stackapi.describe_stacks(self.id)[0]
+
+    def refresh(self):
+        """
+        Re-pull the data for this stack
+        """
+        details = self.get_details()
+        self.name = details['StackName']
+
+    def delete(self):
+        """
+        Removes the stack on the provider
+
+        Returns:
+            True if delete was successful
+            False otherwise
+        """
+        self.logger.info("terminating EC2 stack {}, id: {}" .format(self.name, self.id))
+        try:
+            self.stackapi.delete_stack(self.id)
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def cleanup(self):
+        """
+        Removes the stack on the provider and any of its associated resources
+        """
+        return self.delete()
+
+
+class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     """EC2 Management System, powered by boto
 
-    Wraps the EC2 API and mimics the behavior of other implementors of
-    MgmtServiceAPIBase for us in VM control testing
+    Wraps the EC2 API
 
     Instead of username and password, accepts access_key_id and
     secret_access_key, the AWS analogs to those ideas. These are passed, along
@@ -57,12 +263,6 @@ class EC2System(WrapanapiAPIBaseVM):
         'num_template': lambda self: len(self.list_template()),
     }
 
-    states = {
-        'running': ('running',),
-        'stopped': ('stopped', 'terminated'),
-        'suspended': (),
-        'deleted': ('terminated',),
-    }
 
     # Possible stack states for reference
     stack_states = {
@@ -81,7 +281,7 @@ class EC2System(WrapanapiAPIBaseVM):
     can_suspend = False
 
     def __init__(self, **kwargs):
-        super(EC2System, self).__init__(kwargs)
+        super(EC2System, self).__init__(**kwargs)
         username = kwargs.get('username')
         password = kwargs.get('password')
 
@@ -114,62 +314,106 @@ class EC2System(WrapanapiAPIBaseVM):
         """Returns the current versions of boto and the EC2 API being used"""
         return '%s %s' % (boto.UserAgent, self.api.APIVersion)
 
-    def list_vm(self, include_terminated=True):
-        """Returns a list from instance IDs currently active on EC2 (not terminated)"""
-        instances = None
-        if include_terminated:
-            instances = [inst for inst in self._get_all_instances()]
-        else:
-            instances = [inst for inst in self._get_all_instances() if inst.state != 'terminated']
-        return [i.tags.get('Name', i.id) for i in instances]
+    def _get_instances(**kwargs):
+        """
+        Gets instance reservations and parses instance objects
+        """
+        reservations = self.api.get_all_instances(**kwargs)
+        instances = list()
+        for reservation in reservations:
+            for instance in reservation.instances:
+                instances.append(
+                    EC2Instance(system=self, id=instance.id, raw=instance)
+                )
+        return instances
 
-    def list_template(self):
-        private_images = self.api.get_all_images(owners=['self'],
-                                                 filters={'image-type': 'machine'})
-        shared_images = self.api.get_all_images(executable_by=['self'],
-                                                filters={'image-type': 'machine'})
-        combined_images = list(set(private_images) | set(shared_images))
-        # Try to pull the image name (might not exist), falling back on ID (must exist)
-        return map(lambda i: i.name or i.id, combined_images)
+    def find_vms(self, name=None, id=None, filters=None):
+        """
+        Find instance on ec2 system
 
-    def list_flavor(self):
-        raise NotImplementedError('This function is not supported on this platform.')
-
-    def vm_status(self, instance_id):
-        """Returns the status of the requested instance
+        Supported queries include searching by name tag, id, or passing
+        in a specific filters dict to the system API. You can only
+        select one of these methods.
 
         Args:
-            instance_id: ID of the instance to inspect
-        Returns: Instance status.
+            name (str): name of instance (which is a tag)
+            id (str): id of instance
+            filters (dict): filters to pass along to system.api.get_all_instances()
 
-        See this `page <http://docs.aws.amazon.com/AWSEC2/latest/APIReference/
-        ApiReference-ItemType-InstanceStateType.html>`_ for possible return values.
+        Returns:
+            List of EC2Instance objects that match
+        """ 
+        # Validate args
+        filled_args = (arg for arg in (name, id, filters) if arg)
+        if len(filled_args) > 1 or len(filled_args) == 0:
+            raise ValueError(
+                "You must select one of these search methods: name, id, or filters")
 
+        if id:
+            kwargs = {'instance_ids': [id]}
+        elif filters:
+            kwargs = {'filters': filters}
+        elif name:
+            # Quick validation that the instance name isn't actually an ID
+            pattern = re.compile('^i-\w{8,17}$')
+            if pattern.match(name):
+                # Switch to using the id search method
+                kwargs = {'instance_ids': [name]}
+            else:
+                kwargs = {'filters': {'tag:Name': name}}
+
+        instances = self._get_instances(**kwargs)
+
+        return instances
+
+    def get_vm(self, name):
         """
-        instance = self._get_instance(instance_id)
-        return instance.state
+        Get a single EC2Instance with name or id equal to 'name'
 
-    def vm_type(self, instance_id):
-        """Returns the instance type of the requested instance
-            e.g. m1.medium, m3.medium etc..
+        Must be a unique name
 
-                Args:
-                    instance_id: ID of the instance to inspect
-                Returns: Instance type.
+        Args:
+            name: name or id of instance
+        Returns:
+            EC2Instance object
+        Raises:
+            VMInstanceNotFound if no instance exists with this name/id
+            MultipleInstancesError if name is not unique
         """
-        instance = self._get_instance(instance_id)
-        return instance.instance_type
+        instances = self.find_vm(name=name)
+        if not instances:
+            raise VMInstanceNotFound(name)
+        elif len(instances) > 1:e
+            raise MultipleInstancesError('Instance name "%s" is not unique' % name)
+        return instances[0]
 
-    def vm_creation_time(self, instance_id):
-        instance = self._get_instance(instance_id)
-        # Example instance.launch_time: 2014-08-13T22:09:40.000Z
-        launch_time = datetime.strptime(instance.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
-        # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
-        return launch_time.replace(tzinfo=pytz.UTC)
+    def does_vm_exist(self, name):
+        try:
+            self.get_vm(name)
+            return True
+        except MultipleInstancesError:
+            return True
+        except VMInstanceNotFound:
+            return False
+
+    def list_vms(self, include_terminated=True):
+        """
+        Returns a list of instances currently active on EC2 (not terminated)
+        """
+        instances = list()
+        if include_terminated:
+            instances = [inst for inst in self._get_instances()]
+        else:
+            instances = [
+                inst for inst in self._get_instances()
+                if inst.raw.state != 'terminated'
+            ]
+        return instances
 
     def create_vm(self, image_id, min_count=1, max_count=1, instance_type='t1.micro', vm_name=''):
         """
-            Creates aws instances.
+        Creates aws instances.
+        
         TODO:
             Check whether instances were really created.
             Add additional arguments to be able to modify settings for instance creation.
@@ -184,9 +428,9 @@ class EC2System(WrapanapiAPIBaseVM):
             vm_name: Name of instances, can be blank
 
         Returns:
-            List of created aws instances' IDs.
+            List of EC2Instance objects for all instances created
         """
-        self.logger.info(" Creating instances[%d] with name %s,type %s and image ID: %s ",
+        self.logger.info("Creating instances[%d] with name %s,type %s and image ID: %s ",
                          max_count, vm_name, instance_type, image_id)
         try:
             result = self.ec2_connection.run_instances(ImageId=image_id, MinCount=min_count,
@@ -202,194 +446,73 @@ class EC2System(WrapanapiAPIBaseVM):
                     },
                 ]
             )
-            instances = result.get('Instances')
-            instance_ids = []
-            for instance in instances:
-                instance_ids.append(instance.get('InstanceId'))
-            return instance_ids
         except Exception:
             self.logger.exception("Create of {} instance failed.".format(vm_name))
-            return None
+            raise
 
-    def delete_vm(self, instance_id):
-        """Deletes the an instance
-
-        Args:
-            instance_id: ID of the instance to act on
-        Returns: Whether or not the backend reports the action completed
-        """
-        self.logger.info(" Terminating EC2 instance %s" % instance_id)
-        instance_id = self._get_instance_id_by_name(instance_id)
         try:
-            self.api.terminate_instances([instance_id])
-            self._block_until(instance_id, self.states['deleted'])
-            return True
-        except ActionTimedOutError:
-            return False
+            instances_json = result['Instances']
+            instance_ids = [entry['InstanceId'] for entry in instances_json]
+        except KeyError:
+            self.logger.exception("Unable to parse all InstanceId's from response json")
+            raise
 
-    def describe_stack(self, stack_name):
-        """Describe stackapi
+        return [EC2Instance(system=self, id=id) for id in instance_ids]
 
-        Returns the description for the specified stack
-        Args:
-            stack_name: Unique name of stack
-        """
-        result = []
-        stacks = self.stackapi.describe_stacks(stack_name)
-        result.extend(stacks)
-        return result
-
-    def stack_exist(self, stack_name):
-        try:
-            stacks = [stack for stack in self.describe_stack(stack_name)
-                      if stack.stack_name == stack_name]
-        except boto.exception.BotoServerError as e:
-            if e.message == 'Stack with id {} does not exist'.format(stack_name):
-                return False
-            else:
-                raise
-        else:
-            return bool(stacks)
-
-    def list_stack(self, stack_status_filter=stack_states['active']):
+    def list_stacks(self, stack_status_filter=stack_states['active']):
         """
         Returns a list of Stack objects
+
         stack_status_filter:  filters stacks in certain status. Can be a either a single valid stack
         status code or a list of them.  Check EC2System:stack_states for details.
         """
-        stack_list = [stack for stack in self.stackapi.list_stacks(stack_status_filter)]
+        stack_list = [
+            CloudFormationStack(system=self, name=stack['StackName'], id=stack['StackId'])
+            for stack in self.stackapi.list_stacks(stack_status_filter)
+        ]
         return stack_list
 
-    def delete_stack(self, stack_name):
-        """Deletes stack
+    def find_stacks(self, name):
+        """
+        Return list of all stacks with given name
 
         Args:
-            stack_name: Unique name of stack
+            name: name or id to search for
+        Returns:
+            List of CloudFormationStack objects
         """
-        self.logger.info(" Terminating EC2 stack {}" .format(stack_name))
-        try:
-            self.stackapi.delete_stack(stack_name)
-            return True
-        except ActionTimedOutError:
-            return False
+        return self.stackapi.describe_stacks(name)
 
-    def start_vm(self, instance_id):
-        """Start an instance
+    def get_stack(self, name):
+        """
+        Get single stack if it exists
 
         Args:
-            instance_id: ID of the instance to act on
-        Returns: Whether or not the backend reports the action completed
+            name: unique name or id of the stack
+        Returns:
+            CloudFormationStack object
         """
-        self.logger.info(" Starting EC2 instance %s" % instance_id)
-        instance_id = self._get_instance_id_by_name(instance_id)
-        try:
-            self.api.start_instances([instance_id])
-            self._block_until(instance_id, self.states['running'])
-            return True
-        except ActionTimedOutError:
-            return False
+        stacks = self.find_stacks(name)
+        if len(stacks) > 1:
+            raise MultipleItemsError("Multiple stacks with name {} found".format(name))
+        if len(stacks) == 0:
+            raise NotFoundError("Stack with name {} not found".format(name))
+        return stacks[0]
 
-    def stop_vm(self, instance_id):
-        """Stop an instance
 
-        Args:
-            instance_id: ID of the instance to act on
-        Returns: Whether or not the backend reports the action completed
-        """
-        self.logger.info(" Stopping EC2 instance %s" % instance_id)
-        instance_id = self._get_instance_id_by_name(instance_id)
-        try:
-            self.api.stop_instances([instance_id])
-            self._block_until(instance_id, self.states['stopped'], timeout=360)
-            return True
-        except ActionTimedOutError:
-            return False
 
-    def restart_vm(self, instance_id):
-        """Restart an instance
+####
+# EVERYTHING BELOW THIS LINE IS TODO
+####
+    def list_template(self):
+        private_images = self.api.get_all_images(owners=['self'],
+                                                 filters={'image-type': 'machine'})
+        shared_images = self.api.get_all_images(executable_by=['self'],
+                                                filters={'image-type': 'machine'})
+        combined_images = list(set(private_images) | set(shared_images))
+        # Try to pull the image name (might not exist), falling back on ID (must exist)
+        return map(lambda i: i.name or i.id, combined_images)
 
-        Args:
-            instance_id: ID of the instance to act on
-        Returns: Whether or not the backend reports the action completed
-
-        The action is taken in two separate calls to EC2. A 'False' return can
-        indicate a failure of either the stop action or the start action.
-
-        Note: There is a reboot_instances call available on the API, but it provides
-            less insight than blocking on stop_vm and start_vm. Furthermore,
-            there is no "rebooting" state, so there are potential monitoring
-            issues that are avoided by completing these steps atomically
-        """
-        self.logger.info(" Restarting EC2 instance %s" % instance_id)
-        return self.stop_vm(instance_id) and self.start_vm(instance_id)
-
-    def is_vm_state(self, instance_id, state):
-        return self.vm_status(instance_id) in state
-
-    def is_vm_running(self, instance_id):
-        """Is the VM running?
-
-        Args:
-            instance_id: ID of the instance to inspect
-        Returns: Whether or not the requested instance is running
-        """
-        try:
-            running = self.vm_status(instance_id) in self.states['running']
-            return running
-        except Exception: # noqa
-            return False
-
-    def wait_vm_running(self, instance_id, num_sec=360):
-        self.logger.info(" Waiting for EC2 instance %s to change status to running" % instance_id)
-        wait_for(self.is_vm_running, [instance_id], num_sec=num_sec)
-
-    def is_vm_stopped(self, instance_id):
-        """Is the VM stopped?
-
-        Args:
-            instance_id: ID of the instance to inspect
-        Returns: Whether or not the requested instance is stopped
-        """
-        return self.vm_status(instance_id) in self.states['stopped']
-
-    def wait_vm_stopped(self, instance_id, num_sec=360):
-        self.logger.info(
-            " Waiting for EC2 instance %s to change status to stopped or terminated" % instance_id
-        )
-        wait_for(self.is_vm_stopped, [instance_id], num_sec=num_sec)
-
-    def suspend_vm(self, instance_id):
-        """Suspend a VM: Unsupported by EC2
-
-        Args:
-            instance_id: ID of the instance to act on
-        Raises:
-            ActionNotSupported: The action is not supported on the system
-        """
-        raise ActionNotSupported()
-
-    def is_vm_suspended(self, instance_id):
-        """Is the VM suspended? We'll never know because EC2 don't support this.
-
-        Args:
-            instance_id: ID of the instance to inspect
-        Raises:
-            ActionNotSupported: The action is not supported on the system
-        """
-        raise ActionNotSupported()
-
-    def wait_vm_suspended(self, instance_id, num_sec):
-        """We would wait forever - EC2 doesn't support this.
-
-        Args:
-            instance_id: ID of the instance to wait for
-        Raises:
-            ActionNotSupported: The action is not supported on the system
-        """
-        raise ActionNotSupported()
-
-    def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('This function has not yet been implemented.')
 
     def deploy_template(self, template, *args, **kwargs):
         """Instantiate the requested template image (ami id)
@@ -440,55 +563,6 @@ class EC2System(WrapanapiAPIBaseVM):
             self.start_vm(instances[0].id)
         return instances[0].id
 
-    def set_name(self, instance_id, new_name):
-        self.logger.info("Setting name of EC2 instance %s to %s" % (instance_id, new_name))
-        instance = self._get_instance(instance_id)
-        instance.add_tag('Name', new_name)
-        return new_name
-
-    def get_name(self, instance_id):
-        return self._get_instance(instance_id).tags.get('Name', instance_id)
-
-    def _get_instance(self, instance_id):
-        instance_id = self._get_instance_id_by_name(instance_id)
-        reservations = self.api.get_all_instances([instance_id])
-        instances = self._get_instances_from_reservations(reservations)
-        if len(instances) > 1:
-            raise MultipleInstancesError
-
-        try:
-            return instances[0]
-        except KeyError:
-            return None
-
-    def current_ip_address(self, instance_id):
-        return str(self._get_instance(instance_id).ip_address)
-
-    def get_ip_address(self, instance_id, **kwargs):
-        return self.current_ip_address(instance_id)
-
-    def _get_instance_id_by_name(self, instance_name):
-        # Quick validation that the instance name isn't actually an ID
-        # If people start naming their instances in such a way to break this,
-        # check, that would be silly, but we can upgrade to regex if necessary.
-        pattern = re.compile('^i-\w{8,17}$')
-        if pattern.match(instance_name):
-            return instance_name
-
-        # Filter by the 'Name' tag
-        filters = {
-            'tag:Name': instance_name,
-        }
-        reservations = self.api.get_all_instances(filters=filters)
-        instances = self._get_instances_from_reservations(reservations)
-        if not instances:
-            raise VMInstanceNotFound(instance_name)
-        elif len(instances) > 1:
-            raise MultipleInstancesError('Instance name "%s" is not unique' % instance_name)
-
-        # We have an instance! return its ID
-        return instances[0].id
-
     def _get_ami_id_by_name(self, image_name):
         matches = self.api.get_all_images(filters={'name': image_name})
         if not matches:
@@ -498,39 +572,6 @@ class EC2System(WrapanapiAPIBaseVM):
                 'Use the ami-ID or remove duplicates from EC2' % image_name)
 
         return matches[0].id
-
-    def does_vm_exist(self, name):
-        try:
-            self._get_instance_id_by_name(name)
-            return True
-        except MultipleInstancesError:
-            return True
-        except VMInstanceNotFound:
-            return False
-
-    def _get_instances_from_reservations(self, reservations):
-        """Takes a sequence of reservations and returns their instances"""
-        instances = list()
-        for reservation in reservations:
-            for instance in reservation.instances:
-                instances.append(instance)
-        return instances
-
-    def _get_all_instances(self):
-        """Gets all instances that EC2 can see"""
-        reservations = self.api.get_all_instances()
-        instances = self._get_instances_from_reservations(reservations)
-        return instances
-
-    def _block_until(self, instance_id, expected, timeout=90):
-        """Blocks until the given instance is in one of the expected states
-
-        Takes an optional timeout value.
-        """
-        wait_for(lambda: self.vm_status(instance_id) in expected, num_sec=timeout)
-
-    def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented')
 
     def create_s3_bucket(self, bucket_name):
         self.logger.info("Creating bucket: {}".format(bucket_name))
