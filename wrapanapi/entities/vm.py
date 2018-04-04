@@ -18,6 +18,8 @@ class VmState(object):
     PAUSED = 'paused'
     SUSPENDED = 'suspended'
     DELETED = 'deleted'
+    STARTING = 'starting'
+    STOPPING = 'stopping'
     UNKNOWN = 'unknown'
 
 
@@ -101,6 +103,16 @@ class Vm(Entity):
     def is_suspended(self):
         """Return True if VM is suspended."""
         return self.state == VmState.SUSPENDED
+
+    @property
+    def is_starting(self):
+        """Return True if VM is starting."""
+        return self.state == VmState.STARTING
+
+    @property
+    def is_stopping(self):
+        """Return True if VM is stopping."""
+        return self.state == VmState.STOPPING
 
     @abstractproperty
     def ip(self):

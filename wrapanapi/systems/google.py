@@ -10,6 +10,7 @@ import random
 import time
 from json import dumps as json_dumps
 
+import apiclient.errors.HttpError
 import httplib2
 import iso8601
 import pytz
@@ -19,8 +20,12 @@ from apiclient.http import MediaFileUpload
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
-from wrapanapi.exceptions import (ActionNotSupported, ForwardingRuleNotFound,
-                                  ImageNotFoundError, VMInstanceNotFound)
+from wrapanapi.entities import (Instance, Template, TemplateMixin, VmMixin,
+                                VmState)
+from wrapanapi.exceptions import (ActionNotSupported, ActionTimedOutError,
+                                  ImageNotFoundError, MultipleImagesError,
+                                  MultipleInstancesError, MultipleItemsError,
+                                  NotFoundError, VMInstanceNotFound)
 from wrapanapi.systems import System
 
 # Retry transport and file IO errors.
@@ -32,34 +37,273 @@ CHUNKSIZE = 2 * 1024 * 1024
 # Mimetype to use if one can't be guessed from the file extension.
 DEFAULT_MIMETYPE = 'application/octet-stream'
 
-# List of image project which gcr provided from the box. Could be extend in the futute and
+# List of image projects which gce provided from the box. Could be extend in the future and
 # will have impact on total number of templates/images
 IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
                 'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
 
 
-class GoogleCloudSystem(System):
+class GCEInstance(Instance):
+    @staticmethod
+    @property
+    def state_map():
+        return {
+            'PROVISIONING': VmState.STARTING,
+            'STAGING': VmState.STARTING,
+            'STOPPING': VmState.STOPPING,
+            'RUNNING': VmState.RUNNING,
+            'TERMINATED': VmState.STOPPED,
+        }
+
+    def __init__(self, system, raw):
+        """
+        Constructor for GCEInstance
+
+        Args:
+            system: GCEInstance object
+            raw: the raw json data for this instance returned by the compute API
+        """
+        super(GCEInstance, self).__init__(system)
+        self.raw = raw
+        self.project = self.system._project
+        self._api = self.system._instances
+
+    @property
+    def id(self):
+        return self.raw['id']
+
+    @property
+    def name(self):
+        return self.raw['name']
+
+    @property
+    def zone(self):
+        return self.raw['zone']
+
+    def refresh(self):
+        self.raw = self.system.get_vm(self.name, zone=self.zone).raw
+
+    @property
+    def exists(self):
+        try:
+            self.system.get_vm(self.name, zone=self.zone)
+            return True
+        except VMInstanceNotFound:
+            return False
+
+    @property
+    def state(self):
+        self.refresh()
+        return self._api_state_to_vmstate(self.raw['status'])
+
+    @property
+    def ip(self):
+        self.refresh()
+        return self.raw.get('networkInterfaces')[0].get('networkIP')
+
+    @property
+    def ip_external(self):
+        self.refresh()
+        access_configs = self.raw.get('networkInterfaces')[0].get('accessConfigs')[0]
+        return access_configs.get('natIP')
+
+    @property
+    def type(self):
+        if self.raw.get('machineType', None):
+            return self.raw['machineType'].split('/')[-1]
+        return None
+
+    @property
+    def creation_time(self):
+        creation_time = iso8601.parse_date(self.raw['creationTimestamp'])
+        return creation_time.astimezone(pytz.UTC)
+
+    def delete(self, timeout=250):
+        self.logger.info("Deleting Google Cloud instance {}".format(self.name))
+        operation = self._api.delete(
+            project=self.project, zone=self.zone, instance=self.name).execute()
+        wait_for(lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
+            num_sec=timeout, message="Delete {}".format(self.name))
+        return True
+
+    def cleanup(self):
+        return self.delete()
+
+    def restart(self):
+        self.logger.info("Restarting Google Cloud instance {}".format(self.name))
+        operation = self._api.reset(
+            project=self.project, zone=self.zone, instance=self.name).execute()
+        wait_for(lambda: self.system.is_zone_operation_done(operation['name']),
+            message="Restart {}".format(self.name))
+        return True
+
+    def stop(self):
+        self.logger.info("Stopping Google Cloud instance {}".format(self.name))
+        operation = self._api.stop(
+            project=self.project, zone=self.zone, instance=self.name).execute()
+        wait_for(lambda: self.system.is_zone_operation_done(operation['name']),
+            message="Stop {}".format(self.name), timeout=360)
+        return True
+
+    def start(self):
+        self.logger.info("Starting Google Cloud instance {}".format(self.name))
+        operation = self._api.start(
+            project=self.project, zone=self.zone, instance=self.name).execute()
+        wait_for(lambda: self.system.is_zone_operation_done(operation['name']),
+            message="Start {}".format(self.name))
+        return True
+
+
+class GCEImage(Template):
+    def __init__(self, system, project, raw):
+        """
+        Constructor for GCEImage
+
+        Args:
+            system: GCESystem object
+            raw: the raw json data for this image returned by the compute API
+        """
+        super(GCEImage, self).__init__(system)
+        self.raw = raw
+        self.project = project
+        self._api = self.system._compute._images()
+        self._instances_api = self.system._instances
+
+    @property
+    def id(self):
+        return self.raw['id']
+
+    @property
+    def name(self):
+        return self.raw['name']
+
+    def refresh(self):
+        self.raw = self.system.get_template(self.name, self.project).raw
+
+    @property
+    def exists(self):
+        try:
+            self.system.get_template(self.name, self.project)
+            return True
+        except ImageNotFoundError:
+            return False
+
+    def delete(self, timeout=360):
+        if self.project in IMAGE_PROJECTS:
+            raise ValueError('Public images cannot be deleted')
+
+        operation = self._api.delete(project=self.project, name=self.name).execute()
+        wait_for(lambda: self.system.is_global_operation_done(operation['name'], delay=0.5,
+            num_sec=timeout, message=" Deleting image {}".format(self.name)))
+        return True
+
+    def cleanup(self):
+        return self.delete()
+
+    def deploy(self, vm_name, zone=None, machine_type=None, ssh_key=None,
+               startup_script="#!/bin/bash", timeout=180):
+        """
+        Depoy an instance from this template
+
+        Args:
+            zone -- zone to create VM in, defaults to default zone for associated GoogleCloudSystem 
+            machine_type -- machine type for VM, defaults to 'n1-standard-1'
+            ssh_key -- (optional) ssh public key string
+            startup_script -- (optional) text of start-up script, defaults to empty bash script
+            timeout -- timeout for deploy operation to complete, defaults to 180sec
+        Returns:
+            True if operation completes successfully
+        """
+        template_link = self.raw['selfLink']
+
+        instance_name = vm_name
+        if not zone:
+            zone = self.system._zone
+        if not machine_type:
+            machine_type = 'n1-standard-1'
+        
+        full_machine_type = 'zones/{}/machineTypes/{}'.format(zone, machine_type)
+
+        self.logger.info("Creating {} instance".format(instance_name))
+
+        config = {
+            'name': instance_name,
+            'machineType': full_machine_type,
+
+            # Specify the boot disk and the image to use as a source.
+            'disks': [
+                {
+                    'boot': True,
+                    'autoDelete': True,
+                    'initializeParams': {
+                        'sourceImage': template_link,
+                    }
+                }
+            ],
+
+            # Specify a network interface with NAT to access the public
+            # internet.
+            'networkInterfaces': [{
+                'network': 'global/networks/default',
+                'accessConfigs': [
+                    {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
+                ]
+            }],
+
+            # Allow the instance to access cloud storage and logging.
+            'serviceAccounts': [{
+                'email': 'default',
+                'scopes': [
+                    'https://www.googleapis.com/auth/devstorage.read_write',
+                    'https://www.googleapis.com/auth/logging.write'
+                ]
+            }],
+
+            # Metadata is readable from the instance and allows you to
+            # pass configuration from deployment scripts to instances.
+            'metadata': {
+                'items': [{
+                    # Startup script is automatically executed by the
+                    # instance upon startup.
+                    'key': 'startup-script',
+                    'value': startup_script
+                }, {
+                    # Every project has a default Cloud Storage bucket that's
+                    # the same name as the project.
+                    'key': 'bucket',
+                    'value': self.project
+                }]
+            },
+            'tags': {
+                'items': ['https-server']
+            }
+        }
+
+        if ssh_key:
+            ssh_keys = {
+                'key': 'ssh-keys',
+                'value': ssh_key
+            }
+            config['metadata']['items'].append(ssh_keys)
+
+        operation = self._instances_api.insert(
+            project=self.project, zone=zone, body=config).execute()
+        wait_for(lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
+            num_sec=timeout, message=" Create {}".format(instance_name))
+        return True
+
+
+class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     """
     Client to Google Cloud Platform API
 
     """
-    # gcloud technically does support suspend but the methods are not implemented below
-    # for now, 'can_suspend' will be false until those methods are implemented.
-    can_suspend = False
-    can_pause = False
-
     _stats_available = {
-        'num_vm': lambda self: len(self.all_vms()),
-        'num_template': lambda self: len(self.list_image()),
+        'num_vm': lambda self: len(self.list_vms()),
+        'num_template': lambda self: len(self.list_templates()),
     }
 
     default_scope = ['https://www.googleapis.com/auth/cloud-platform']
-    states = {
-        'running': ('RUNNING',),
-        'stopped': ('TERMINATED',),
-        'starting': ('STAGING'),
-        'stopping': ('STOPPING'),
-    }
 
     def __init__(self, project=None, zone=None, file_type=None, **kwargs):
         """
@@ -79,7 +323,7 @@ class GoogleCloudSystem(System):
 
             Returns: A :py:class:`GoogleCloudSystem` object.
         """
-        super(GoogleCloudSystem, self).__init__(kwargs)
+        super(GoogleCloudSystem, self).__init__(**kwargs)
         self._project = project
         self._zone = zone
         self._region = kwargs.get('region')
@@ -107,9 +351,6 @@ class GoogleCloudSystem(System):
         self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
 
-    def _get_zone_instances(self, zone):
-        return self._instances.list(project=self._project, zone=zone).execute()
-
     def _get_all_buckets(self):
         return self._buckets.list(project=self._project).execute()
 
@@ -119,26 +360,133 @@ class GoogleCloudSystem(System):
                        execute().get('items', []))
         return results
 
-    def _get_all_images(self):
-        images = self._compute.images()
-        result = []
-        for image_project in IMAGE_PROJECTS:
-            result.extend(images.list(project=image_project).execute().get('items', []))
-        result.extend(images.list(project=self._project).execute().get('items', []))
-        return result
+    def info(self):
+        return "{}: project={}, zone={}".format(self.__class__.__name__, self._project, self._zone)
 
-    def get_private_images(self):
-        images = self._compute.images()
-        return images.list(project=self._project).execute()
+    def disconnect(self):
+        """
+        Disconnect from the GCE
 
-    def list_vm(self):
-        """List VMs in this GCE zone - filtered from all_vms
+        GCE service is stateless, so there's nothing to disconnect from
+        """
+        pass
+
+    def list_vms(self, zones=None):
+        """
+        List all VMs in the GCE account, filtered by zone if desired
+
+        Args:
+            zone: List of zones, by default does not filter to any zone
 
         Returns:
-            List of VM names in the object's zone
+            List of GCEInstance objects
         """
-        instances = self.all_vms(by_zone=True)
-        return [instance.name for instance in instances]
+        results = []
+        if not zones:
+            zones = self._compute.zones().list(project=self._project).execute()
+        
+        for zone_name in zones:
+            zone_instances = self._instances.list(
+                project=self._project, zone=zone_name).execute()
+            for instance in zone_instances.get('items', []):
+                results.append(GCEInstance(system=self, raw=instance))
+
+        return results
+
+    def find_vms(self, name, zones=None):
+        """
+        Find VMs with a given name, filtered by zones if desired
+
+        Args:
+            zones: List of zone names, by default does not filter to any zone
+        Returns:
+            List of GCEInstance objects that match
+        """
+        results = []
+        if not zones:
+            zones = self._compute.zones().list(project=self._project).execute()
+        for zone in zones:
+            try:
+                # Just use get in each zone instead of iterating through all instances
+                instance = self._instances.get(
+                    project=self._project, zone=zone, instance=name).execute()
+                results.append(GCEInstance(system=self, raw=instance))
+            except apiclient.errors.HttpError:
+                pass
+        return results
+
+    def get_vm(self, name, zone=None):
+        """
+        Get a single VM with given name in a specified zone
+
+        By default self._zone is used
+
+        Args:
+            zone: zone to get VM from, defaults to self._zone
+        Returns:
+            GCEInstance object
+        Raises:
+            VMInstanceNotFound if unable to find vm
+            MultipleInstancesError if multiple vm's with the same name found
+        """
+        if not zone:
+            zone = self._zone
+        instances = self.find_vms(name, zones=[zone])
+        if not instances:
+            self.logger.info("Looking for instance {} in all zones".format(name))
+            instances = self.find_vms(name, zones=None)
+        if not instances:
+            raise VMInstanceNotFound(name)
+        elif len(instances) > 1:
+            raise MultipleInstancesError(name)
+        return instances[0]
+
+    def create_vm(self):
+        raise NotImplementedError
+
+    def list_templates(self, include_public=True):
+        images = self._compute.images()
+        results = []
+        projects = [self._project]
+        if include_public:
+            projects.extend(IMAGE_PROJECTS)
+        for project in projects:
+            results.extend(
+                GCEImage(system=self, project=project, raw=image) for image in 
+                images.list(project=project).execute().get('items', [])
+            )
+        return results
+
+    def find_templates(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def get_template(self, name, project=None):
+        if not project:
+            project = self._project
+        try:
+            image = self._compute.images().get(project=project, image=name).execute()
+            return GCEImage(system=self, project=project, raw=image)
+        except Exception:
+            raise ImageNotFoundError(name)
+
+    def create_template(self, name, bucket_url, timeout=360):
+        """
+        Create image from file
+        
+        Args:
+            image_name: Unique name of image
+            bucket_url: url to image file in bucket
+            timeout: time to wait for operation
+        """
+        images = self._compute.images()
+        data = {
+            "name": name,
+            "rawDisk": {"source": bucket_url}
+        }
+        operation = images.insert(project=self._project, body=data).execute()
+        wait_for(lambda: self.is_global_operation_done(operation['name']), delay=0.5,
+            num_sec=timeout, message=" Creating image {}".format(name))
+        return self.get_template(name)
 
     def list_bucket(self):
         buckets = self._get_all_buckets()
@@ -148,27 +496,6 @@ class GoogleCloudSystem(System):
         rules = self._get_all_forwarding_rules()
         return [forwarding_rule.get('name') for forwarding_rule in rules]
 
-    def list_image(self):
-        images = self._get_all_images()
-        return [image.get('name') for image in images]
-
-    def _find_instance_by_name(self, instance_name):
-        try:
-            instance = self._instances.get(
-                project=self._project, zone=self._zone, instance=instance_name).execute()
-            return instance
-        except Exception as e:
-            self.logger.error(e)
-            self.logger.info("Searching instance {} in all other zones".format(instance_name))
-            zones = self._compute.zones().list(project=self._project).execute()
-            for zone in zones.get('items', []):
-                zone_name = zone.get('name', None)
-                for instance in self._get_zone_instances(zone_name).get('items', []):
-                    if instance['name'] == instance_name:
-                        return instance
-            self.logger.error("Instance {} not found in any of the zones".format(instance_name))
-            raise VMInstanceNotFound(instance_name)
-
     def _find_forwarding_rule_by_name(self, forwarding_rule_name):
         try:
             forwarding_rule = self._forwarding_rules.get(
@@ -176,35 +503,32 @@ class GoogleCloudSystem(System):
                 forwardingRule=forwarding_rule_name).execute()
             return forwarding_rule
         except Exception:
-            raise ForwardingRuleNotFound
+            raise NotFoundError
 
-    def get_image_by_name(self, image_name):
-        try:
-            image = self._compute.images().get(project=self._project, image=image_name).execute()
-            return image
-        except Exception:
-            raise ImageNotFoundError(image_name)
-
-    def _nested_operation_wait(self, operation_name, zone=True):
-        if not zone:
-            result = self._compute.globalOperations().get(
-                project=self._project,
-                operation=operation_name).execute()
-        else:
-            result = self._compute.zoneOperations().get(
-                project=self._project,
-                zone=self._zone,
-                operation=operation_name).execute()
-
+    def _check_operation_result(self, result):
         if result['status'] == 'DONE':
-            self.logger.info("The operation {} -> DONE".format(operation_name))
+            self.logger.info("The operation {} -> DONE".format(result['name']))
             if 'error' in result:
-                self.logger.error("Error during {} operation.".format(operation_name))
+                self.logger.error("Error during {} operation.".format(result['name']))
                 self.logger.error("Detailed information about error {}".format(result['error']))
                 raise Exception(result['error'])
             return True
-
         return False
+
+    def is_global_operation_done(self, operation_name):
+        result = self._compute.globalOperations().get(
+            project=self._project,
+            operation=operation_name).execute()
+        self._check_operation_result(result)
+
+    def is_zone_operation_done(self, operation_name, zone=None):
+        if not zone:
+            zone = self._zone
+        result = self._compute.zoneOperations().get(
+            project=self._project,
+            zone=zone,
+            operation=operation_name).execute()
+        self._check_operation_result(result)
 
     def create_bucket(self, bucket_name):
         """ Create bucket
@@ -217,22 +541,6 @@ class GoogleCloudSystem(System):
             self.logger.info("Bucket {} was created".format(bucket_name))
         else:
             self.logger.info("Bucket {} was not created, exists already".format(bucket_name))
-
-    def create_image(self, image_name, bucket_url, timeout=360):
-        """ Create image from file
-        Args:
-            image_name: Unique name of image
-            bucket_url: url to image file in bucket
-            timeout: time to wait for operation
-        """
-        images = self._compute.images()
-        data = {
-            "name": image_name,
-            "rawDisk": {"source": bucket_url}
-        }
-        operation = images.insert(project=self._project, body=data).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name'], zone=False), delay=0.5,
-            num_sec=timeout, message=" Creating image {}".format(image_name))
 
     def delete_bucket(self, bucket_name):
         """ Delete bucket
@@ -322,257 +630,12 @@ class GoogleCloudSystem(System):
         self.logger.info(json_dumps(response, indent=2))
         return (True, blob_name)
 
-    def deploy_template(self, template, **kwargs):
-
-        template_link = self.get_image_by_name(template)['selfLink']
-
-        instance_name = kwargs['vm_name']
-        self.logger.info("Creating {} instance".format(instance_name))
-
-        machine_type = kwargs.get('machine_type',
-            "zones/{}/machineTypes/n1-standard-1".format(self._zone))
-        script = kwargs.get('startup_script_data', "#!/bin/bash")
-        timeout = kwargs.get('timeout', 180)
-
-        config = {
-            'name': instance_name,
-            'machineType': machine_type,
-
-            # Specify the boot disk and the image to use as a source.
-            'disks': [
-                {
-                    'boot': True,
-                    'autoDelete': True,
-                    'initializeParams': {
-                        'sourceImage': template_link,
-                    }
-                }
-            ],
-
-            # Specify a network interface with NAT to access the public
-            # internet.
-            'networkInterfaces': [{
-                'network': 'global/networks/default',
-                'accessConfigs': [
-                    {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
-                ]
-            }],
-
-            # Allow the instance to access cloud storage and logging.
-            'serviceAccounts': [{
-                'email': 'default',
-                'scopes': [
-                    'https://www.googleapis.com/auth/devstorage.read_write',
-                    'https://www.googleapis.com/auth/logging.write'
-                ]
-            }],
-
-            # Metadata is readable from the instance and allows you to
-            # pass configuration from deployment scripts to instances.
-            'metadata': {
-                'items': [{
-                    # Startup script is automatically executed by the
-                    # instance upon startup.
-                    'key': 'startup-script',
-                    'value': script
-                }, {
-                    # Every project has a default Cloud Storage bucket that's
-                    # the same name as the project.
-                    'key': 'bucket',
-                    'value': self._project
-                }]
-            },
-            'tags': {
-                'items': ['https-server']
-            }
-        }
-
-        if kwargs.get('ssh_key', None):
-            ssh_keys = {
-                'key': 'ssh-keys',
-                'value': kwargs.get('ssh_key', None)
-            }
-            config['metadata']['items'].append(ssh_keys)
-
-        operation = self._instances.insert(
-            project=self._project, zone=self._zone, body=config).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name']), delay=0.5,
-            num_sec=timeout, message=" Create {}".format(instance_name))
-        return True
-
-    def create_vm(self):
-        raise NotImplementedError('create_vm not implemented.')
-
-    def delete_vm(self, instance_name, timeout=250):
-        if not self.does_vm_exist(instance_name):
-            self.logger.info("The {} instance is not exists, skipping".format(instance_name))
-            return True
-
-        self.logger.info("Deleting Google Cloud instance {}".format(instance_name))
-        operation = self._instances.delete(
-            project=self._project, zone=self._zone, instance=instance_name).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name']), delay=0.5,
-            num_sec=timeout, message="Delete {}".format(instance_name))
-        return True
-
-    def restart_vm(self, instance_name):
-        self.logger.info("Restarting Google Cloud instance {}".format(instance_name))
-        operation = self._instances.reset(
-            project=self._project, zone=self._zone, instance=instance_name).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name']),
-            message="Restart {}".format(instance_name))
-        return True
-
-    def stop_vm(self, instance_name):
-        if self.is_vm_stopped(instance_name) or not self.does_vm_exist(instance_name):
-            self.logger.info("The {} instance is already stopped or doesn't exist, skip termination"
-               .format(instance_name))
-            return True
-
-        self.logger.info("Stoping Google Cloud instance {}".format(instance_name))
-        operation = self._instances.stop(
-            project=self._project, zone=self._zone, instance=instance_name).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name']),
-            message="Stop {}".format(instance_name), timeout=360)
-        return True
-
-    def start_vm(self, instance_name):
-        # This method starts an instance that was stopped using the using the
-        # instances().stop method.
-        if self.is_vm_running(instance_name) or not self.does_vm_exist(instance_name):
-            self.logger.info("The {} instance is already running or doesn't exists, skip starting"
-               .format(instance_name))
-            return True
-
-        self.logger.info("Starting Google Cloud instance {}".format(instance_name))
-        operation = self._instances.start(
-            project=self._project, zone=self._zone, instance=instance_name).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name']),
-            message="Start {}".format(instance_name))
-        return True
-
-    def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('clone_vm not implemented.')
-
-    # Get external IP (ephemeral)
-    def current_ip_address(self, vm_name):
-        zones = self._compute.zones().list(project=self._project).execute()
-        for zone in zones.get('items', []):
-            zone_name = zone.get('name', None)
-            for vm in self._get_zone_instances(zone_name).get('items', []):
-                if vm['name'] == vm_name:
-                    access_configs = vm.get('networkInterfaces')[0].get('accessConfigs')[0]
-                    return access_configs.get('natIP')
-
-    def disconnect(self):
-        """Disconnect from the GCE
-
-        GCE service is stateless, so there's nothing to disconnect from
-        """
-        pass
-
-    def does_vm_exist(self, instance_name):
-        try:
-            self._find_instance_by_name(instance_name)
-            return True
-        except Exception:
-            return False
-
     def does_forwarding_rule_exist(self, forwarding_rule_name):
         try:
             self._find_forwarding_rule_by_name(forwarding_rule_name)
             return True
         except Exception:
             return False
-
-    def get_ip_address(self, vm_name):
-        return self.current_ip_address(vm_name)
-
-    def info(self):
-        raise NotImplementedError('info not implemented.')
-
-    def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) in self.states['running']
-
-    def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) in self.states['stopped']
-
-    def is_vm_suspended(self, vm_name):
-        raise ActionNotSupported('vm_suspend not supported.')
-
-    # These methods indicate if the vm is in the process of stopping or starting
-    def is_vm_stopping(self, vm_name):
-        return self.vm_status(vm_name) in self.states['stopping']
-
-    def is_vm_starting(self, vm_name):
-        return self.vm_status(vm_name) in self.states['starting']
-
-    def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
-
-    def list_template(self):
-        return self.list_image()
-
-    def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented.')
-
-    def suspend_vm(self, vm_name):
-        raise ActionNotSupported('vm_suspend not supported.')
-
-    def vm_status(self, vm_name):
-        if self.does_vm_exist(vm_name):
-            return self._find_instance_by_name(vm_name)['status']
-        return None
-
-    def wait_vm_running(self, vm_name, num_sec=360):
-        self.logger.info("Waiting for instance {} to change status to ACTIVE".format(vm_name))
-        wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
-
-    def wait_vm_stopped(self, vm_name, num_sec=360):
-        self.logger.info("Waiting for instance {} to change status to TERMINATED".format(vm_name))
-        wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
-
-    def wait_vm_suspended(self, vm_name, num_sec):
-        raise ActionNotSupported('vm_suspend not supported.')
-
-    def all_vms(self, by_zone=False):
-        """List all VMs in the GCE account, unfiltered by default
-
-        Args:
-            by_zone: boolean, True to filter by the current object's zone
-
-        Returns:
-            List of VMInfo nametuples
-        """
-        result = []
-        zones = self._compute.zones().list(project=self._project).execute()
-        for zone in zones.get('items', []):
-            zone_name = zone.get('name', None)
-            if by_zone and zone_name != self._zone:
-                continue
-            for vm in self._get_zone_instances(zone_name).get('items', []):
-                if vm['id'] and vm['name'] and vm['status'] and vm.get('networkInterfaces'):
-
-                    result.append(VMInfo(
-                        vm['id'],
-                        vm['name'],
-                        vm['status'],
-                        vm.get('networkInterfaces')[0].get('networkIP'),
-                    ))
-        else:
-            self.logger.info('No matching zone found in all_vms with by_zone=True')
-        return result
-
-    def vm_creation_time(self, instance_name):
-        instance = self._find_instance_by_name(instance_name)
-        vm_time_stamp = instance['creationTimestamp']
-        creation_time = (iso8601.parse_date(vm_time_stamp))
-        return creation_time.astimezone(pytz.UTC)
-
-    def vm_type(self, instance_name):
-        instance = self._find_instance_by_name(instance_name)
-        if instance.get('machineType', None):
-            return instance['machineType'].split('/')[-1]
 
     def list_network(self):
         self.logger.info("Attempting to List GCE Virtual Private Networks")
@@ -615,4 +678,4 @@ class GoogleCloudSystem(System):
         return [router['name'] for router in routers]
 
     def list_security_group(self):
-        raise NotImplementedError('start_vm not implemented.')
+        raise NotImplementedError('list_security_group not implemented.')

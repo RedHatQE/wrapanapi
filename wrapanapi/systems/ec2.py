@@ -37,9 +37,9 @@ class EC2Instance(Instance):
     @property
     def state_map():
         return {
-            'pending': None,
-            'stopping': None,
-            'shutting-down': None,
+            'pending': VmState.STARTING,
+            'stopping': VmState.STOPPING,
+            'shutting-down': VmState.STOPPING,
             'running': VmState.RUNNING,
             'stopped': VmState.STOPPED,
             'terminated': VmState.DELETED
