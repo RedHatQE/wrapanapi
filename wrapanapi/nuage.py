@@ -54,13 +54,17 @@ class NuageSystem(WrapanapiAPIBase):
         }
 
     def list_network_groups(self):
-        return self._request('/enterprises', 'get')
+        return self._request_list('/enterprises', 'get')
 
     def list_cloud_subnets(self):
-        return self._request('/subnets', 'get', exclude_name='BackHaulSubnet')
+        return self._request_list('/subnets', 'get', exclude_name='BackHaulSubnet')
 
     def list_security_groups(self):
-        return self._request('/policygroups', 'get')
+        return self._request_list('/policygroups', 'get')
+
+    def _request_list(self, *args, **kwargs):
+        resp = self._request(*args, **kwargs)
+        return [] if resp is None else resp
 
     def _request(self, url, method, data=None, exclude_name=None):
         headers = self.common_headers
@@ -75,7 +79,7 @@ class NuageSystem(WrapanapiAPIBase):
             auth=HTTPBasicAuth(*self.auth),
             headers=headers,
             verify=False,
-            data=json.dumps(data) if data else None
-        )
+            data=json.dumps(data) if data else None  # workaround Nuage bug that empty body "" is
+        )                                            # returned when emtpy JSON "{}" should be
         response.raise_for_status()
-        return response.json() if response.text else []
+        return response.json() if response.text else None
