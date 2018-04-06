@@ -78,4 +78,4 @@ class NuageSystem(WrapanapiAPIBase):
             data=json.dumps(data) if data else None
         )
         response.raise_for_status()
-        return response.json()
+        return response.json() if response.text else []
