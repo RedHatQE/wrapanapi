@@ -305,6 +305,18 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
 
     default_scope = ['https://www.googleapis.com/auth/cloud-platform']
 
+    @classmethod
+    @property
+    def can_suspend(cls):
+        """Indicates whether this system can suspend VM's/instances."""
+        return False
+
+    @classmethod
+    @property
+    def can_pause(cls):
+        """Indicates whether this system can pause VM's/instances."""
+        return False
+
     def __init__(self, project=None, zone=None, file_type=None, **kwargs):
         """
             The last three argumets are optional and required only if you want

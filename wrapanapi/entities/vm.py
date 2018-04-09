@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 
 from wait_for import wait_for, TimedOutError
 
+from wrapanapi.exceptions import MultipleItemsError, NotFoundError
 from .entity import Entity, EntityMixin
 
 
@@ -271,9 +272,12 @@ class VmMixin(EntityMixin):
         return False
 
     @classmethod
-    @abstractproperty
     def steady_wait_time(cls):
-        """Returns default secs to wait for VM to move into a steady state."""
+        """
+        Returns default secs to wait for VM to move into a steady state.
+        
+        May be overriden on each provider
+        """
         return 120
 
     @abstractmethod
@@ -312,8 +316,7 @@ class VmMixin(EntityMixin):
             list of wrapanapi.entities.Vm
         """
 
-    @abstractmethod
-    def does_vm_exist(self, name, *args, **kwargs):
+    def does_vm_exist(self, name):
         """
         Return True if VM with 'name' exists
 
@@ -321,3 +324,10 @@ class VmMixin(EntityMixin):
             True if the VM exists
             False if not
         """
+        try:
+            self.get_vm(name)
+            return True
+        except MultipleItemsError:
+            return True
+        except NotFoundError:
+            return False

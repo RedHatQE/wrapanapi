@@ -333,11 +333,17 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         'num_template': lambda self: len(self.list_templates()),
     }
 
+    @classmethod
+    @property
+    def can_suspend(cls):
+        """Indicates whether this system can suspend VM's/instances."""
+        return False
 
-    # Possible stack states for reference
-
-
-    can_suspend = False
+    @classmethod
+    @property
+    def can_pause(cls):
+        """Indicates whether this system can pause VM's/instances."""
+        return False
 
     def __init__(self, **kwargs):
         super(EC2System, self).__init__(**kwargs)
@@ -445,15 +451,6 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         elif len(instances) > 1:
             raise MultipleInstancesError('Instance name "%s" is not unique' % name)
         return instances[0]
-
-    def does_vm_exist(self, name):
-        try:
-            self.get_vm(name)
-            return True
-        except MultipleInstancesError:
-            return True
-        except VMInstanceNotFound:
-            return False
 
     def list_vms(self, include_terminated=True):
         """

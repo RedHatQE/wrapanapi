@@ -25,28 +25,206 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from wait_for import wait_for
 
-from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.entities import (Instance, Stack, StackMixin, Template,
+                                TemplateMixin, VmMixin, VmState)
+from wrapanapi.exceptions import (ActionNotSupported, ActionTimedOutError,
+                                  ImageNotFoundError, MultipleImagesError,
+                                  MultipleInstancesError, MultipleItemsError,
+                                  NotFoundError, VMInstanceNotFound)
 from wrapanapi.systems import System
 
 
-# TODO: add handler for logger msrest.service_client if needed
-# TODO: add better description to each method
+class AzureInstance(Instance):
+    @staticmethod
+    @property
+    def state_map():
+        return {
+            'VM starting': VmState.STARTING,
+            'VM running': VmState.RUNNING,
+            'VM deallocated': VmState.STOPPED,
+            'VM stopped': VmState.SUSPENDED,
+            'Paused': VmState.PAUSED,
+        }
+
+    def __init__(self, system, name, resource_group, raw=None):
+        """
+        Constructor for an EC2Instance tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the boto.ec2.instance.Instance object if already obtained, or None
+        """
+        super(AzureInstance, self).__init__(system)
+        self.name = name
+        self.resource_group = resource_group
+        self._api = self.system.vms_collection
+        self._raw = raw
+
+    @staticmethod
+    def _wait_on_operation(operation):
+        operation.wait()
+        return True if operation.status().lower() == "succeeded" else False
+
+    def _get_myself(self):
+        """
+        Ensure that this VM still exists AND provisioning was successful on azure
+        """
+        try:
+            vm = self._api.get(
+                resource_group_name=self.resource_group, vm_name=self.name, expand='instanceView')
+        except CloudError as e:
+            if e.response.status_code == 404:
+                raise VMInstanceNotFound(self.name)
+            else:
+                raise
+
+        first_status = vm.instance_view.statuses[0]
+        if first_status.display_status == 'Provisioning failed':
+            raise VMInstanceNotFound('provisioning failed for VM {}'.format(self.name))
+        return vm
+
+    @property
+    def raw(self):
+        if not self._raw:
+            self._raw = self._get_myself()
+        return self._raw
+
+    @property
+    def name(self):
+        return self.name
+
+    def refresh(self):
+        """
+        Update instance's raw data
+        """
+        self._raw = self._get_myself()
+        return self
+
+    @property
+    def exists(self):
+        try:
+            assert self._get_myself()
+        except (AssertionError, VMInstanceNotFound):
+            return False
+        return True
+
+    @property
+    def state(self):
+        self.logger.info("retrieving azure VM status for {}".format(self.name))
+        self.refresh()
+        last_power_status = self._raw.instance_view.statuses[-1].display_status
+        self.logger.info("returned status was {}".format(last_power_status))
+        return self._api_state_to_vmstate(last_power_status)
+
+    def get_network_interfaces(self):
+        self.refresh()
+        return self._raw.network_profile.network_interfaces
+
+    @property
+    def ip(self):
+        """Return first interface's public IPv4 address"""
+        first_vm_if = self.get_network_interfaces()[0]
+        if_name = os.path.split(first_vm_if.id)[1]
+        public_ip = self.system.network_client.public_ip_addresses.get(
+            self.resource_group, if_name)
+        return public_ip.ip_address
+
+    @property
+    def type(self):
+        return self._raw.hardware_profile.vm_size
+
+    @property
+    def creation_time(self):
+        return self._raw.instance_view.statuses[0].time
+
+    def rename(self, new_name):
+        pass
+
+    def delete(self):
+        self.logger.info("deleting vm {v}".format(v=self.name))
+        operation = self._api.delete(
+            resource_group_name=self.resource_group, vm_name=self.name)
+        return self._wait_on_operation(operation)
+
+    def cleanup(self):
+        """
+        Clean up a VM
+
+        Deletes VM, then also deletes NICs/PIPs associated with the VM.
+        Any exceptions raised during NIC/PIP delete attempts are logged only.
+        """
+        self.delete()
+        self.logger.info("cleanup: removing NICs/PIPs for VM '{}'".format(self.name))
+        try:
+            self.system.remove_nics_by_search(self.name, self.resource_group)
+            self.system.remove_pips_by_search(self.name, self.resource_group)
+        except Exception:
+            self.logger.exception(
+                "cleanup: failed to cleanup NICs/PIPs for VM '{}'".format(self.name))
+
+    def start(self):
+        self.logger.info("starting vm {v}".format(v=self.name))
+        operation = self._api.start(
+            resource_group_name=self.resource_group, vm_name=self.name)
+        return self._wait_on_operation(operation)
+
+    def stop(self):
+        self.logger.info("stopping vm {v}".format(v=self.name))
+        operation = self._api.deallocate(
+            resource_group_name=self.resource_group, vm_name=self.name)
+        return self._wait_on_operation(operation)
+
+    def restart(self):
+        self.logger.info("restarting vm {v}".format(v=self.name))
+        operation = self._api.restart(
+            resource_group_name=self.resource_group, vm_name=vm_name)
+        return self._wait_on_operation(operation)
+
+    def suspend(self):
+        self.logger.info("suspending vm {v}".format(v=self.name))
+        operation = self._api.power_off(
+            resource_group_name=self.resource_group, vm_name=self.name)
+        return self._wait_on_operation(operation)
+
+    def capture(self, container, image_name, overwrite_vhds=True):
+        self.logger.info("Attempting to Capture Azure VM {}".format(self.name))
+        params = VirtualMachineCaptureParameters(vhd_prefix=image_name,
+                                                 destination_container_name=container,
+                                                 overwrite_vhds=overwrite_vhds)
+        self.stop()
+        self.generalize()
+        self.logger.info("Capturing VM {}".format(self.name))
+        operation = self._api.capture(
+            resource_group_name=self.resource_group, vm_name=self.name, parameters=params)
+        return self._wait_on_operation(operation)
+
+    def get_vhd_uri(self):
+        self.logger.info("attempting to Retrieve Azure VM VHD %s", self.name)
+        vm = self._get_myself()
+        vhd_endpoint = vm.storage_profile.os_disk.vhd.uri
+        self.logger.info("Returned Disk Endpoint was %s", vhd_endpoint)
+        return vhd_endpoint
 
 
-class AzureSystem(System):
+class AzureSystem(System, VmMixin, TemplateMixin, StackMixin):
     """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
     """
-    STATE_RUNNING = "VM running"
-    STATE_STOPPED = "VM deallocated"
-    STATE_STARTING = "VM starting"
-    STATE_SUSPEND = "VM stopped"
-    STATE_PAUSED = "Paused"
-    STATES_STEADY = {STATE_RUNNING, STATE_PAUSED, STATE_STOPPED}
-
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        'num_vm': lambda self: len(self.list_vms()),
+        'num_template': lambda self: len(self.list_templates()),
     }
+
+    @classmethod
+    @property
+    def can_suspend(cls):
+        """Indicates whether this system can suspend VM's/instances."""
+        return True
+
+    @classmethod
+    @property
+    def can_pause(cls):
+        """Indicates whether this system can pause VM's/instances."""
+        return False
 
     def __init__(self, **kwargs):
         super(AzureSystem, self).__init__(kwargs)
@@ -104,213 +282,41 @@ class AzureSystem(System):
     def vms_collection(self):
         return self.compute_client.virtual_machines
 
-    def start_vm(self, vm_name, resource_group=None):
-        col = self.vms_collection
-        self.logger.info("starting vm {v}".format(v=vm_name))
-        operation = col.start(resource_group_name=resource_group or self.resource_group,
-                              vm_name=vm_name)
-        operation.wait()
-        return operation.status()
-
-    def stop_vm(self, vm_name, resource_group=None):
-        col = self.vms_collection
-        self.logger.info("stopping vm {v}".format(v=vm_name))
-        operation = col.deallocate(resource_group_name=resource_group or self.resource_group,
-                                   vm_name=vm_name)
-        operation.wait()
-        return operation.status()
-
-    def restart_vm(self, vm_name, resource_group=None):
-        col = self.vms_collection
-        self.logger.info("restarting vm {v}".format(v=vm_name))
-        operation = col.restart(resource_group_name=resource_group or self.resource_group,
-                                vm_name=vm_name)
-        operation.wait()
-        return operation.status()
-
-    def suspend_vm(self, vm_name, resource_group=None):
-        col = self.vms_collection
-        self.logger.info("suspending vm {v}".format(v=vm_name))
-        operation = col.power_off(resource_group_name=resource_group or self.resource_group,
-                                  vm_name=vm_name)
-        operation.wait()
-        return operation.status()
-
     def create_vm(self, vm_name, *args, **kwargs):
-        # todo: implement it later
-        raise NotImplementedError('NIE - create_vm not implemented.')
+        raise NotImplementedError
 
-    def delete_vm(self, vm_name, *args, **kwargs):
-        # todo: check that all resources are deleted
-        resource_group = kwargs.get('resource_group')
-        col = self.vms_collection
-        self.logger.info("trying to delete vm {v}".format(v=vm_name))
-        operation = col.delete(resource_group_name=resource_group or self.resource_group,
-                               vm_name=vm_name)
-        operation.wait()
-        return operation.status()
-
-    def list_vm(self):
+    def find_vms(self, resource_group=None, vm_name=None):
         """
-        Returns list of Instances from all Resource Groups available in current Region
+        Returns list of Instances in current Region
+
+        Can be filtered by: vm_name or resource_group
+
+        If those are not specified all VMs are returned in the region
         """
         vm_list = []
-        for res_group in self.list_resource_groups():
+        resource_groups = [resource_group] or self.list_resource_groups()
+        for res_group in resource_groups:
             vms = self.vms_collection.list(resource_group_name=res_group)
-            vm_list.extend([vm.name for vm in vms if vm.location == self.region])
+            vm_list.extend([
+                AzureInstance(system=self, name=vm.name, resource_group=res_group, raw=vm)
+                for vm in vms if vm.location == self.region
+            ])
+        if vm_name:
+            return [vm for vm in vm_list if vm.name == vm_name]
         return vm_list
 
-    def list_vm_by_resource_group(self, resource_group=None):
-        vms = self.vms_collection.list(resource_group_name=resource_group or self.resource_group)
-        return [vm.name for vm in vms]
+    def list_vms(self, resource_group=None):
+        return self.find_vms(resource_group=resource_group)
 
-    def capture_vm(self, vm_name, container, image_name, overwrite_vhds=True, **kwargs):
-        self.logger.info("Attempting to Capture Azure VM {}".format(vm_name))
-        resource_group = kwargs.get('resource_group') or self.resource_group
-        col = self.vms_collection
-        params = VirtualMachineCaptureParameters(vhd_prefix=image_name,
-                                                 destination_container_name=container,
-                                                 overwrite_vhds=overwrite_vhds)
-        self.logger.info("Stopping VM {}".format(vm_name))
-        self.stop_vm(vm_name, resource_group)
-        self.logger.info("Generalizing VM {}".format(vm_name))
-        col.generalize(resource_group_name=resource_group, vm_name=vm_name)
-        self.logger.info("Capturing VM {}".format(vm_name))
-        operation = col.capture(resource_group_name=resource_group, vm_name=vm_name,
-                                parameters=params)
-        operation.wait()
-        return operation.status()
+    def get_vm(self, name):
+        vms = self.find_vms(vm_name=name)
+        if not vms:
+            raise VMInstanceNotFound(name)
+        # Azure VM names are unique across whole cloud, there should only be 1 item in the list
+        return vms[0]
 
     def data(self, vm_name, resource_group=None):
         raise NotImplementedError('data not implemented.')
-
-    def vm_status(self, vm_name, resource_group=None):
-        self.logger.info("Attempting to Retrieve Azure VM Status {}".format(vm_name))
-        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
-                                     vm_name=vm_name, expand='instanceView')
-
-        first_status = vm.instance_view.statuses[0]
-        if first_status.display_status == 'Provisioning failed':
-            raise VMInstanceNotFound(first_status.message)
-
-        last_power_status = vm.instance_view.statuses[-1].display_status
-        self.logger.info("Returned Status was {}".format(last_power_status))
-        return last_power_status
-
-    def vm_type(self, vm_name, resource_group=None):
-        self.logger.info("Attempting to Retrieve Azure VM Type {}".format(vm_name))
-        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
-                                     vm_name=vm_name, expand='instanceView')
-        vm_type = vm.hardware_profile.vm_size
-        self.logger.info("Returned Type was {}".format(vm_type))
-        return vm_type
-
-    def is_vm_running(self, vm_name, resource_group=None):
-        if self.vm_status(vm_name, resource_group) == self.STATE_RUNNING:
-            self.logger.info("According to Azure, the VM \"{}\" is running".format(vm_name))
-            return True
-        else:
-            return False
-
-    def is_vm_stopped(self, vm_name, resource_group=None):
-        if self.vm_status(vm_name, resource_group) == self.STATE_STOPPED:
-            self.logger.info("According to Azure, the VM \"{}\" is stopped".format(vm_name))
-            return True
-        else:
-            return False
-
-    def is_vm_starting(self, vm_name, resource_group=None):
-        if self.vm_status(vm_name, resource_group) == self.STATE_STARTING:
-            self.logger.info("According to Azure, the VM \"{}\" is starting".format(vm_name))
-            return True
-        else:
-            return False
-
-    def is_vm_suspended(self, vm_name, resource_group=None):
-        if self.vm_status(vm_name, resource_group) == self.STATE_SUSPEND:
-            self.logger.info("According to Azure, the VM \"{}\" is suspended".format(vm_name))
-            return True
-        else:
-            return False
-
-    def in_steady_state(self, vm_name, resource_group=None):
-        return self.vm_status(vm_name, resource_group) in self.STATES_STEADY
-
-    def clone_vm(self, source_name, vm_name):
-        """It wants exact host and placement (c:/asdf/ghjk) :("""
-        raise NotImplementedError('NIE - clone_vm not implemented.')
-
-    def does_vm_exist(self, vm_name, resource_group=None):
-        return vm_name in self.list_vm_by_resource_group(resource_group=resource_group)
-
-    def wait_vm_running(self, vm_name, resource_group=None, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_running(vm_name, resource_group),
-            message="Waiting for Azure VM {} to be running.".format(vm_name),
-            num_sec=num_sec)
-
-    def wait_vm_steady(self, vm_name, resource_group=None, num_sec=300):
-        self.logger.info("All states are steady in Azure. {}".format(vm_name))
-        # todo: need to check what is that ?
-        return True
-
-    def wait_vm_stopped(self, vm_name, resource_group=None, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_stopped(vm_name, resource_group),
-            message="Waiting for Azure VM {} to be stopped.".format(vm_name),
-            num_sec=num_sec)
-
-    def wait_vm_suspended(self, vm_name, resource_group=None, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_suspended(vm_name, resource_group),
-            message="Waiting for Azure VM {} to be suspended.".format(vm_name),
-            num_sec=num_sec)
-
-    def vm_creation_time(self, vm_name, resource_group=None):
-        # There is no such parameter as vm creation time.  Using VHD date instead.
-        self.logger.info("Attempting to Retrieve Azure VM Modification Time {}".format(vm_name))
-        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
-                                     vm_name=vm_name, expand='instanceView')
-        create_time = vm.instance_view.statuses[0].time
-        self.logger.info("VM creation time {}".format(str(create_time)))
-        return create_time
-
-    def remove_host_from_cluster(self, hostname):
-        """I did not notice any scriptlet that lets you do this."""
-
-    def disconnect_dvd_drives(self, vm_name):
-        raise NotImplementedError('disconnect_dvd_drives not implemented.')
-
-    def get_network_interface(self, vm_name, resource_group=None):
-        # todo: weird function, to refactor it later
-        self.logger.info("Attempting to Retrieve Azure VM Network Interface %s", vm_name)
-        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
-                                     vm_name=vm_name)
-        first_if = vm.network_profile.network_interfaces[0]
-        self.logger.info("Returned URI was %s", first_if.id)
-        return os.path.split(first_if.id)[1]
-
-    def get_vm_vhd(self, vm_name, resource_group=None):
-        self.logger.info("get_vm_vhd - Attempting to Retrieve Azure VM VHD %s", vm_name)
-        vm = self.vms_collection.get(resource_group_name=resource_group or self.resource_group,
-                                     vm_name=vm_name)
-        vhd_endpoint = vm.storage_profile.os_disk.vhd.uri
-        self.logger.info("Returned Disk Endpoint was %s", vhd_endpoint)
-        return vhd_endpoint
-
-    def current_ip_address(self, vm_name, resource_group=None):
-        # Returns first active IPv4 IpAddress only
-        resource_group = resource_group or self.resource_group
-        vm = self.vms_collection.get(resource_group_name=resource_group,
-                                     vm_name=vm_name)
-        first_vm_if = vm.network_profile.network_interfaces[0]
-        if_name = os.path.split(first_vm_if.id)[1]
-        public_ip = self.network_client.public_ip_addresses.get(resource_group, if_name)
-        return public_ip.ip_address
-
-    def get_ip_address(self, vm_name, resource_group=None, **kwargs):
-        current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
-        return current_ip_address
 
     def list_subscriptions(self):
         return [(str(s.display_name), str(s.subscription_id)) for s in
@@ -548,13 +554,6 @@ class AzureSystem(System):
         return self.list_blob_images(container=self.template_container)\
             + [item.name for item in self.resource_client.resources.list(
                 filter="resourceType eq 'Microsoft.Compute/images'")]
-
-    @contextmanager
-    def with_vm(self, *args, **kwargs):
-        """Context manager for better cleanup"""
-        name = self.deploy_template(*args, **kwargs)
-        yield name
-        self.delete_vm(name)
 
     def stack_exist(self, stack_name):
         return stack_name in self.list_stack()
