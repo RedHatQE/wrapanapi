@@ -83,6 +83,8 @@ class Vm(Entity):
     def state(self):
         """
         Returns VMState object representing the VM's current state
+
+        Should always refresh to get the latest status from the API
         """
 
     @property
@@ -208,7 +210,7 @@ class Vm(Entity):
         """
         raise NotImplementedError('suspend not implemented.')
 
-    def pause(self, vm_name):
+    def pause(self):
         """
         Pauses the VM/instance.  Blocks until task completes.
 

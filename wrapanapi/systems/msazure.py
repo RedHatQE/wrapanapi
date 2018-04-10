@@ -55,8 +55,8 @@ class AzureInstance(Instance):
             raw: the boto.ec2.instance.Instance object if already obtained, or None
         """
         super(AzureInstance, self).__init__(system)
-        self.name = name
         self.resource_group = resource_group
+        self._name = name
         self._api = self.system.vms_collection
         self._raw = raw
 
@@ -91,7 +91,7 @@ class AzureInstance(Instance):
 
     @property
     def name(self):
-        return self.name
+        return self._name
 
     def refresh(self):
         """
@@ -177,7 +177,7 @@ class AzureInstance(Instance):
     def restart(self):
         self.logger.info("restarting vm {v}".format(v=self.name))
         operation = self._api.restart(
-            resource_group_name=self.resource_group, vm_name=vm_name)
+            resource_group_name=self.resource_group, vm_name=self.name)
         return self._wait_on_operation(operation)
 
     def suspend(self):
@@ -192,7 +192,7 @@ class AzureInstance(Instance):
                                                  destination_container_name=container,
                                                  overwrite_vhds=overwrite_vhds)
         self.stop()
-        self.generalize()
+        self._raw.generalize()
         self.logger.info("Capturing VM {}".format(self.name))
         operation = self._api.capture(
             resource_group_name=self.resource_group, vm_name=self.name, parameters=params)
@@ -220,7 +220,7 @@ class AzureBlobImage(Template):
             container: container the template is stored in
             raw: the azure.storage.blob.models.Blob object if already obtained, or None
         """
-        super(EC2Image, self).__init__(system)
+        super(AzureBlobImage, self).__init__(system)
         self.name = name
         self.container = container
         self._raw = raw
@@ -355,7 +355,8 @@ class AzureBlobImage(Template):
             vm_name=vm_name,
             parameters=vm_parameters).result()
         vm = AzureInstance(
-            system=system, name=vm.name, resource_group=vm_settings['resource_group'], raw=vm)
+            system=self.system, name=vm.name,
+            resource_group=vm_settings['resource_group'], raw=vm)
         vm.wait_for_state(VmState.RUNNING)
         return vm
 
@@ -774,7 +775,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             list of AzureImage objects
         """
         matches = []
-        for container in self.storage_client.list_containers():
+        for container in self.container_client.list_containers():
             container_name = container.name
             if container and container_name.lower() != container.lower():
                 continue

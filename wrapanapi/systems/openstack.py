@@ -22,14 +22,16 @@ from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
 from novaclient.v2.floating_ips import FloatingIP
-from novaclient.v2.servers import Server
 from requests.exceptions import Timeout
 from wait_for import wait_for
 
-from wrapanapi.exceptions import (ActionTimedOutError,
+from wrapanapi.entities import (Instance, Template, TemplateMixin, VmMixin,
+                                VmState)
+from wrapanapi.exceptions import (ActionTimedOutError, ImageNotFoundError,
                                   KeystoneVersionNotSupported,
+                                  MultipleImagesError, MultipleInstancesError,
                                   NetworkNameNotFound, NoMoreFloatingIPs,
-                                  VMError, VMInstanceNotFound, VMNotFoundViaIP)
+                                  VMError, VMInstanceNotFound)
 from wrapanapi.systems import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -60,7 +62,7 @@ class OpenstackInstance(Instance):
     @property
     def state_map():
         return {
-            'PAUSED': VmState.PAUSED
+            'PAUSED': VmState.PAUSED,
             'ACTIVE': VmState.RUNNING,
             'SHUTOFF': VmState.STOPPED,
             'SUSPENDED': VmState.SUSPENDED
@@ -78,6 +80,7 @@ class OpenstackInstance(Instance):
         self.id = id
         self._raw = raw
         self._api = self.system.api
+        self._flavor = None
 
     def _get_myself(self):
         """
@@ -145,7 +148,15 @@ class OpenstackInstance(Instance):
                     return str(nic['addr'])
 
     @property
+    def flavor(self):
+        if not self._flavor:
+            flavor_id = self._raw.flavor['id']
+            self._flavor = self._api.flavors.get(flavor_id)
+        return self._flavor
+
+    @property
     def type(self):
+        return self.flavor.name
 
     @property
     def creation_time(self):
@@ -157,7 +168,6 @@ class OpenstackInstance(Instance):
     def rename(self, new_name):
         return self._raw.update(new_name)
 
-    def assign_floating_ip(self):
     def assign_floating_ip(self, floating_ip_pool, safety_timer=5):
         """Assigns a floating IP to an instance.
 
@@ -214,8 +224,8 @@ class OpenstackInstance(Instance):
             # Now the grace period in which a FIP theft could happen
             time.sleep(safety_timer)
 
-        self.logger.info("Instance %s got a floating IP %s".format(self.name, ip.ip))
-        assert self.ip == ip.ip, 'Current IP doesn't match reserved floating IP!'
+        self.logger.info('Instance %s got a floating IP %s', self.name, ip.ip)
+        assert self.ip == ip.ip, 'Current IP does not match reserved floating IP!'
         return ip.ip
 
     def unassign_floating_ip(self):
@@ -233,7 +243,7 @@ class OpenstackInstance(Instance):
             return None
         floating_ip = floating_ips[0]
         self.logger.info(
-            'Detaching floating IP %s/%s from %s', floating_ip.id, floating_ip.ip, instance.name))
+            'Detaching floating IP %s/%s from %s', floating_ip.id, floating_ip.ip, instance.name)
         instance.remove_floating_ip(floating_ip)
         wait_for(
             lambda: self.ip is None, delay=1, timeout='1m')
@@ -246,7 +256,7 @@ class OpenstackInstance(Instance):
         if delete_fip:
             self.system.delete_floating_ip(self.unassign_floating_ip())
         else:
-            self.unassign_floating_ip(instance)
+            self.unassign_floating_ip()
 
         self.logger.info(' Delete in progress instance %s', self.name)
         self._raw.delete()
@@ -278,7 +288,7 @@ class OpenstackInstance(Instance):
             return True
 
         self._raw.stop()
-        wait_for(self.is_stopped, message='stop %s'.format(self.name))
+        wait_for(self.is_stopped, message='stop {}'.format(self.name))
         return True
 
     def restart(self):
@@ -304,16 +314,16 @@ class OpenstackInstance(Instance):
 
         We have to rename the instance, create a snapshot of the original name and then delete the
         instance."""
-        self.logger.info("Marking {} as OpenStack template".format(self.name)))
+        self.logger.info('Marking %s as OpenStack template', self.name)
         original_name = self.name
         copy_name = original_name + "_copytemplate"
         self.rename(copy_name)
         try:
-            self.wait_for_stready_state()
+            self.wait_for_steady_state()
             if not self.is_stopped:
                 self.stop()
             uuid = self._raw.create_image(original_name)
-            wait_for(lambda: self.api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
+            wait_for(lambda: self._api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
             self.delete()
             wait_for(lambda: not self.exists, num_sec=180, delay=5)
         except Exception as e:
@@ -325,9 +335,195 @@ class OpenstackInstance(Instance):
                 self.logger.exception(
                     'Failed to rename %s back to original name (%s)', copy_name, original_name)
             raise
+        return OpenstackImage(system=self.system, id=uuid)
+
+    def set_meta_value(self, key, value):
+        return self._raw.manager.set_meta_item(
+            self._raw, key, value if isinstance(value, basestring) else json.dumps(value))
+
+    def get_meta_value(self, key):
+        instance = self._raw
+        try:
+            data = instance.metadata[key]
+            try:
+                return json.loads(data)
+            except ValueError:
+                # Support metadata set by others
+                return data
+        except KeyError:
+            raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
+
+    def get_hardware_configuration(self):
+        return {'ram': self.flavor.ram, 'cpu': self.flavor.vcpus}
 
 
-class OpenstackSystem(System):
+class OpenstackImage(Template):
+    def __init__(self, system, id, raw=None):
+        """
+        Constructor for an OpenstackImage
+
+        Args:
+            system: an OpenstackSystem object
+            id: uuid of image
+            raw: the novaclient Image resource object if already obtained, or None
+        """
+        super(OpenstackImage, self).__init__(system)
+        self.id = id
+        self._raw = raw
+        self._api = self.system.api
+
+    @property
+    def raw(self):
+        if not self._raw:
+            self._raw = self._api.images.get(self.id)
+        return self._raw
+
+    @property
+    def name(self):
+        return self._raw.name
+
+    def refresh(self):
+        self._raw = self._api.images.get(self.id)
+
+    @property
+    def exists(self):
+        try:
+            self.refresh()
+        except os_exceptions.NotFound:
+            return False
+        return True
+
+    def delete(self):
+        self._raw.delete()
+        wait_for(lambda: not self.exists, num_sec=120, delay=10)
+
+    def cleanup(self):
+        return self.delete()
+        
+    def _get_or_create_override_flavor(self, flavor, cpu=None, ram=None):
+        """
+        Find or create a new flavor usable for provisioning.
+        
+        Keep the parameters from the original flavor
+        """
+        self.logger.info(
+            'RAM/CPU override of flavor %s: RAM %r MB, CPU: %r cores', flavor.name, ram, cpu)
+        ram = ram or flavor.ram
+        cpu = cpu or flavor.vcpus
+        disk = flavor.disk
+        ephemeral = flavor.ephemeral
+        swap = flavor.swap
+        rxtx_factor = flavor.rxtx_factor
+        is_public = flavor.is_public
+        try:
+            new_flavor = self._api.flavors.find(
+                ram=ram, vcpus=cpu,
+                disk=disk, ephemeral=ephemeral, swap=swap,
+                rxtx_factor=rxtx_factor, is_public=is_public)
+        except os_exceptions.NotFound:
+            # The requested flavor was not found, create a custom one
+            self.logger.info('No suitable flavor found, creating a new one.')
+            base_flavor_name = '{}-{}M-{}C'.format(flavor.name, ram, cpu)
+            flavor_name = base_flavor_name
+            counter = 0
+            new_flavor = None
+            if not swap:
+                # Protect against swap empty string
+                swap = 0
+            while new_flavor is None:
+                try:
+                    new_flavor = self._api.flavors.create(
+                        name=flavor_name,
+                        ram=ram, vcpus=cpu,
+                        disk=disk, ephemeral=ephemeral, swap=swap,
+                        rxtx_factor=rxtx_factor, is_public=is_public)
+                except os_exceptions.Conflict:
+                    self.logger.info(
+                        'Name %s is already taken, changing the name', flavor_name)
+                    counter += 1
+                    flavor_name = base_flavor_name + '_{}'.format(counter)
+                else:
+                    self.logger.info(
+                        'Created a flavor %r with id %r', new_flavor.name, new_flavor.id)
+                    flavor = new_flavor
+        else:
+            self.logger.info('Found a flavor %s', new_flavor.name)
+            flavor = new_flavor
+        return flavor
+
+    def deploy(self, vm_name, **kwargs):
+        """ Deploys an OpenStack instance from a template.
+
+        For all available args, see ``create`` method found here:
+        http://docs.openstack.org/python-novaclient/latest/reference/api/novaclient.v2.servers.html
+        Most important args are listed below.
+
+        Args:
+            vm_name: A name to use for the vm.
+            template: The name of the template to use.
+            flavor_name: The name of the flavor to use, defaults to m1.tiny
+            flavor_id: UUID of the flavor to use, defaults to m1.tiny
+            network_name: The name of the network if it is a multi network setup (Havanna).
+            ram: Override flavor RAM (creates a new flavor if none suitable found)
+            cpu: Override flavor VCPU (creates a new flavor if none suitable found)
+
+        Note:
+            If assign_floating_ip kwarg is present, then :py:meth:`OpenstackSystem.create_vm` will
+            attempt to register a floating IP address from the pool specified in the arg.
+
+            When overriding the ram and cpu, you have to pass a flavor anyway. When a new flavor
+            is created from the ram/cpu, other values are taken from that given flavor.
+        """
+        power_on = kwargs.pop("power_on", True)
+        nics = []
+        timeout = kwargs.pop('timeout', 900)
+
+        if 'flavor_name' in kwargs:
+            flavor = self._api.flavors.find(name=kwargs['flavor_name'])
+        elif 'instance_type' in kwargs:
+            flavor = self._api.flavors.find(name=kwargs['instance_type'])
+        elif 'flavor_id' in kwargs:
+            flavor = self._api.flavors.find(id=kwargs['flavor_id'])
+        else:
+            flavor = self._api.flavors.find(name='m1.tiny')
+        ram = kwargs.pop('ram', None)
+        cpu = kwargs.pop('cpu', None)
+        if ram or cpu:
+            self._get_or_create_override_flavor(flavor, cpu, ram)
+
+        if 'vm_name' not in kwargs:
+            vm_name = 'new_instance_name'
+        else:
+            vm_name = kwargs['vm_name']
+        self.logger.info(
+            ' Deploying OpenStack template %s to instance %s (%s)',
+            self.name, kwargs['vm_name'], flavor.name
+        )
+        if len(self.system.list_network()) > 1:
+            if 'network_name' not in kwargs:
+                raise NetworkNameNotFound('Must select a network name')
+            else:
+                net_id = self._api.networks.find(label=kwargs['network_name']).id
+                nics = [{'net-id': net_id}]
+
+        image = self._raw
+        new_instance = self._api.servers.create(vm_name, image, flavor, nics=nics, **kwargs)
+        instance = OpenstackInstance(
+            system=self.system,
+            id=new_instance.id,
+            raw=new_instance)
+
+        instance.wait_for_state(VmState.RUNNING, num_sec=timeout)
+        if kwargs.get('floating_ip_pool'):
+            instance.assign_floating_ip(kwargs['floating_ip_pool'])
+
+        if power_on:
+            instance.start()
+
+        return instance
+
+
+class OpenstackSystem(System, VmMixin, TemplateMixin):
     """Openstack management system
 
     Uses novaclient.
@@ -341,14 +537,21 @@ class OpenstackSystem(System):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self._get_all_instances(True)),
-        'num_template': lambda self: len(self.list_template()),
+        'num_vm': lambda self: len(self.list_vms(filter_tenants=True)),
+        'num_template': lambda self: len(self.list_templates()),
     }
 
+    @classmethod
+    @property
+    def can_suspend(cls):
+        """Indicates whether this system can suspend VM's/instances."""
+        return True
 
-
-    can_suspend = True
-    can_pause = True
+    @classmethod
+    @property
+    def can_pause(cls):
+        """Indicates whether this system can pause VM's/instances."""
+        return True
 
     def __init__(self, **kwargs):
         super(OpenstackSystem, self).__init__(kwargs)
@@ -427,6 +630,9 @@ class OpenstackSystem(System):
                                                 insecure=True)
         return self._stackapi
 
+    def info(self):
+        return '%s %s' % (self.api.client.service_type, self.api.client.version)
+
     def _get_tenants(self):
 
         if self.keystone_version == 3:
@@ -479,13 +685,145 @@ class OpenstackSystem(System):
     def create_vm(self):
         raise NotImplementedError('create_vm not implemented.')
 
-    def list_vm(self, **kwargs):
-        instance_list = self._get_all_instances()
-        return [instance.name for instance in instance_list]
+    def _generic_paginator(self, f):
+        """A generic paginator for OpenStack services
 
-    def list_template(self):
-        template_list = self.api.images.list()
-        return [template.name for template in template_list]
+        Takes a callable and recursively runs the "listing" until no more are returned
+        by sending the ```marker``` kwarg to offset the search results. We try to rollback
+        up to 10 times in the markers in case one was deleted. If we can't rollback after
+        10 times, we give up.
+        Possible improvement is to roll back in 5s or 10s, but then we have to check for
+        uniqueness and do dup removals.
+        """
+        lists = []
+        marker = None
+        while True:
+            if not lists:
+                temp_list = f()
+            else:
+                for i in range(min(10, len(lists))):
+                    list_offset = -(i + 1)
+                    marker = lists[list_offset].id
+                    try:
+                        temp_list = f(marker=marker)
+                        break
+                    except os_exceptions.BadRequest:
+                        continue
+                else:
+                    raise Exception("Could not get list, maybe mass deletion after 10 marker tries")
+            if temp_list:
+                lists.extend(temp_list)
+            else:
+                break
+        return lists
+
+    def list_vms(self, filter_tenants=True):
+        call = partial(self.api.servers.list, True, {'all_tenants': True})
+        instances = self._generic_paginator(call)
+        if filter_tenants:
+            # Filter instances based on their tenant ID
+            # needed for CFME 5.3 and higher
+            tenants = self._get_tenants()
+            ids = [tenant.id for tenant in tenants]
+            instances = [i for i in instances if i.tenant_id in ids]
+        return [OpenstackInstance(system=self, id=i.id, raw=i) for i in instances]
+
+    def find_vms(self, name=None, id=None, ip=None):
+        """
+        Find VM based on name OR IP OR ID
+
+        Specifying both name and ip will get you a list of instances which
+        have name=='name' OR which have ip=='ip' OR which have id=='id'
+
+        OpenStack Nova Client does have a find method, but it doesn't
+        allow the find method to be used on other tenants. The list()
+        method is the only one that allows an all_tenants=True keyword
+
+        Args:
+            name (str)
+            ip (str)
+
+        Returns:
+            List of OpenstackInstance objects
+        """
+        if not name and not ip:
+            raise ValueError("Must find by name, ip, or both")
+        matches = []
+        instances = self.list_vms()
+        for instance in instances:
+            if name and instance.name == name:
+                matches.append(instance)
+            elif ip and instance.ip == ip:
+                # unfortunately it appears you cannot query for ip address from the sdk,
+                #   unlike curling rest api which does work
+                matches.append(instance)
+            elif id and instance.id == id:
+                matches.append(instance)
+        return matches
+
+    def get_vm(self, name=None, id=None, ip=None):
+        """
+        Get a VM based on name, or ID, or IP
+
+        Passes args to find_vms to search for matches
+
+        Args:
+            name (str)
+            id (str)
+            ip (str)
+
+        Returns:
+            single OpenstackInstance object
+
+        Raises:
+            VMInstanceNotFound -- vm not found
+            MultipleInstancesError -- more than 1 vm found
+        """
+        # Store the kwargs used for the exception msg's
+        kwargs = {'name': name, 'id': id, 'ip': ip}
+        kwargs = {key: val for key, val in kwargs.items() if val is not None}
+
+        matches = self.find_vms(name, id, ip)
+        if not matches:
+            raise VMInstanceNotFound('match criteria: {}'.format(kwargs))
+        elif len(matches) > 1:
+            raise MultipleInstancesError('match criteria: {}'.format(kwargs))
+
+    def create_template(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def list_templates(self):
+        images = self.api.images.list()
+        return [OpenstackImage(system=self, id=i.id, raw=i) for i in images]
+
+    def find_templates(self, name):
+        matches = []
+        for image in self.list_templates():
+            if image.name == name:
+                matches.append(image)
+        return matches
+
+    def get_template(self, name=None, id=None):
+        """
+        Get a template by name OR id
+        """
+        if name:
+            matches = self.find_templates(name)
+            if not matches:
+                raise ImageNotFoundError(name)
+            elif len(matches) > 1:
+                raise MultipleImagesError(name)
+            result = matches[0]
+        elif id:
+            try:
+                raw_image = self.api.images.get(id)
+            except os_exceptions.NotFound:
+                raise ImageNotFoundError(id)
+            result = OpenstackImage(system=self, id=raw_image.id, raw=raw_image)
+        else:
+            raise AttributeError("Must specify either 'name' or 'id' with get_template")
+        return result
+
 
     def list_flavor(self):
         flavor_list = self.api.flavors.list()
@@ -498,9 +836,6 @@ class OpenstackSystem(System):
     def list_network(self):
         network_list = self.api.networks.list()
         return [network.label for network in network_list]
-
-    def info(self):
-        return '%s %s' % (self.api.client.service_type, self.api.client.version)
 
     def disconnect(self):
         pass
@@ -602,123 +937,12 @@ class OpenstackSystem(System):
         volume = self.capi.volumes.get(volume_id)
         result = {}
         for attachment in volume.attachments:
-            result[self._get_instance_name(attachment["server_id"])] = attachment["device"]
+            result[self.get_vm(attachment['server_id']).name] = attachment['device']
         return result
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
         return sorted(self.api.floating_ips.findall(fixed_ip=None, pool=pool), key=lambda ip: ip.ip)
-
-    def deploy_template(self, template, *args, **kwargs):
-        """ Deploys an OpenStack instance from a template.
-
-        For all available args, see ``create`` method found here:
-        http://docs.openstack.org/developer/python-novaclient/ref/v1_1/servers.html
-
-        Most important args are listed below.
-
-        Args:
-            template: The name of the template to use.
-            flavour_name: The name of the flavour to use.
-            flavour_id: UUID of the flavour to use.
-            vm_name: A name to use for the vm.
-            network_name: The name of the network if it is a multi network setup (Havanna).
-            ram: Override flavour RAM (creates a new flavour if none suitable found)
-            cpu: Override flavour VCPU (creates a new flavour if none suitable found)
-
-        Note:
-            If assign_floating_ip kwarg is present, then :py:meth:`OpenstackSystem.create_vm` will
-            attempt to register a floating IP address from the pool specified in the arg.
-
-            When overriding the ram and cpu, you have to pass a flavour anyway. When a new flavour
-            is created from the ram/cpu, other values are taken from that given flavour.
-        """
-        power_on = kwargs.pop("power_on", True)
-        nics = []
-        timeout = kwargs.pop('timeout', 900)
-
-        if 'flavour_name' in kwargs:
-            flavour = self.api.flavors.find(name=kwargs['flavour_name'])
-        elif 'instance_type' in kwargs:
-            flavour = self.api.flavors.find(name=kwargs['instance_type'])
-        elif 'flavour_id' in kwargs:
-            flavour = self.api.flavors.find(id=kwargs['flavour_id'])
-        else:
-            flavour = self.api.flavors.find(name='m1.tiny')
-        ram = kwargs.pop('ram', None)
-        cpu = kwargs.pop('cpu', None)
-        if ram or cpu:
-            # Find or create a new flavour usable for provisioning
-            # Keep the parameters from the original flavour
-            self.logger.info(
-                'RAM/CPU override of flavour %s: RAM %r MB, CPU: %r cores', flavour.name, ram, cpu)
-            ram = ram or flavour.ram
-            cpu = cpu or flavour.vcpus
-            disk = flavour.disk
-            ephemeral = flavour.ephemeral
-            swap = flavour.swap
-            rxtx_factor = flavour.rxtx_factor
-            is_public = flavour.is_public
-            try:
-                new_flavour = self.api.flavors.find(
-                    ram=ram, vcpus=cpu,
-                    disk=disk, ephemeral=ephemeral, swap=swap,
-                    rxtx_factor=rxtx_factor, is_public=is_public)
-            except os_exceptions.NotFound:
-                # The requested flavor was not found, create a custom one
-                self.logger.info('No suitable flavour found, creating a new one.')
-                base_flavour_name = '{}-{}M-{}C'.format(flavour.name, ram, cpu)
-                flavour_name = base_flavour_name
-                counter = 0
-                new_flavour = None
-                if not swap:
-                    # Protect against swap empty string
-                    swap = 0
-                while new_flavour is None:
-                    try:
-                        new_flavour = self.api.flavors.create(
-                            name=flavour_name,
-                            ram=ram, vcpus=cpu,
-                            disk=disk, ephemeral=ephemeral, swap=swap,
-                            rxtx_factor=rxtx_factor, is_public=is_public)
-                    except os_exceptions.Conflict:
-                        self.logger.info(
-                            'Name %s is already taken, changing the name', flavour_name)
-                        counter += 1
-                        flavour_name = base_flavour_name + '_{}'.format(counter)
-                    else:
-                        self.logger.info(
-                            'Created a flavour %r with id %r', new_flavour.name, new_flavour.id)
-                        flavour = new_flavour
-            else:
-                self.logger.info('Found a flavour %s', new_flavour.name)
-                flavour = new_flavour
-
-        if 'vm_name' not in kwargs:
-            vm_name = 'new_instance_name'
-        else:
-            vm_name = kwargs['vm_name']
-        self.logger.info(" Deploying OpenStack template %s to instance %s (%s)" % (
-            template, kwargs["vm_name"], flavour.name))
-        if len(self.list_network()) > 1:
-            if 'network_name' not in kwargs:
-                raise NetworkNameNotFound('Must select a network name')
-            else:
-                net_id = self.api.networks.find(label=kwargs['network_name']).id
-                nics = [{'net-id': net_id}]
-
-        image = self.api.images.find(name=template)
-        instance = self.api.servers.create(vm_name, image, flavour, nics=nics, *args, **kwargs)
-        self.wait_vm_running(vm_name, num_sec=timeout)
-        if kwargs.get('floating_ip_pool', None):
-            self.assign_floating_ip(instance, kwargs['floating_ip_pool'])
-
-        if power_on:
-            self.start_vm(vm_name)
-
-        return vm_name
-
-
 
     def delete_floating_ip(self, floating_ip):
         """Deletes an existing FIP.
@@ -738,131 +962,12 @@ class OpenstackSystem(System):
             if not floating_ip:
                 return False
             floating_ip = floating_ip[0]
-        self.logger.info('Deleting floating IP {}/{}'.format(floating_ip.id, floating_ip.ip))
+        self.logger.info('Deleting floating IP %s/%s', floating_ip.id, floating_ip.ip)
         floating_ip.delete()
         wait_for(
             lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
             delay=1, timeout='1m')
         return True
-
-    def all_vms(self):
-        result = []
-        for vm in self._get_all_instances():
-            ip = None
-            for network_nics in vm._info["addresses"].itervalues():
-                for nic in network_nics:
-                    if nic['OS-EXT-IPS:type'] == 'floating':
-                        ip = str(nic['addr'])
-            result.append(VMInfo(
-                vm.id,
-                vm.name,
-                vm.status,
-                ip,
-            ))
-        return result
-
-    def get_vm_name_from_ip(self, ip):
-        # unfortunately it appears you cannot query for ip address from the sdk,
-        #   unlike curling rest api which does work
-        """ Gets the name of a vm from its IP.
-
-        Args:
-            ip: The ip address of the vm.
-        Returns: The vm name for the corresponding IP."""
-
-        instances = self._get_all_instances()
-
-        for instance in instances:
-            addr = self.get_ip_address(instance.name)
-            if addr is not None and ip in addr:
-                return str(instance.name)
-        raise VMNotFoundViaIP('The requested IP is not known as a VM')
-
-    def _generic_paginator(self, f):
-        """A generic paginator for OpenStack services
-
-        Takes a callable and recursively runs the "listing" until no more are returned
-        by sending the ```marker``` kwarg to offset the search results. We try to rollback
-        up to 10 times in the markers in case one was deleted. If we can't rollback after
-        10 times, we give up.
-        Possible improvement is to roll back in 5s or 10s, but then we have to check for
-        uniqueness and do dup removals.
-        """
-        lists = []
-        marker = None
-        while True:
-            if not lists:
-                temp_list = f()
-            else:
-                for i in range(min(10, len(lists))):
-                    list_offset = -(i + 1)
-                    marker = lists[list_offset].id
-                    try:
-                        temp_list = f(marker=marker)
-                        break
-                    except os_exceptions.BadRequest:
-                        continue
-                else:
-                    raise Exception("Could not get list, maybe mass deletion after 10 marker tries")
-            if temp_list:
-                lists.extend(temp_list)
-            else:
-                break
-        return lists
-
-    def _get_all_instances(self, filter_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': True})
-        instances = self._generic_paginator(call)
-        if filter_tenants:
-            # Filter instances based on their tenant ID
-            # needed for CFME 5.3 and higher
-            tenants = self._get_tenants()
-            ids = [tenant.id for tenant in tenants]
-            instances = filter(lambda i: i.tenant_id in ids, instances)
-        return instances
-
-    def _get_all_templates(self):
-        return self.api.images.list()
-
-    def _find_instance_by_name(self, name):
-        """
-        OpenStack Nova Client does have a find method, but it doesn't
-        allow the find method to be used on other tenants. The list()
-        method is the only one that allows an all_tenants=True keyword
-        """
-        instances = self._get_all_instances()
-        for instance in instances:
-            if instance.name == name:
-                return instance
-        else:
-            raise VMInstanceNotFound(name)
-
-    def _instance_or_name(self, instance_or_name):
-        """Works similarly to _find_instance_by_name but allows passing the constructed object."""
-        if isinstance(instance_or_name, Server):
-            # Object passed
-            return instance_or_name
-        else:
-            # String passed
-            return self._find_instance_by_name(instance_or_name)
-
-    def _find_template_by_name(self, name):
-        templates = self._get_all_templates()
-        for template in templates:
-            if template.name == name:
-                return template
-        else:
-            raise VMInstanceNotFound("template {}".format(name))
-
-    def get_template_id(self, name):
-        return self._find_template_by_name(name).id
-
-    def does_vm_exist(self, name):
-        try:
-            self._find_instance_by_name(name)
-            return True
-        except Exception:
-            return False
 
     def get_first_floating_ip(self):
         try:
@@ -876,17 +981,11 @@ class OpenstackSystem(System):
             return None
         return first_available_ip.ip
 
-    def delete_template(self, template_name):
-        template = self._find_template_by_name(template_name)
-        template.delete()
-        wait_for(lambda: not self.does_template_exist(template_name), num_sec=120, delay=10)
-
     def stack_exist(self, stack_name):
         stack = self.stackapi.stacks.get(stack_name)
         if stack:
             return True
-        else:
-            return False
+        return False
 
     def delete_stack(self, stack_name):
         """Deletes stack
@@ -895,35 +994,12 @@ class OpenstackSystem(System):
         stack_name: Unique name of stack
         """
 
-        self.logger.info(" Terminating RHOS stack %s" % stack_name)
+        self.logger.info(" Terminating RHOS stack %s", stack_name)
         try:
             self.stackapi.stacks.delete(stack_name)
             return True
         except ActionTimedOutError:
             return False
-
-    def set_meta_value(self, instance, key, value):
-        instance = self._instance_or_name(instance)
-        instance.manager.set_meta_item(
-            instance, key, value if isinstance(value, basestring) else json.dumps(value))
-
-    def get_meta_value(self, instance, key):
-        instance = self._instance_or_name(instance)
-        try:
-            data = instance.metadata[key]
-            try:
-                return json.loads(data)
-            except ValueError:
-                # Support metadata set by others
-                return data
-        except KeyError:
-            raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
-
-    def vm_hardware_configuration(self, vm_name):
-        vm = self._find_instance_by_name(vm_name)
-        flavor_id = vm.flavor['id']
-        flavor = self.api.flavors.find(id=flavor_id)
-        return {'ram': flavor.ram, 'cpu': flavor.vcpus}
 
     def usage_and_quota(self):
         data = self.api.limits.get().to_dict()['absolute']
