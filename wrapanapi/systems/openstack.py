@@ -55,6 +55,278 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
+class OpenstackInstance(Instance):
+    @staticmethod
+    @property
+    def state_map():
+        return {
+            'PAUSED': VmState.PAUSED
+            'ACTIVE': VmState.RUNNING,
+            'SHUTOFF': VmState.STOPPED,
+            'SUSPENDED': VmState.SUSPENDED
+        }
+
+    def __init__(self, system, id, raw=None):
+        """
+        Constructor for an EC2Instance tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the raw novaclient Resource object
+        """
+        super(OpenstackInstance, self).__init__(system)
+        self.id = id
+        self._raw = raw
+        self._api = self.system.api
+
+    def _get_myself(self):
+        """
+        Ensure that this VM still exists AND provisioning was successful on azure
+        """
+        try:
+            instance = self._api.get(self.id)
+        except os_exceptions.NotFound as e:
+            if e.code == 404:
+                raise VMInstanceNotFound(self.name)
+            else:
+                raise
+        return instance
+
+    @property
+    def raw(self):
+        if not self._raw:
+            self._raw = self._get_myself()
+        return self._raw
+
+    def refresh(self):
+        """
+        Update instance's raw data
+        """
+        self._raw = self._get_myself()
+        return self
+
+    @property
+    def name(self):
+        self.refresh()
+        return self._raw.name
+
+    @property
+    def exists(self):
+        try:
+            assert self._get_myself()
+        except (AssertionError, VMInstanceNotFound):
+            return False
+        return True
+
+    @property
+    def state(self):
+        self.refresh()
+
+        inst = self._raw
+
+        if inst.status != "ERROR":
+            return self._api_state_to_vmstate(inst.status)
+        if not hasattr(inst, "fault"):
+            raise VMError("Instance {} in error state!".format(self.name))
+        raise VMError("Instance {} error {}: {} | {}".format(
+            self.name, inst.fault["code"], inst.fault["message"], inst.fault["created"]))
+
+    def _get_networks(self):
+        self.refresh()
+        # TODO: Do we really need to access a private attr here?
+        return self._raw._info['addresses']
+
+    @property
+    def ip(self):
+        networks = self._get_networks()
+        for network_nics in networks.values():
+            for nic in network_nics:
+                if nic['OS-EXT-IPS:type'] == 'floating':
+                    return str(nic['addr'])
+
+    @property
+    def type(self):
+
+    @property
+    def creation_time(self):
+        # Example vm.creation_time: 2014-08-14T23:29:30Z
+        creation_time = datetime.strptime(self._raw.created, '%Y-%m-%dT%H:%M:%SZ')
+        # create time is UTC, localize it, strip tzinfo
+        return creation_time.replace(tzinfo=pytz.UTC)
+
+    def rename(self, new_name):
+        return self._raw.update(new_name)
+
+    def assign_floating_ip(self):
+    def assign_floating_ip(self, floating_ip_pool, safety_timer=5):
+        """Assigns a floating IP to an instance.
+
+        Args:
+            floating_ip_pool: Name of the floating IP pool to take from.
+            safety_timer: A timeout after assigning the FIP that is used to detect whether another
+                external influence did not steal our FIP. Default is 5.
+
+        Returns:
+            The public FIP. Raises an exception in case of error.
+        """
+        instance = self._raw
+
+        # Make sure it doesn't already have a floating IP...
+        if self.ip is not None:
+            self.logger.info("Instance %s already has a floating IP", self.name)
+            return self.ip
+
+        # Why while? Well, this code can cause one peculiarity. Race condition can "steal" a FIP
+        # so this will loop until it really get the address. A small timeout is added to ensure
+        # the instance really got that address and other process did not steal it.
+        # TODO: Introduce neutron client and its create+assign?
+        while self.ip is None:
+            free_ips = self.system.free_fips(floating_ip_pool)
+            # We maintain 1 floating IP as a protection against race condition
+            # I know it is bad practice, but I did not figure out how to prevent the race
+            # condition by openstack saying "Hey, this IP is already assigned somewhere"
+            if len(free_ips) > 1:
+                # There are 2 and more ips, so we will take the first one (eldest)
+                ip = free_ips[0]
+                self.logger.info("Reusing %s from pool %s", ip.ip, floating_ip_pool)
+            else:
+                # There is one or none, so create one.
+                try:
+                    ip = self._api.floating_ips.create(floating_ip_pool)
+                except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
+                    self.logger.error('Probably no more FIP slots available: %s', str(e))
+                    free_ips = self.system.free_fips(floating_ip_pool)
+                    # So, try picking one from the list (there still might be one)
+                    if free_ips:
+                        # There is something free. Slight risk of race condition
+                        ip = free_ips[0]
+                        self.logger.info(
+                            'Reused %s from pool %s because no more free spaces for new ips',
+                            ip.ip, floating_ip_pool
+                        )
+                    else:
+                        # Nothing can be done
+                        raise NoMoreFloatingIPs(
+                            'Provider {} ran out of FIPs'.format(self.system.auth_url))
+                self.logger.info('Created %s in pool %s', ip.ip, floating_ip_pool)
+            instance.add_floating_ip(ip)
+
+            # Now the grace period in which a FIP theft could happen
+            time.sleep(safety_timer)
+
+        self.logger.info("Instance %s got a floating IP %s".format(self.name, ip.ip))
+        assert self.ip == ip.ip, 'Current IP doesn't match reserved floating IP!'
+        return ip.ip
+
+    def unassign_floating_ip(self):
+        """Disassociates the floating IP (if present) from VM.
+
+        Returns:
+            None if no FIP was dissociated. Otherwise it will return the Floating IP object.
+        """
+        instance = self._raw
+        ip_addr = self.ip
+        if ip_addr is None:
+            return None
+        floating_ips = self._api.floating_ips.findall(ip=ip_addr)
+        if not floating_ips:
+            return None
+        floating_ip = floating_ips[0]
+        self.logger.info(
+            'Detaching floating IP %s/%s from %s', floating_ip.id, floating_ip.ip, instance.name))
+        instance.remove_floating_ip(floating_ip)
+        wait_for(
+            lambda: self.ip is None, delay=1, timeout='1m')
+        return floating_ip
+
+    def delete(self, delete_fip=False):
+        self.logger.info(' Deleting OpenStack instance %s', self.name)
+
+        self.logger.info(' Unassigning floating IP instance %s', self.name)
+        if delete_fip:
+            self.system.delete_floating_ip(self.unassign_floating_ip())
+        else:
+            self.unassign_floating_ip(instance)
+
+        self.logger.info(' Delete in progress instance %s', self.name)
+        self._raw.delete()
+        wait_for(lambda: not self.exists, timeout='3m', delay=5)
+        return True
+
+    def cleanup(self):
+        """Deletes FIP in addition to instance"""
+        return self.delete(delete_fip=True)
+        
+    def start(self):
+        self.logger.info(' Starting OpenStack instance %s', self.name)
+        if self.is_running:
+            return True
+
+        instance = self._raw
+        if self.is_suspended:
+            instance.resume()
+        elif self.is_paused:
+            instance.unpause()
+        else:
+            instance.start()
+        wait_for(self.is_running, message='start {}'.format(self.name))
+        return True
+
+    def stop(self):
+        self.logger.info(' Stopping OpenStack instance %s', self.name)
+        if self.is_stopped:
+            return True
+
+        self._raw.stop()
+        wait_for(self.is_stopped, message='stop %s'.format(self.name))
+        return True
+
+    def restart(self):
+        self.logger.info(" Restarting OpenStack instance %s", self.name)
+        return self.stop() and self.start()
+
+    def suspend(self):
+        self.logger.info(" Suspending OpenStack instance %s", self.name)
+        if self.is_suspended:
+            return True
+        self._raw.suspend()
+        wait_for(self.is_suspended, message='suspend {}'.format(self.name))
+
+    def pause(self):
+        self.logger.info(" Pausing OpenStack instance %s", self.name)
+        if self.is_paused:
+            return True
+        self._raw.pause()
+        wait_for(self.is_paused, message='pause {}'.format(self.name))
+
+    def mark_as_template(self):
+        """OpenStack marking as template is a little bit more complex than vSphere.
+
+        We have to rename the instance, create a snapshot of the original name and then delete the
+        instance."""
+        self.logger.info("Marking {} as OpenStack template".format(self.name)))
+        original_name = self.name
+        copy_name = original_name + "_copytemplate"
+        self.rename(copy_name)
+        try:
+            self.wait_for_stready_state()
+            if not self.is_stopped:
+                self.stop()
+            uuid = self._raw.create_image(original_name)
+            wait_for(lambda: self.api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
+            self.delete()
+            wait_for(lambda: not self.exists, num_sec=180, delay=5)
+        except Exception as e:
+            self.logger.error(
+                "Could not mark %s as a OpenStack template! (%s)", original_name, str(e))
+            try:
+                self.rename(original_name)  # Clean up after ourselves
+            except Exception as e:
+                self.logger.exception(
+                    'Failed to rename %s back to original name (%s)', copy_name, original_name)
+            raise
+
+
 class OpenstackSystem(System):
     """Openstack management system
 
@@ -73,12 +345,7 @@ class OpenstackSystem(System):
         'num_template': lambda self: len(self.list_template()),
     }
 
-    states = {
-        'paused': ('PAUSED',),
-        'running': ('ACTIVE',),
-        'stopped': ('SHUTOFF',),
-        'suspended': ('SUSPENDED',),
-    }
+
 
     can_suspend = True
     can_pause = True
@@ -209,49 +476,8 @@ class OpenstackSystem(System):
         tid = self._get_tenant(name=tenant_name)
         self.tenant_api.delete(tid)
 
-    def start_vm(self, instance_name):
-        self.logger.info(" Starting OpenStack instance %s" % instance_name)
-        if self.is_vm_running(instance_name):
-            return True
-
-        instance = self._find_instance_by_name(instance_name)
-        if self.is_vm_suspended(instance_name):
-            instance.resume()
-        elif self.is_vm_paused(instance_name):
-            instance.unpause()
-        else:
-            instance.start()
-        wait_for(lambda: self.is_vm_running(instance_name), message="start %s" % instance_name)
-        return True
-
-    def stop_vm(self, instance_name):
-        self.logger.info(" Stopping OpenStack instance %s" % instance_name)
-        if self.is_vm_stopped(instance_name):
-            return True
-
-        instance = self._find_instance_by_name(instance_name)
-        instance.stop()
-        wait_for(lambda: self.is_vm_stopped(instance_name), message="stop %s" % instance_name)
-        return True
-
     def create_vm(self):
         raise NotImplementedError('create_vm not implemented.')
-
-    def delete_vm(self, instance_name, delete_fip=True):
-        self.logger.info(" Deleting OpenStack instance {}".format(instance_name))
-        instance = self._find_instance_by_name(instance_name)
-        if delete_fip:
-            self.unassign_and_delete_floating_ip(instance)
-        else:
-            self.unassign_floating_ip(instance)
-        self.logger.info(" Deleting OpenStack instance {} in progress now.".format(instance_name))
-        instance.delete()
-        wait_for(lambda: not self.does_vm_exist(instance_name), timeout='3m', delay=5)
-        return True
-
-    def restart_vm(self, instance_name):
-        self.logger.info(" Restarting OpenStack instance %s" % instance_name)
-        return self.stop_vm(instance_name) and self.start_vm(instance_name)
 
     def list_vm(self, **kwargs):
         instance_list = self._get_all_instances()
@@ -278,20 +504,6 @@ class OpenstackSystem(System):
 
     def disconnect(self):
         pass
-
-    def vm_status(self, vm_name):
-        """Retrieve Instance status.
-
-        Raises:
-            :py:class:`wrapanapi.exceptions.VMError
-        """
-        inst = self._find_instance_by_name(vm_name)
-        if inst.status != "ERROR":
-            return inst.status
-        if not hasattr(inst, "fault"):
-            raise VMError("Instance {} in error state!".format(vm_name))
-        raise VMError("Instance {} error {}: {} | {}".format(
-            vm_name, inst.fault["code"], inst.fault["message"], inst.fault["created"]))
 
     def create_volume(self, size_gb, **kwargs):
         volume = self.capi.volumes.create(size_gb, **kwargs).id
@@ -385,9 +597,6 @@ class OpenstackSystem(System):
         finally:
             self.delete_volume(*volumes)
 
-    def _get_instance_name(self, id):
-        return self.api.servers.get(id).name
-
     def volume_attachments(self, volume_id):
         """Returns a dictionary of ``{instance: device}`` relationship of the volume."""
         volume = self.capi.volumes.get(volume_id)
@@ -395,62 +604,6 @@ class OpenstackSystem(System):
         for attachment in volume.attachments:
             result[self._get_instance_name(attachment["server_id"])] = attachment["device"]
         return result
-
-    def vm_creation_time(self, vm_name):
-        instance = self._find_instance_by_name(vm_name)
-        # Example vm.created: 2014-08-14T23:29:30Z
-        creation_time = datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
-        # create time is UTC, localize it, strip tzinfo
-        return creation_time.replace(tzinfo=pytz.UTC)
-
-    def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) in self.states['running']
-
-    def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) in self.states['stopped']
-
-    def is_vm_suspended(self, vm_name):
-        return self.vm_status(vm_name) in self.states['suspended']
-
-    def is_vm_paused(self, vm_name):
-        return self.vm_status(vm_name) in self.states['paused']
-
-    def wait_vm_running(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for OS instance %s to change status to ACTIVE" % vm_name)
-        wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
-
-    def wait_vm_stopped(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for OS instance %s to change status to SHUTOFF" % vm_name)
-        wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
-
-    def wait_vm_suspended(self, vm_name, num_sec=720):
-        self.logger.info(" Waiting for OS instance %s to change status to SUSPENDED" % vm_name)
-        wait_for(self.is_vm_suspended, [vm_name], num_sec=num_sec)
-
-    def wait_vm_paused(self, vm_name, num_sec=720):
-        self.logger.info(" Waiting for OS instance %s to change status to PAUSED" % vm_name)
-        wait_for(self.is_vm_paused, [vm_name], num_sec=num_sec)
-
-    def suspend_vm(self, instance_name):
-        self.logger.info(" Suspending OpenStack instance %s" % instance_name)
-        if self.is_vm_suspended(instance_name):
-            return True
-
-        instance = self._find_instance_by_name(instance_name)
-        instance.suspend()
-        wait_for(lambda: self.is_vm_suspended(instance_name), message="suspend %s" % instance_name)
-
-    def pause_vm(self, instance_name):
-        self.logger.info(" Pausing OpenStack instance %s" % instance_name)
-        if self.is_vm_paused(instance_name):
-            return True
-
-        instance = self._find_instance_by_name(instance_name)
-        instance.pause()
-        wait_for(lambda: self.is_vm_paused(instance_name), message="pause %s" % instance_name)
-
-    def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('clone_vm not implemented.')
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
@@ -565,87 +718,7 @@ class OpenstackSystem(System):
 
         return vm_name
 
-    def assign_floating_ip(self, instance_or_name, floating_ip_pool, safety_timer=5):
-        """Assigns a floating IP to an instance.
 
-        Args:
-            instance_or_name: Name of the instance or instance object itself.
-            floating_ip_pool: Name of the floating IP pool to take from.
-            safety_timer: A timeout after assigning the FIP that is used to detect whether another
-                external influence did not steal our FIP. Default is 5.
-
-        Returns:
-            The public FIP. Raises an exception in case of error.
-        """
-        instance = self._instance_or_name(instance_or_name)
-
-        current_ip = self.current_ip_address(instance.name)
-        if current_ip is not None:
-            return current_ip
-
-        # Why while? Well, this code can cause one peculiarity. Race condition can "steal" a FIP
-        # so this will loop until it really get the address. A small timeout is added to ensure
-        # the instance really got that address and other process did not steal it.
-        # TODO: Introduce neutron client and its create+assign?
-        while self.current_ip_address(instance.name) is None:
-            free_ips = self.free_fips(floating_ip_pool)
-            # We maintain 1 floating IP as a protection against race condition
-            # I know it is bad practice, but I did not figure out how to prevent the race
-            # condition by openstack saying "Hey, this IP is already assigned somewhere"
-            if len(free_ips) > 1:
-                # There are 2 and more ips, so we will take the first one (eldest)
-                ip = free_ips[0]
-                self.logger.info("Reusing {} from pool {}".format(ip.ip, floating_ip_pool))
-            else:
-                # There is one or none, so create one.
-                try:
-                    ip = self.api.floating_ips.create(floating_ip_pool)
-                except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
-                    self.logger.error("Probably no more FIP slots available: {}".format(str(e)))
-                    free_ips = self.free_fips(floating_ip_pool)
-                    # So, try picking one from the list (there still might be one)
-                    if free_ips:
-                        # There is something free. Slight risk of race condition
-                        ip = free_ips[0]
-                        self.logger.info(
-                            "Reused {} from pool {} because no more free spaces for new ips"
-                            .format(ip.ip, floating_ip_pool))
-                    else:
-                        # Nothing can be done
-                        raise NoMoreFloatingIPs("Provider {} ran out of FIPs".format(self.auth_url))
-                self.logger.info("Created {} in pool {}".format(ip.ip, floating_ip_pool))
-            instance.add_floating_ip(ip)
-
-            # Now the grace period in which a FIP theft could happen
-            time.sleep(safety_timer)
-
-        self.logger.info("Instance {} got a floating IP {}".format(instance.name, ip.ip))
-        return self.current_ip_address(instance.name)
-
-    def unassign_floating_ip(self, instance_or_name):
-        """Disassociates the floating IP (if present) from VM.
-
-        Args:
-            instance_or_name: Name of the instance or instance object itself.
-
-        Returns:
-            None if no FIP was dissociated. Otherwise it will return the Floating IP object.
-        """
-        instance = self._instance_or_name(instance_or_name)
-        ip_addr = self.current_ip_address(instance.name)
-        if ip_addr is None:
-            return None
-        floating_ips = self.api.floating_ips.findall(ip=ip_addr)
-        if not floating_ips:
-            return None
-        floating_ip = floating_ips[0]
-        self.logger.info(
-            'Detaching floating IP {}/{} from {}'.format(
-                floating_ip.id, floating_ip.ip, instance.name))
-        instance.remove_floating_ip(floating_ip)
-        wait_for(
-            lambda: self.current_ip_address(instance.name) is None, delay=1, timeout='1m')
-        return floating_ip
 
     def delete_floating_ip(self, floating_ip):
         """Deletes an existing FIP.
@@ -671,29 +744,6 @@ class OpenstackSystem(System):
             lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
             delay=1, timeout='1m')
         return True
-
-    def unassign_and_delete_floating_ip(self, instance_or_name):
-        """Disassociates the floating IP (if present) from VM and deletes it.
-
-        Args:
-            instance_or_name: Name of the instance or instance object itself.
-
-        Returns:
-            True if it deleted a FIP, False if it did not delete it, most probably because it
-            does not exist.
-        """
-        return self.delete_floating_ip(self.unassign_floating_ip(instance_or_name))
-
-    def _get_instance_networks(self, name):
-        instance = self._find_instance_by_name(name)
-        return instance._info['addresses']
-
-    def current_ip_address(self, name):
-        networks = self._get_instance_networks(name)
-        for network_nics in networks.itervalues():
-            for nic in network_nics:
-                if nic['OS-EXT-IPS:type'] == 'floating':
-                    return str(nic['addr'])
 
     def all_vms(self):
         result = []
@@ -727,9 +777,6 @@ class OpenstackSystem(System):
             if addr is not None and ip in addr:
                 return str(instance.name)
         raise VMNotFoundViaIP('The requested IP is not known as a VM')
-
-    def get_ip_address(self, name, **kwargs):
-        return self.current_ip_address(name)
 
     def _generic_paginator(self, f):
         """A generic paginator for OpenStack services
@@ -817,9 +864,6 @@ class OpenstackSystem(System):
         except Exception:
             return False
 
-    def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented')
-
     def get_first_floating_ip(self):
         try:
             self.api.floating_ips.create()
@@ -831,41 +875,6 @@ class OpenstackSystem(System):
         except StopIteration:
             return None
         return first_available_ip.ip
-
-    def mark_as_template(self, instance_name, **kwargs):
-        """OpenStack marking as template is a little bit more complex than vSphere.
-
-        We have to rename the instance, create a snapshot of the original name and then delete the
-        instance."""
-        self.logger.info("Marking {} as OpenStack template".format(instance_name))
-        instance = self._find_instance_by_name(instance_name)
-        original_name = instance.name
-        copy_name = original_name + "_copytemplate"
-        instance.update(copy_name)
-        try:
-            self.wait_vm_steady(copy_name)
-            if not self.is_vm_stopped(copy_name):
-                instance.stop()
-                self.wait_vm_stopped(copy_name)
-            uuid = instance.create_image(original_name)
-            wait_for(lambda: self.api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
-            instance.delete()
-            wait_for(lambda: not self.does_vm_exist(copy_name), num_sec=180, delay=5)
-        except Exception as e:
-            self.logger.error(
-                "Could not mark {} as a OpenStack template! ({})".format(instance_name, str(e)))
-            instance.update(original_name)  # Clean up after ourselves
-            raise
-
-    def rename_vm(self, instance_name, new_name):
-        instance = self._find_instance_by_name(instance_name)
-        try:
-            instance.update(new_name)
-        except Exception as e:
-            self.logger.exception(e)
-            return instance_name
-        else:
-            return new_name
 
     def delete_template(self, template_name):
         template = self._find_template_by_name(template_name)

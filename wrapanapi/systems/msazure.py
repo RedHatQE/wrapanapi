@@ -206,7 +206,162 @@ class AzureInstance(Instance):
         return vhd_endpoint
 
 
-class AzureSystem(System, VmMixin, TemplateMixin, StackMixin):
+class AzureBlobImage(Template):
+    def __init__(self, system, name, container, raw=None):
+        """
+        Constructor for an AzureBlobImage on a specific system
+
+        Note this is not a Microsoft.Compute image, it is just a .vhd/.vhdx
+        stored in blob storage.
+
+        Args:
+            system: an EC2System object
+            name: name of template
+            container: container the template is stored in
+            raw: the azure.storage.blob.models.Blob object if already obtained, or None
+        """
+        super(EC2Image, self).__init__(system)
+        self.name = name
+        self.container = container
+        self._raw = raw
+        self._api = self.system.container_client
+
+    @property
+    def raw(self):
+        """
+        Returns raw azure.storage.blob.models.Blob object associated with this instance
+        """
+        if not self._raw:
+            self._raw = self.system.get_template(self.name, self.container)
+        return self._raw
+
+    @property
+    def name(self):
+        return self.name
+
+    def refresh(self):
+        self._raw = self._api.get_blob_properties(self.container, self.name)
+
+    @property
+    def exists(self):
+        return self._api.exists(self.container, blob_bame=self.name)
+
+    def delete(self):
+        self._api.delete_blob(self.container, self.name, delete_snapshots=True)
+
+    def cleanup(self):
+        return self.delete()
+
+    def deploy(self, vm_name, **vm_settings):
+        # TODO: this method is huge, it should be broken up ...
+        # TODO #2: check args of vm_settings better
+        # TODO #3: possibly use compute images instead of blob images?
+        resource_group = vm_settings.get('resource_group', self.system.resource_group)
+        location = vm_settings.get('region_api', self.system.region)
+        subnet = vm_settings['subnet_range']
+        address_space = vm_settings['address_space']
+        vnet_name = vm_settings['virtual_net']
+        vm_size = vm_settings['vm_size']
+        storage_container = vm_settings['storage_container']
+        # nsg_name = vm_settings['network_nsg']  # todo: check whether nsg is necessary at all
+
+        # allocating public ip address for new vm
+        public_ip_params = {
+            'location': location,
+            'public_ip_allocation_method': 'Dynamic'
+        }
+        public_ip = self.system.network_client.public_ip_addresses.create_or_update(
+            resource_group_name=resource_group,
+            public_ip_address_name=vm_name,
+            parameters=public_ip_params
+        ).result()
+
+        # creating virtual network
+        virtual_networks = self.system.network_client.virtual_networks
+        if vnet_name not in [v.name for v in virtual_networks.list(resource_group)]:
+            vnet_params = {
+                'location': location,
+                'address_space': {
+                    'address_prefixes': [address_space]
+                }
+            }
+            virtual_networks.create_or_update(
+                resource_group_name=resource_group,
+                virtual_network_name=vnet_name,
+                parameters=vnet_params
+            ).result()
+
+        # creating sub net
+        subnet_name = 'default'
+        subnets = self.system.network_client.subnets
+        if subnet_name not in [v.name for v in subnets.list(resource_group, vnet_name)]:
+            vsubnet = subnets.create_or_update(
+                resource_group_name=resource_group,
+                virtual_network_name=vnet_name,
+                subnet_name='default',
+                subnet_parameters={'address_prefix': subnet}
+            ).result()
+        else:
+            vsubnet = subnets.get(
+                resource_group_name=resource_group,
+                virtual_network_name=vnet_name,
+                subnet_name='default')
+
+        # creating network interface
+        nic_params = {
+            'location': location,
+            'ip_configurations': [{
+                'name': vm_name,
+                'public_ip_address': public_ip,
+                'subnet': {
+                    'id': vsubnet.id
+                }
+            }]
+        }
+        nic = self.system.network_client.network_interfaces.create_or_update(
+            resource_group_name=resource_group,
+            network_interface_name=vm_name,
+            parameters=nic_params
+        ).result()
+
+        # preparing os disk
+        # todo: replace with copy disk operation
+        self.system.copy_blob_image(self.name, vm_name, vm_settings['storage_account'],
+            self.container, storage_container)
+        image_uri = self.system.container_client.make_blob_url(container_name=storage_container,
+            blob_name=vm_name)
+        # creating virtual machine
+        vm_parameters = {
+            'location': location,
+            'hardware_profile': {
+                'vm_size': getattr(VirtualMachineSizeTypes, vm_size)
+            },
+            'storage_profile': {
+                'os_disk': {
+                    'os_type': 'Linux',  #  TODO: why is this hardcoded?
+                    'name': vm_name,
+                    'vhd': VirtualHardDisk(uri=image_uri + ".vhd"),
+                    'create_option': DiskCreateOptionTypes.attach,
+                }
+            },
+            'network_profile': {
+                'network_interfaces': [{
+                    'id': nic.id
+                }]
+            },
+        }
+        vm = self.system.compute_client.virtual_machines.create_or_update(
+            resource_group_name=resource_group,
+            vm_name=vm_name,
+            parameters=vm_parameters).result()
+        vm = AzureInstance(
+            system=system, name=vm.name, resource_group=vm_settings['resource_group'], raw=vm)
+        vm.wait_for_state(VmState.RUNNING)
+        return vm
+
+
+
+class AzureSystem(System, VmMixin, TemplateMixin):
     """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
     """
     _stats_available = {
@@ -546,15 +701,120 @@ class AzureSystem(System, VmMixin, TemplateMixin, StackMixin):
         # copy operation obj.status->str
         return operation.status
 
-    def list_template(self):
-        """
-        Returns a list of VHDs/Images which might be used as provision template for Instance
-        """
-        self.logger.info("Attempting to List Azure VHDs/Images")
-        return self.list_blob_images(container=self.template_container)\
-            + [item.name for item in self.resource_client.resources.list(
-                filter="resourceType eq 'Microsoft.Compute/images'")]
+    def remove_container_blob(self, container_client, container, blob, remove_snapshots=True):
+        # TODO: seems redundant with remove_blob_image()
+        self.logger.info("Removing Blob '%s' from containter '%s'", blob.name, container.name)
+        try:
+            container_client.delete_blob(
+                container_name=container.name, blob_name=blob.name)
+        except AzureConflictHttpError as e:
+            if 'SnapshotsPresent' in str(e) and remove_snapshots:
+                self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
+                container_client.delete_blob(
+                    container_name=container.name, blob_name=blob.name, delete_snapshots="include")
+            else:
+                raise
 
+    def remove_unused_blobs(self, resource_group=None):
+        """
+        Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
+        Runs though all storage accounts in 'resource_group'. If None (default) resource_group
+        provided, the instance's resource group is used instead
+        Returns list of removed disks
+        """
+        removed_blobs = {}
+        self.logger.info("Attempting to List unused disks/blobs")
+        resource_group = resource_group or self.resource_group
+        removed_blobs[resource_group] = {}
+        for storage_account in self.list_storage_accounts_by_resource_group(resource_group):
+            self.logger.info("Checking storage account '%s'", storage_account)
+            removed_blobs[resource_group][storage_account] = {}
+            # removing unmanaged disks
+            key = self.get_storage_account_key(storage_account, resource_group)
+            container_client = BlockBlobService(storage_account, key)
+            for container in container_client.list_containers():
+                removed_blobs[resource_group][storage_account][container.name] = []
+                for blob in container_client.list_blobs(container_name=container.name,
+                                                        prefix='test'):
+                    if blob.properties.lease.status == 'unlocked':
+                        self.remove_container_blob(container_client, container, blob)
+                        removed_blobs[resource_group][storage_account][container.name].append(
+                            blob.name)
+            # also delete unused 'bootdiag' containers
+            self.remove_diags_container(container_client)
+
+        # removing managed disks
+        removed_disks = []
+        for disk in self.compute_client.disks.list_by_resource_group(resource_group):
+            if disk.name.startswith('test') and disk.managed_by is None:
+                self.logger.info("Removing disk '%s'", disk.name)
+                self.compute_client.disks.delete(resource_group_name=resource_group,
+                                                 disk_name=disk.name)
+                removed_disks.append({'resource_group': resource_group,
+                                      'disk': disk.name})
+        if not removed_disks:
+            self.logger.debug("No Managed disks matching 'test*' were found in '%s'",
+                              resource_group)
+        return {'Managed': removed_disks, 'Unmanaged': removed_blobs}
+
+    def create_template(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def find_templates(self, name=None, container=None):
+        """
+        Find all templates, optionally filtering by given name, optionally filtering by container
+
+        NOTE: this is searching for blob images (.vhd/.vhdx files stored in containers), use
+        list_images to get Microsoft.Compute images.
+        Args:
+            name (str): optional, name to search for
+            container (str): optional, container to search in
+            filter (str): optional, filter to pass into azure sdk list_blob_images()
+        Returns:
+            list of AzureImage objects
+        """
+        matches = []
+        for container in self.storage_client.list_containers():
+            container_name = container.name
+            if container and container_name.lower() != container.lower():
+                continue
+            for image in self.list_blob_images(container_name):
+                if name and name.lower() != image.name.lower():
+                    continue
+                matches.append(
+                    AzureBlobImage(
+                        system=self, name=image.name, container=container_name, raw=image))
+        return matches
+
+    def list_templates(self):
+        self.find_templates()
+
+    def list_compute_images(self):
+        return self.resource_client.resources.list(
+            filter="resourceType eq 'Microsoft.Compute/images'")
+
+    def list_all_image_names(self):
+        blob_image_names = [item.name for item in self.find_templates()]
+        compute_image_names = [item.name for item in self.list_compute_images()]
+        return set(blob_image_names.extend(compute_image_names))
+
+    def get_template(self, name, container=None):
+        """
+        Return template with given name
+
+        Raises MultipleItemsError if more than 1 exist with that name
+
+        Args:
+            container (str) -- specific container to search in
+        """
+        templates = self.find_templates(name=name, container=container)
+        if not templates:
+            raise ImageNotFoundError(name)
+        elif len(templates) > 1:
+            raise MultipleImagesError(name)
+        return templates[0]
+
+    # TODO: Refactor the below stack methods into the StackMixin/StackEntity structure
     def stack_exist(self, stack_name):
         return stack_name in self.list_stack()
 
@@ -583,108 +843,6 @@ class AzureSystem(System, VmMixin, TemplateMixin, StackMixin):
             self.logger.info("Attempt to remove Stack '%s' finished with status '%s'", stack,
                              result)
         return results
-
-    def deploy_template(self, template, vm_name=None, **vm_settings):
-        resource_group = vm_settings['resource_group']
-        location = vm_settings['region_api']
-        subnet = vm_settings['subnet_range']
-        address_space = vm_settings['address_space']
-        vnet_name = vm_settings['virtual_net']
-        vm_size = vm_settings['vm_size']
-        storage_container = vm_settings['storage_container']
-        # nsg_name = vm_settings['network_nsg']  # todo: check whether nsg is necessary at all
-
-        # allocating public ip address for new vm
-        public_ip_params = {
-            'location': location,
-            'public_ip_allocation_method': 'Dynamic'
-        }
-        public_ip = self.network_client.public_ip_addresses.create_or_update(
-            resource_group_name=resource_group,
-            public_ip_address_name=vm_name,
-            parameters=public_ip_params
-        ).result()
-
-        # creating virtual network
-        virtual_networks = self.network_client.virtual_networks
-        if vnet_name not in [v.name for v in virtual_networks.list(resource_group)]:
-            vnet_params = {
-                'location': location,
-                'address_space': {
-                    'address_prefixes': [address_space, ]
-                }
-            }
-            virtual_networks.create_or_update(
-                resource_group_name=resource_group,
-                virtual_network_name=vnet_name,
-                parameters=vnet_params
-            ).result()
-
-        # creating sub net
-        subnet_name = 'default'
-        subnets = self.network_client.subnets
-        if subnet_name not in [v.name for v in subnets.list(resource_group, vnet_name)]:
-            vsubnet = subnets.create_or_update(
-                resource_group_name=resource_group,
-                virtual_network_name=vnet_name,
-                subnet_name='default',
-                subnet_parameters={'address_prefix': subnet}
-            ).result()
-        else:
-            vsubnet = subnets.get(
-                resource_group_name=resource_group,
-                virtual_network_name=vnet_name,
-                subnet_name='default')
-
-        # creating network interface
-        nic_params = {
-            'location': location,
-            'ip_configurations': [{
-                'name': vm_name,
-                'public_ip_address': public_ip,
-                'subnet': {
-                    'id': vsubnet.id
-                }
-            }]
-        }
-        nic = self.network_client.network_interfaces.create_or_update(
-            resource_group_name=resource_group,
-            network_interface_name=vm_name,
-            parameters=nic_params
-        ).result()
-
-        # preparing os disk
-        # todo: replace with copy disk operation
-        self.copy_blob_image(template, vm_name, vm_settings['storage_account'],
-                             vm_settings['template_container'], storage_container)
-        image_uri = self.container_client.make_blob_url(container_name=storage_container,
-                                                        blob_name=vm_name)
-        # creating virtual machine
-        vm_parameters = {
-            'location': location,
-            'hardware_profile': {
-                'vm_size': getattr(VirtualMachineSizeTypes, vm_size)
-            },
-            'storage_profile': {
-                'os_disk': {
-                    'os_type': 'Linux',
-                    'name': vm_name,
-                    'vhd': VirtualHardDisk(uri=image_uri + ".vhd"),
-                    'create_option': DiskCreateOptionTypes.attach,
-                }
-            },
-            'network_profile': {
-                'network_interfaces': [{
-                    'id': nic.id
-                }]
-            },
-        }
-        vm = self.compute_client.virtual_machines.create_or_update(
-            resource_group_name=resource_group,
-            vm_name=vm_name,
-            parameters=vm_parameters).result()
-        self.wait_vm_running(vm.name, vm_settings['resource_group'])
-        return vm.name
 
     def list_stack_resources(self, stack_name, resource_group=None):
         self.logger.info("Checking Stack %s resources ", stack_name)
@@ -747,57 +905,3 @@ class AzureSystem(System, VmMixin, TemplateMixin, StackMixin):
     def info(self):
         pass
 
-    def remove_container_blob(self, container_client, container, blob, remove_snapshots=True):
-        self.logger.info("Removing Blob '%s' from containter '%s'", blob.name, container.name)
-        try:
-            container_client.delete_blob(
-                container_name=container.name, blob_name=blob.name)
-        except AzureConflictHttpError as e:
-            if 'SnapshotsPresent' in str(e) and remove_snapshots:
-                self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
-                container_client.delete_blob(
-                    container_name=container.name, blob_name=blob.name, delete_snapshots="include")
-            else:
-                raise
-
-    def remove_unused_blobs(self, resource_group=None):
-        """
-        Cleanup script to remove unused blobs: Managed vhds and unmanaged disks
-        Runs though all storage accounts in 'resource_group'. If None (default) resource_group
-        provided, the instance's resource group is used instead
-        Returns list of removed disks
-        """
-        removed_blobs = {}
-        self.logger.info("Attempting to List unused disks/blobs")
-        resource_group = resource_group or self.resource_group
-        removed_blobs[resource_group] = {}
-        for storage_account in self.list_storage_accounts_by_resource_group(resource_group):
-            self.logger.info("Checking storage account '%s'", storage_account)
-            removed_blobs[resource_group][storage_account] = {}
-            # removing unmanaged disks
-            key = self.get_storage_account_key(storage_account, resource_group)
-            container_client = BlockBlobService(storage_account, key)
-            for container in container_client.list_containers():
-                removed_blobs[resource_group][storage_account][container.name] = []
-                for blob in container_client.list_blobs(container_name=container.name,
-                                                        prefix='test'):
-                    if blob.properties.lease.status == 'unlocked':
-                        self.remove_container_blob(container_client, container, blob)
-                        removed_blobs[resource_group][storage_account][container.name].append(
-                            blob.name)
-            # also delete unused 'bootdiag' containers
-            self.remove_diags_container(container_client)
-
-        # removing managed disks
-        removed_disks = []
-        for disk in self.compute_client.disks.list_by_resource_group(resource_group):
-            if disk.name.startswith('test') and disk.managed_by is None:
-                self.logger.info("Removing disk '%s'", disk.name)
-                self.compute_client.disks.delete(resource_group_name=resource_group,
-                                                 disk_name=disk.name)
-                removed_disks.append({'resource_group': resource_group,
-                                      'disk': disk.name})
-        if not removed_disks:
-            self.logger.debug("No Managed disks matching 'test*' were found in '%s'",
-                              resource_group)
-        return {'Managed': removed_disks, 'Unmanaged': removed_blobs}

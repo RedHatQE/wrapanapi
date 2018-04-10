@@ -7,7 +7,7 @@ from novaclient import client as osclient
 from novaclient.client import HTTPClient
 from requests.exceptions import Timeout
 
-from .base import VMSystem
+from wrapanapi.systems import System
 
 
 Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
@@ -36,15 +36,15 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackInfraSystem(VMSystem):
+class OpenstackInfraSystem(System):  # TODO: possibly add EntityMixin's
     """Openstack Infrastructure management system
 
     # TODO
     """
 
     _stats_available = {
-        'num_template': lambda self: len(self.list_template()),
-        'num_host': lambda self: len(self.list_host()),
+        'num_template': lambda self: len(self.list_templates()),
+        'num_host': lambda self: len(self.list_hosts()),
     }
 
     states = {
@@ -121,61 +121,16 @@ class OpenstackInfraSystem(VMSystem):
     def networks(self):
         return self.api.networks.list()
 
-    def start_vm(self, vm_name):
-        raise NotImplementedError('start_vm not implemented.')
-
-    def wait_vm_running(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_running not implemented.')
-
-    def stop_vm(self, vm_name):
-        raise NotImplementedError('stop_vm not implemented.')
-
-    def wait_vm_stopped(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_stopped not implemented.')
-
-    def create_vm(self, vm_name):
-        raise NotImplementedError('create_vm not implemented.')
-
-    def delete_vm(self, vm_name):
-        raise NotImplementedError('delete_vm not implemented.')
-
-    def restart_vm(self, vm_name):
-        raise NotImplementedError('restart_vm not implemented.')
-
-    def vm_status(self, vm_name):
-        raise NotImplementedError('vm_status not implemented.')
-
-    def is_vm_running(self, vm_name):
-        raise NotImplementedError('is_vm_running not implemented.')
-
-    def is_vm_stopped(self, vm_name):
-        raise NotImplementedError('is_vm_stopped not implemented.')
-
-    def is_vm_suspended(self, vm_name):
-        raise NotImplementedError('is_vm_suspended not implemented.')
-
-    def suspend_vm(self, vm_name):
-        raise NotImplementedError('restart_vm not implemented.')
-
-    def wait_vm_suspended(self, vm_name, num_sec):
-        raise NotImplementedError('wait_vm_suspended not implemented.')
-
-    def list_vm(self, **kwargs):
-        raise NotImplementedError('list_vm not implemented.')
-
-    def list_template(self):
+    def list_templates(self):
         return [image.name for image in self.images]
 
-    def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
-
-    def list_network(self):
+    def list_networks(self):
         return [network.name for network in self.networks]
 
-    def list_host(self):
+    def list_hosts(self):
         return [node.name for node in self.nodes]
 
-    def list_node(self):
+    def list_nodes(self):
         """Query Ironic for the node info. Where possible, obtain the name from nova."""
         nodes = self.nodes
         result = []
@@ -202,24 +157,3 @@ class OpenstackInfraSystem(VMSystem):
 
     def disconnect(self):
         pass
-
-    def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError()
-
-    def does_vm_exist(self, name):
-        raise NotImplementedError()
-
-    def deploy_template(self, template, *args, **kwargs):
-        raise NotImplementedError()
-
-    def current_ip_address(self, vm_name):
-        raise NotImplementedError()
-
-    def get_ip_address(self, vm_name):
-        ""
-        raise NotImplementedError()
-
-    def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError()
-
-    # TODO
