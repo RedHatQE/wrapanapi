@@ -16,10 +16,116 @@ from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
 
-from .base import WrapanapiAPIBaseVMSystem, VMInfo
+from wrapanapi.systems import System
+from wrapanapi.entities import VmState, Vm, VmMixin, Template, TemplateMixin
+
+class SCVM(Vm):
+    """
+    Represents a VM managed by SCVMM
+    """
+    def __init__(self, system, name, raw=None):
+        super(SCVM, self).__init__(system)
+        self._name = name
+        self._run_script = self.system.run_script
+
+    @property
+    def name(self):
+        return self._name
+    
+    @property
+    def exists(self):
+        result = self.run_script(
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
+            .format(self.name)
+        )
+        return bool(result.strip())
+    
+    @staticmethod
+    def state_map():
+        return {
+            'Running': VmState.RUNNING,
+            'PowerOff': VmState.STOPPED,
+            'Paused': VmState.PAUSED,
+            'Missing': VmState.ERROR,
+            'Creation Failed': VmState.ERROR,
+        }
+
+    @property
+    def state(self):
+        pass
+
+    @property
+    def ip(self):
+        pass
+
+    @property
+    def creation_time(self):
+        pass
+
+    def _do_vm(self, action, params=""):
+        self.logger.info(" {} {} SCVMM VM `{}`".format(action, params, self.name))
+        self._run_script(
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | {}-SCVirtualMachine {}"
+            .format(self.name, action, params).strip())
+        return True
+
+    def start(self):
+        if self.is_suspended:
+            return self._do_vm("Resume")
+        else:
+            return self._do_vm("Start")
+
+    def stop(self, graceful=False):
+        return self._do_vm("Stop", "-Shutdown" if graceful else "-Force")
+
+    def restart(self):
+        return self._do_vm("Reset")
+
+    def suspend(self):
+        return self._do_vm("Suspend")
+    
+    def delete(self):
+        self.logger.info("Deleting SCVMM VM %s", self.name)
+        self.ensure_state(VmState.STOPPED)
+        return self._do_vm("Remove")
+
+    def cleanup(self):
+        pass
+    
+    def rename(self, name):
+        self.logger.info(" Renaming SCVMM VM '%s" to '%s'",
+            self.name, name)
+        self.ensure_state(VmState.STOPPED)
+        self._do_vm("Set", "-Name {}".format(name))
+        self._name = name
+        self.refresh()
+
+    def clone(self, vm_name, vm_host, path, start_vm=True):
+        self.logger.info("Deploying SCVMM VM '%s' from clone of '%s'"
+            vm_name, self.name)
+        script = """
+            $vm_new = Get-SCVirtualMachine -Name "{src_vm}" -VMMServer $scvmm_server
+            $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
+            New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}"
+        """.format(vm_name=vm_name, src_vm=self.name, vm_host=vm_host, path=path)
+        if start_vm:
+            script = "{} -StartVM".format(script)
+        self.run_script(script)
+        return SCVM(system=self.system, name=vm_name)
+    
+    def enable_virtual_services(self):
+        script = """
+            $vm = Get-SCVirtualMachine -Name "{vm}"
+            $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
+            $creds = New-Object System.Management.Automation.PSCredential("LOCAL\\{user}", $pwd)
+            Invoke-Command -ComputerName $vm.HostName -Credential $creds -ScriptBlock {{
+                Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName "{vm}" }}
+            Read-SCVirtualMachine -VM $vm
+        """.format(user=self.system.user, password=self.system.password, vm=self.name)
+        self.run_script(script)
 
 
-class SCVMMSystem(WrapanapiAPIBaseVMSystem):
+class SCVMMSystem(System, VmMixin, TemplateMixin):
     """This class is used to connect to M$ SCVMM
 
     It still has some drawback, the main one is that pywinrm does not support domains with simple
@@ -70,70 +176,8 @@ class SCVMMSystem(WrapanapiAPIBaseVMSystem):
                 .format(result.status_code, result.std_err))
         return result.std_out.strip()
 
-    def _do_vm(self, vm_name, action, params=""):
-        self.logger.info(" {} {} SCVMM VM `{}`".format(action, params, vm_name))
-        self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | {}-SCVirtualMachine {}"
-            .format(vm_name, action, params).strip())
-
-    def start_vm(self, vm_name, force_start=False):
-        """Start or resume virtual machine.
-
-        Args:
-            vm_name: Name of the virtual machine
-            force_start: If we want to use the Start specifically and not Resume
-        """
-        if not force_start and self.is_vm_suspended(vm_name):
-            # Resume
-            self._do_vm(vm_name, "Resume")
-        else:
-            # Ordinary start
-            self._do_vm(vm_name, "Start")
-
-    def wait_vm_running(self, vm_name, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_running(vm_name),
-            message="SCVMM VM {} be running.".format(vm_name),
-            num_sec=num_sec)
-
-    def stop_vm(self, vm_name, shutdown=False):
-        self._do_vm(vm_name, "Stop", "-Force" if not shutdown else "")
-
-    def wait_vm_stopped(self, vm_name, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_stopped(vm_name),
-            message="SCVMM VM {} be stopped.".format(vm_name),
-            num_sec=num_sec)
-
     def create_vm(self, vm_name):
         raise NotImplementedError('create_vm not implemented.')
-
-    def rename_vm(self, vm_name, vm_new_name):
-        if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
-            self.stop_vm(vm_name)
-            self.wait_vm_stopped(vm_name)
-        script = """
-            Get-SCVirtualMachine -Name "{vm_name}" | Set-SCVirtualMachine -Name "{vm_new_name}"
-        """.format(vm_name=vm_name, vm_new_name=vm_new_name)
-        self.logger.info(" Renaming SCVMM VM `{}` to  `{}`"
-            .format(vm_name, vm_new_name))
-        self.run_script(script)
-
-    def delete_vm(self, vm_name):
-        try:
-            if not self.is_vm_stopped(vm_name) and self.vm_status(
-                    vm_name) not in self.STATES_FAILED:
-                self.stop_vm(vm_name)
-                self.wait_vm_stopped(vm_name)
-        except Exception as e:
-            self.logger.exception(e)
-        finally:
-            script = """
-                $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-                Remove-SCVirtualMachine -VM $VM
-            """.format(vm_name=vm_name)
-            self.logger.info("Deleting SCVMM VM {}".format(vm_name))
-            self.run_script(script)
 
     def delete_template(self, template):
         if self.does_template_exist(template):
@@ -146,9 +190,6 @@ class SCVMMSystem(WrapanapiAPIBaseVMSystem):
             self.update_scvmm_library()
         else:
             self.logger.info("Template {} does not exist in SCVMM".format(template))
-
-    def restart_vm(self, vm_name):
-        self._do_vm(vm_name, "Reset")
 
     def list_vm(self, **kwargs):
         data = self.run_script(
@@ -253,28 +294,6 @@ class SCVMMSystem(WrapanapiAPIBaseVMSystem):
         return etree.fromstring(data).xpath(
             "./Object/Property[@Name='StatusString']/text()")[0]
 
-    def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) == self.STATE_RUNNING
-
-    def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) in self.STATES_STOPPED
-
-    def is_vm_suspended(self, vm_name):
-        return self.vm_status(vm_name) == self.STATE_PAUSED
-
-    def in_steady_state(self, vm_name):
-        return self.vm_status(vm_name) in self.STATES_STEADY
-
-    def suspend_vm(self, vm_name):
-        self._do_vm(vm_name, "Suspend")
-
-    def wait_vm_suspended(self, vm_name, num_sec=300):
-        wait_for(
-            lambda: self.is_vm_suspended(vm_name),
-            message="SCVMM VM {} suspended.".format(vm_name),
-
-            num_sec=num_sec)
-
     def clone_vm(self, vm_source, vm_host, path, vm_name):
         script = """
         $vm_new = Get-SCVirtualMachine -Name "{vm_source}" -VMMServer $scvmm_server
@@ -284,11 +303,6 @@ class SCVMMSystem(WrapanapiAPIBaseVMSystem):
         self.logger.info(" Deploying SCVMM VM `{}` from Clone of `{}`"
             .format(vm_name, vm_source))
         self.run_script(script)
-
-    def does_vm_exist(self, vm_name):
-        result = self.run_script("Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
-            .format(vm_name)).strip()
-        return bool(result)
 
     def does_template_exist(self, template):
         result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
@@ -325,18 +339,6 @@ class SCVMMSystem(WrapanapiAPIBaseVMSystem):
             self.wait_vm_running(vm_name, num_sec=timeout)
             self.update_scvmm_virtualmachine(vm_name)
             return vm_name
-
-    def enable_virtual_services(self, vm_name):
-        # Make sure you double bracket any Invoke_Command calls.
-        script = """
-        $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
-        $secpswd = ConvertTo-SecureString "{password}" -AsPlainText -Force
-        $mycreds = New-Object System.Management.Automation.PSCredential("LOCAL\\{user}", $secpswd)
-        Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {{
-             Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }}
-        Read-SCVirtualMachine -VM $vm
-         """.format(user=self.user, password=self.password, vm_name=vm_name)
-        self.run_script(script)
 
     def update_scvmm_virtualmachine(self, vm_name):
         # This forces SCVMM to update a VM that was changed directly in Hyper-V using Invoke-Command

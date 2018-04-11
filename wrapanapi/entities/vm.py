@@ -21,6 +21,7 @@ class VmState(object):
     DELETED = 'deleted'
     STARTING = 'starting'
     STOPPING = 'stopping'
+    ERROR = 'error'
     UNKNOWN = 'unknown'
 
 
