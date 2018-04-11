@@ -19,27 +19,71 @@ from wait_for import wait_for
 from wrapanapi.systems import System
 from wrapanapi.entities import VmState, Vm, VmMixin, Template, TemplateMixin
 
-class SCVM(Vm):
+
+def convert_powershell_date(date_obj_string):
+    """
+    Converts a string representation of a Date object into datetime
+
+    PowerShell prints this as an msec timestamp
+
+    So this converts to:
+    "/Date(1449273876697)/" == datetime.datetime.fromtimestamp(1449273876697/1000.)
+    """
+    groups = re.search('^/Date\((\d+)\)/$', date_obj_string)
+    if not groups:
+        raise ValueError('Invalid date object string: {}'.format(date_obj_string))
+    return datetime.fromtimestamp(match.groups(1)/1000.)
+
+
+class SCVirtualMachine(Vm):
     """
     Represents a VM managed by SCVMM
     """
     def __init__(self, system, name, raw=None):
-        super(SCVM, self).__init__(system)
+        super(SCVirtualMachine, self).__init__(system)
+        # TODO: switch to using ID to track VM's instead of name
         self._name = name
+        self._raw = raw
         self._run_script = self.system.run_script
+        self._get_json = self.system.get_json
+
+    def _get_myself(self, sync=True):
+        """
+        Get VM from SCVMM
+
+        Args:
+            sync (bool) -- force reload from host in cases where VM was updated directly on host
+
+        Returns:
+            raw VM json
+        """
+        script = 'Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server'
+        if sync:
+            script = '{} | Read-SCVirtualMachine'.format(script)
+        data = self._get_json(script.format(self.name))
+        if not data:
+            raise VMInstanceNotFoundError(self.name)
+        return data
+
+    def refresh(self):
+        data = self._get_myself()
+        self._raw = data
+
+    def raw(self):
+        if not self._raw:
+            self.refresh()
+        return self._raw
 
     @property
     def name(self):
         return self._name
-    
+
     @property
     def exists(self):
-        result = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
-            .format(self.name)
-        )
-        return bool(result.strip())
-    
+        if self._get_myself():
+            return True
+        return False
+
     @staticmethod
     def state_map():
         return {
@@ -52,15 +96,28 @@ class SCVM(Vm):
 
     @property
     def state(self):
-        pass
+        self.refresh()
+        return self.raw['StatusString']
+
+    @property
+    def id(self):
+        return self.raw['ID']
 
     @property
     def ip(self):
-        pass
+        self.refresh()
+        data = self.run_script(
+            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server |"
+            "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
+            "ft -HideTableHeaders".format(self.name))
+        ip = data.translate(None, '{}')
+        return ip if ip else None
 
     @property
     def creation_time(self):
-        pass
+        self.refresh()
+        creation_time = convert_powershell_date(self.raw['CreationTime'])
+        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
 
     def _do_vm(self, action, params=""):
         self.logger.info(" {} {} SCVMM VM `{}`".format(action, params, self.name))
@@ -90,10 +147,10 @@ class SCVM(Vm):
         return self._do_vm("Remove")
 
     def cleanup(self):
-        pass
+        return self.delete()
     
     def rename(self, name):
-        self.logger.info(" Renaming SCVMM VM '%s" to '%s'",
+        self.logger.info(" Renaming SCVMM VM '%s' to '%s'",
             self.name, name)
         self.ensure_state(VmState.STOPPED)
         self._do_vm("Set", "-Name {}".format(name))
@@ -101,7 +158,7 @@ class SCVM(Vm):
         self.refresh()
 
     def clone(self, vm_name, vm_host, path, start_vm=True):
-        self.logger.info("Deploying SCVMM VM '%s' from clone of '%s'"
+        self.logger.info("Deploying SCVMM VM '%s' from clone of '%s'",
             vm_name, self.name)
         script = """
             $vm_new = Get-SCVirtualMachine -Name "{src_vm}" -VMMServer $scvmm_server
@@ -111,7 +168,7 @@ class SCVM(Vm):
         if start_vm:
             script = "{} -StartVM".format(script)
         self.run_script(script)
-        return SCVM(system=self.system, name=vm_name)
+        return SCVirtualMachine(system=self.system, name=vm_name)
     
     def enable_virtual_services(self):
         script = """
@@ -124,20 +181,46 @@ class SCVM(Vm):
         """.format(user=self.system.user, password=self.system.password, vm=self.name)
         self.run_script(script)
 
+    def get_hardware_configuration(self):
+        self.refresh()
+        return {'mem': self.raw['CPUCount'], 'cpu': self.raw['Memory']}
+
+    def disconnect_dvd_drives(self):
+        number_dvds_disconnected = 0
+        script = """\
+            $VM = Get-SCVirtualMachine -Name "{}"
+            $DVDDrives = Get-SCVirtualDVDDrive -VM $VM
+            foreach ($drive in $DVDDrives) {{$drive | Remove-SCVirtualDVDDrivce}}
+            Write-Host "number_dvds_disconnected: " + $DVDDrives.length
+        """.format(self.name)
+        output = self.run_script(script)
+        output = output.splitlines()
+        num_removed_line = [line for line in output if "number_dvds_disconnected:" in line]
+        if num_removed_line:
+            number_dvds_disconnected = int(
+                num_removed_line.split('number_dvds_disconnected:')[1].strip()
+            )
+        return number_dvds_disconnected
+
+    def mark_as_template(self, library_server, library_share):
+        # Converts an existing VM into a template.  VM no longer exists afterwards.
+        script = """
+            $VM = Get-SCVirtualMachine -Name \"{name}\" -VMMServer $scvmm_server
+            New-SCVMTemplate -Name \"{name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
+        """.format(name=self.name, ls=library_server, lp=library_share)
+        self.logger.info("Creating SCVMM Template '%s' from VM '%s'", name, name)
+        self.run_script(script)
+        self.system.update_scvmm_library()
+        return True
+
 
 class SCVMMSystem(System, VmMixin, TemplateMixin):
-    """This class is used to connect to M$ SCVMM
+    """
+    This class is used to connect to M$ SCVMM
 
     It still has some drawback, the main one is that pywinrm does not support domains with simple
     auth mode so I have to do the connection manually in the script which seems to be VERY slow.
     """
-    STATE_RUNNING = "Running"
-    STATES_STOPPED = {"PowerOff", "Stopped"}  # TODO:  "Stopped" when using shutdown. Differ it?
-    STATE_PAUSED = "Paused"
-    STATES_STEADY = {STATE_RUNNING, STATE_PAUSED}
-    STATES_STEADY.update(STATES_STOPPED)
-    STATES_FAILED = {'Creation Failed'}
-
     _stats_available = {
         'num_vm': lambda self: len(self.list_vm()),
         'num_template': lambda self: len(self.list_template()),
@@ -169,15 +252,51 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     def run_script(self, script):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
-        self.logger.debug(" Running PowerShell script:\n{}\n".format(script))
+        self.logger.debug(' Running PowerShell script:\n%s\n', script)
         result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
         if result.status_code != 0:
-            raise self.PowerShellScriptError("Script returned {}!: {}"
-                .format(result.status_code, result.std_err))
+            raise self.PowerShellScriptError(
+                "Script returned {}!: {}"
+                .format(result.status_code, result.std_err)
+            )
         return result.std_out.strip()
 
+    def get_json(self, script, depth=2):
+        """
+        Run script and parse output as json
+        """
+        result = self.run_script(
+            "{} | ConvertTo-Json -Compress -Depth {}".format(script, depth))
+        if not result:
+            return None
+        try:
+            return json.loads(result)
+        except ValueError:
+            self.logger.error("Returned data was not json.  Data:\n\n%s", result)
+            raise ValueError("Returned data was not json")
+
     def create_vm(self, vm_name):
-        raise NotImplementedError('create_vm not implemented.')
+        raise NotImplementedError
+
+    def list_vms(self):
+        vm_list = self.get_json('Get-SCVirtualMachine -All -VMMServer $scvmm_server')
+        return [SCVirtualMachine(system=self, name=vm['Name'], raw=vm) for vm in vm_list]
+
+    def find_vms(self, **kwargs):
+        """
+        TODO -- in future there may be things worth filtering here using PowerShell '-Where'
+        """
+        raise NotImplementedError
+
+    def get_vm(self, vm_name):
+        vm = SCVirtualMachine(system=self, name=vm_name)
+        vm.refresh()
+        return vm
+
+    def list_template(self):
+        data = self.run_script(
+            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def delete_template(self, template):
         if self.does_template_exist(template):
@@ -191,118 +310,31 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         else:
             self.logger.info("Template {} does not exist in SCVMM".format(template))
 
-    def list_vm(self, **kwargs):
-        data = self.run_script(
-            "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
-            "Select name | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
+    def _get_names(self, item_type):
+        """
+        Return names for an arbitrary item type
+        """
+        return [
+            item['Name'] for item in
+            self.get_json('Get-{} -VMMServer $scvmm_server').format(item_type)
+        ]
+
+    def list_clusters(self, **kwargs):
+        """List all clusters' names."""
+        return self._get_names('SCVMHostCluster')
+
+    def list_networks(self):
+        """List all networks' names."""
+        return self._get_names('SCLogicalNetwork')
 
     def list_hosts(self, **kwargs):
-        data = self.run_script(
-            "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
+        return self._get_names('SCVMHost')
 
-    def list_cluster(self, **kwargs):
-        """List all clusters' names."""
-        data = self.run_script(
-            "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
-
-    def all_vms(self, **kwargs):
-        vm_list = []
-        data = self.run_script("""
-            $outputCollection = @()
-            $VMs = Get-SCVirtualMachine -All -VMMServer $scvmm_server |
-            Select VMId, Name, StatusString
-            $NetAdapter = Get-SCVirtualNetworkAdapter -VMMServer $scvmm_server -All |
-            Select ID, Name, IPv4Addresses
-            #Associate objects
-            $VMs | ForEach-Object{
-                $vm_object = $_
-                $ip_object = $NetAdapter | Where-Object {$_.Name -eq $vm_object.Name}
-
-                #Make a combined object
-                $outObj = "" | Select VMId, Name, Status, IPv4
-                $outObj.VMId = if($vm_object.VMId){$vm_object.VMId} else {"None"}
-                $outObj.Name = $vm_object.Name
-                $outObj.Status = $vm_object.StatusString
-                $outObj.IPv4 = if($ip_object.IPv4Addresses){$ip_object.IPv4Addresses} else {"None"}
-                #Add the object to the collection
-
-                $outputCollection += $outObj
-            }
-            $outputCollection | ConvertTo-Xml -as String
-            """)
-        vms = etree.fromstring(data)
-        for vm in vms:
-            VMId = vm.xpath("./Property[@Name='VMId']/text()")[0],
-            Name = vm.xpath("./Property[@Name='Name']/text()")[0],
-            Status = vm.xpath("./Property[@Name='Status']/text()")[0],
-            IPv4 = vm.xpath("./Property[@Name='IPv4']/text()")[0]
-            vm_data = (
-                None if VMId == 'None' else VMId[0],
-                Name[0],
-                Status[0],
-                None if IPv4 == 'None' else IPv4)
-            vm_list.append(VMInfo(*vm_data))
-        return vm_list
-
-    def list_template(self):
-        data = self.run_script(
-            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
-
-    def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
-
-    def list_network(self):
-        data = self.run_script(
-            "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='Name']/text()")
-
-    def vm_creation_time(self, vm_name):
-        xml = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\""
-            " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
-        xml_time = etree.fromstring(xml).xpath(
-            "./Object/Property[@Name='CreationTime']/text()")[0]
-        creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
-        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
-
-    def info(self, vm_name):
-        pass
-
-    def vm_hardware_configuration(self, vm_name):
-        data = self.run_script(
-            """
-            $vm = Get-SCVirtualMachine -Name \"{}\"
-            $conf = @{{"ram"=$vm.Memory; "cpu"=$vm.CPUCount}}
-            $conf|ConvertTo-Json -Depth 3 -Compress
-            """.format(vm_name))
-        result = json.loads(data)
-        return {str(key): (str(val) if isinstance(val, unicode) else val) for key, val in
-                result.items()}
+    def info(self):
+        return "SCVMMSystem host={}".format(self.host)
 
     def disconnect(self):
         pass
-
-    def vm_status(self, vm_name):
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
-            .format(vm_name))
-        return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='StatusString']/text()")[0]
-
-    def clone_vm(self, vm_source, vm_host, path, vm_name):
-        script = """
-        $vm_new = Get-SCVirtualMachine -Name "{vm_source}" -VMMServer $scvmm_server
-        $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
-        New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}" -StartVM
-        """.format(vm_name=vm_name, vm_source=vm_source, vm_host=vm_host, path=path)
-        self.logger.info(" Deploying SCVMM VM `{}` from Clone of `{}`"
-            .format(vm_name, vm_source))
-        self.run_script(script)
 
     def does_template_exist(self, template):
         result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
@@ -340,25 +372,6 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             self.update_scvmm_virtualmachine(vm_name)
             return vm_name
 
-    def update_scvmm_virtualmachine(self, vm_name):
-        # This forces SCVMM to update a VM that was changed directly in Hyper-V using Invoke-Command
-        script = """
-            $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
-            Read-SCVirtualMachine -VM $vm
-         """.format(vm_name=vm_name)
-        self.logger.info("Updating SCVMM VM \"{vm_name}\" using Read-SCVirtualMachine"
-            .format(vm_name=vm_name))
-        self.run_script(script)
-
-    def update_scvmm_vmhost(self, host):
-        # This forces SCVMM to update VM properties on the host if Host has lost some VMs
-        self.logger.info("Updating \"{}\" Host using Read-SCVirtualMachine".format(host))
-        script = """
-            $sc_host = Get-SCVMHost -VMMServer $scvmm_server
-            Read-SCVirtualMachine -VMHost \"{}\"
-        """.format(host)
-        self.run_script(script)
-
     def update_scvmm_library(self):
         # This forces SCVMM to update Library after a template change instead of waiting on timeout
         self.logger.info("Updating SCVMM Library")
@@ -367,108 +380,6 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             Read-SCLibraryShare -LibraryShare $lib[0] -Path VHDs -RunAsynchronously
             """
         self.run_script(script)
-
-    def mark_as_template(self, vm_name, library, library_share):
-        # Converts an existing VM into a template.  VM no longer exists afterwards.
-        script = """
-        $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
-        New-SCVMTemplate -Name \"{vm_name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
-        """.format(vm_name=vm_name, ls=library, lp=library_share)
-        self.logger.info("Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
-            .format(vm_name=vm_name))
-        self.run_script(script)
-        self.update_scvmm_library()
-
-    @contextmanager
-    def with_vm(self, *args, **kwargs):
-        """Context manager for better cleanup"""
-        name = self.deploy_template(*args, **kwargs)
-        yield name
-        self.delete_vm(name)
-
-    def current_ip_address(self, vm_name):
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server |"
-            "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
-            "ft -HideTableHeaders".format(vm_name))
-        return data.translate(None, '{}')
-
-    def get_vms_vmhost(self, vm_name):
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server|"
-            "select VmHost | ConvertTo-Xml -as String".format(vm_name))
-        return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='VMHost']/text()")
-
-    def get_ip_address(self, vm_name, **kwargs):
-        # Forcing an update to account for any delayed status changes
-        self.update_scvmm_virtualmachine(vm_name)
-        if not re.findall(r'[0-9]+(?:.[0-9]+){3}', self.current_ip_address(vm_name)):
-            return None
-        return self.current_ip_address(vm_name)
-
-    def remove_host_from_cluster(self, hostname):
-        """I did not notice any scriptlet that lets you do this."""
-
-    def disconnect_dvd_drives(self, vm_name):
-        number_dvds_disconnected = 0
-        script = """\
-            $VM = Get-SCVirtualMachine -Name "{}"
-            $DVDDrive = Get-SCVirtualDVDDrive -VM $VM
-            $DVDDrive[0] | Remove-SCVirtualDVDDrive
-        """.format(vm_name)
-        while self.data(vm_name).VirtualDVDDrives is not None:
-            self.run_script(script)
-            number_dvds_disconnected += 1
-        return number_dvds_disconnected
-
-    def data(self, vm_name):
-        """Returns detailed informations about SCVMM VM"""
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
-            .format(vm_name))
-        return self.SCVMMDataHolderDict(etree.fromstring(data).xpath("./Object")[0])
-
-    ##
-    # Classes and functions used to access detailed SCVMM Data
-    @staticmethod
-    def parse_data(t, data):
-        if data is None:
-            return None
-        elif t == "System.Boolean":
-            return data.lower().strip() == "true"
-        elif t.startswith("System.Int"):
-            return int(data)
-        elif t == "System.String" and data.lower().strip() == "none":
-            return None
-
-    class SCVMMDataHolderDict(object):
-        def __init__(self, data):
-            for prop in data.xpath("./Property"):
-                name = prop.attrib["Name"]
-                t = prop.attrib["Type"]
-                children = prop.getchildren()
-                if children:
-                    if prop.xpath("./Property[@Name]"):
-                        self.__dict__[name] = SCVMMSystem.SCVMMDataHolderDict(prop)
-                    else:
-                        self.__dict__[name] = SCVMMSystem.SCVMMDataHolderList(prop)
-                else:
-                    data = prop.text
-                    result = SCVMMSystem.parse_data(t, prop.text)
-                    self.__dict__[name] = result
-
-        def __repr__(self):
-            return repr(self.__dict__)
-
-    class SCVMMDataHolderList(list):
-        def __init__(self, data):
-            super(SCVMMSystem.SCVMMDataHolderList, self).__init__()
-            for prop in data.xpath("./Property"):
-                t = prop.attrib["Type"]
-                data = prop.text
-                result = SCVMMSystem.parse_data(t, prop.text)
-                self.append(result)
 
     class PowerShellScriptError(Exception):
         pass
