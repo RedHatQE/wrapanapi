@@ -230,8 +230,21 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
             "rawDisk": {"source": bucket_url}
         }
         operation = images.insert(project=self._project, body=data).execute()
-        wait_for(lambda: self._nested_operation_wait(operation['name'], zone=False), delay=0.5,
-            num_sec=timeout, message=" Creating image {}".format(image_name))
+        wait_for(self._nested_operation_wait,
+                 func_kwargs={'operation_name': operation['name'], 'zone': False},
+                 delay=0.5, num_sec=timeout, message=" Creating image {}".format(image_name))
+
+    def delete_image(self, image_name, timeout=360):
+        """ Delete image
+        Args:
+            image_name: Unique name of image
+            timeout: time to wait for operation (default=360)
+        """
+        operation = self._compute.images().delete(project=self._project, image=image_name).execute()
+
+        wait_for(self._nested_operation_wait,
+                 func_kwargs={'operation_name': operation['name'], 'zone': False},
+                 delay=0.5, num_sec=timeout, message=" Deleting image {}".format(image_name))
 
     def delete_bucket(self, bucket_name):
         """ Delete bucket
@@ -265,7 +278,21 @@ class GoogleCloudSystem(WrapanapiAPIBaseVM):
             except errors.HttpError as error:
                 if "Not Found" in error.content:
                     self.logger.info(
-                        "File {} was not found in bucket {}".format(bucket_name, file_name))
+                        "File {} was not found in bucket {}".format(file_name, bucket_name))
+                else:
+                    raise error
+        return {}
+
+    def delete_file_from_bucket(self, bucket_name, file_name):
+        if self.bucket_exists(bucket_name):
+            try:
+                data = self._storage.objects().delete(bucket=bucket_name,
+                                                      object=file_name).execute()
+                return data
+            except errors.HttpError as error:
+                if "No such object" in error.content:
+                    self.logger.info(
+                        "File {} was not found in bucket {}".format(file_name, bucket_name))
                 else:
                     raise error
         return {}
