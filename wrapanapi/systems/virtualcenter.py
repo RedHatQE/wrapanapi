@@ -4,12 +4,6 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
-try:
-    # In Fedora 22, we see SSL errors when connecting to vSphere, this prevents the error.
-    import ssl
-    ssl._create_default_https_context = ssl._create_unverified_context
-except AttributeError:
-    pass
 
 import operator
 import re
@@ -18,15 +12,25 @@ from datetime import datetime
 from distutils.version import LooseVersion
 from functools import partial
 
-import six
 import pytz
-from wait_for import wait_for, TimedOutError
+import six
+from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim, vmodl
-from pyVim.connect import SmartConnect, Disconnect
+from wait_for import TimedOutError, wait_for
 
-from .base import VMSystem, VMInfo
-from .exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
-    HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
+from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
+from wrapanapi.exceptions import (HostNotRemoved, NotFoundError,
+                                  VMCreationDateError, VMInstanceNotCloned,
+                                  VMInstanceNotFound, VMInstanceNotSuspended,
+                                  VMNotFoundViaIP)
+from wrapanapi.systems import System
+
+try:
+    # In Fedora 22, we see SSL errors when connecting to vSphere, this prevents the error.
+    import ssl
+    ssl._create_default_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
 
 
 SELECTION_SPECS = [
@@ -113,7 +117,295 @@ def get_task_error_message(task):
     return message
 
 
-class VMWareSystem(VMSystem):
+class VMWareVirtualMachine(Vm):
+    def __init__(self, system, name, raw=None):
+        """
+        Construct a VMWareVirtualMachine instance
+
+        Args:
+            system: instance of VMWareSystem
+            name: name of VM
+            raw: pyVmomi.vim.VirtualMachine object
+        """
+        super(VMWareVirtualMachine, self).__init__(system)
+        # TODO: switch to using ID to track VM's instead of name?
+        self._name = name
+        self._raw = raw
+
+        self._run_script = self.system.run_script
+        self._get_json = self.system.get_json
+
+    @property
+    def name(self):
+        if self._raw:
+            return self.raw.name
+        else:
+            return self._name
+
+    def refresh(self):
+        self._raw = self.system.get_vm(self._name)
+
+    @property
+    def raw(self):
+        if not self._raw:
+            self.refresh()
+        return self._raw
+
+    @property
+    def exists(self):
+        try:
+            self.system.get_vm(self.name)
+            return True
+        except NotFoundError:
+            return False
+
+    @staticmethod
+    def state_map():
+        return {
+            'poweredOn': VmState.RUNNING,
+            'poweredOff': VmState.STOPPED,
+            'suspended': VmState.SUSPENDED,
+        }
+
+    @property
+    def state(self):
+        self.refresh()
+        return self._api_state_to_vmstate(str(self.raw.runtime.powerState))
+
+    @property
+    def id(self):
+        try:
+            guid = str(self.raw.summary.config.uuid)
+        except AttributeError:
+            return None
+
+    @property
+    def ip(self):
+        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        self.refresh()
+        try:
+            ip_address = self._raw.summary.guest.ipAddress
+            if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
+                ip_address = None
+            return ip_address
+        except (AttributeError, TypeError):
+            # AttributeError: vm doesn't have an ip address yet
+            # TypeError: ip address wasn't a string
+            return None
+
+    @property
+    def creation_time(self):
+        """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
+
+        The API provides no sensible way to actually get this value. The only way in which
+        vcenter API MAY have this is by filtering through events
+
+        Return tz-naive datetime object
+        """
+        vm = self.raw
+
+        filter_spec = vim.event.EventFilterSpec(
+            entity=vim.event.EventFilterSpec.ByEntity(
+                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
+            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
+        collector = self.system.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
+        collector.SetCollectorPageSize(1000)  # max allowed value
+        events = collector.latestPage
+        collector.DestroyCollector()  # limited number of collectors allowed per client
+
+        if events:
+            creation_time = events.pop().createdTime  # datetime object
+        else:
+            # no events found for VM, fallback to last boot time
+            creation_time = vm.runtime.bootTime
+            if not creation_time:
+                raise VMCreationDateError('Could not find a creation date for {}'.format(self.name))
+        # localize and make tz-naive
+        return creation_time.astimezone(pytz.UTC)
+
+    @property
+    def host(self):
+        self.refresh()
+        return self.raw.runtime.host.name
+
+    def start(self):
+        if self.is_running:
+            self.logger.info(" vSphere VM %s is already running", self.name)
+            return True
+        else:
+            self.logger.info(" Starting vSphere VM %s", self.name)
+            self._raw.PowerOnVM_Task()
+            self.wait_for_state(VmState.RUNNING)
+            return True
+
+    def stop(self):
+        if self.is_stopped:
+            self.logger.info(" vSphere VM %s is already stopped", self.name)
+            return True
+        else:
+            self.logger.info(" Stopping vSphere VM %s", self.name)
+            # resume VM if it is suspended
+            self.ensure_state(VmState.RUNNING)
+            self._raw.PowerOffVM_Task()
+            self.wait_for_state(VmState.STOPPED)
+            return True
+
+    def restart(self):
+        self.logger.info(" Restarting vSphere VM %s", self.name)
+        return self.stop() and self.start()
+
+    def suspend(self):
+        self.logger.info(" Suspending vSphere VM %s", self.name)
+
+        if self.is_stopped:
+            raise VMInstanceNotSuspended(self.name)
+        else:
+            self.raw.SuspendVM_Task()
+            self.wait_for_state(VmState.SUSPENDED)
+            return True
+    
+    def delete(self):
+        self.logger.info(" Deleting vSphere VM %s", self.name)
+        self.stop()
+
+        task = self._raw.Destroy_Task()
+
+        try:
+            wait_for(lambda: self.system.get_task_status(task) == 'success', delay=3, num_sec=600)
+            return self.system.get_task_status(task) == 'success'
+        except TimedOutError:
+            return False
+
+    def cleanup(self):
+        return self.delete()
+    
+    def rename(self, new_vm_name):
+        task = self.raw.Rename_Task(newName=new_vm_name)
+        # Cycle until the new named vm is found
+        # That must happen or the error state can come up too
+        old_name = self._name
+        self._name = new_vm_name
+        while not self.exists:
+            if self.system.get_task_status(task) == "error":
+                self._name = old_name
+                return False
+            time.sleep(0.5)
+        else:
+            # The newly renamed VM is found
+            return True
+
+    def clone(self, vm_name, vm_host, path, start_vm=True):
+        pass
+
+    def get_hardware_configuration(self):
+        self.refresh()
+        return {
+            'ram': self.raw.config.hardware.memoryMB,
+            'cpu': self.raw.config.hardware.numCPU,
+        }
+
+    def mark_as_template(self, library_server, library_share):
+        pass
+
+    def get_datastore_path(self, vm_config_datastore):
+        datastore_url = [str(datastore.url)
+                         for datastore in self.raw.config.datastoreUrl
+                         if datastore.name in vm_config_datastore]
+        return datastore_url.pop()
+
+    def get_config_files_path(self):
+        self.refresh()
+        vmfilespath = self.raw.config.files.vmPathName
+        return str(vmfilespath)
+
+    def add_disk(self, capacity_in_kb, provision_type=None, unit=None):
+        """
+        Create a disk on the given datastore (by name)
+
+        Community Example used
+        https://github.com/vmware/pyvmomi-community-samples/blob/master/samples/add_disk_to_vm.py
+
+        Return task type from Task.result or Task.error
+        https://github.com/vmware/pyvmomi/blob/master/docs/vim/TaskInfo.rst
+
+        Args:
+            capacity_in_kb (int): capacity of the new drive in Kilobytes
+            provision_type (string): 'thin' or 'thick', will default to thin if invalid option
+            unit (int): The unit number of the disk to add, use to override existing disk. Will
+                search for next available unit number by default
+
+        Returns:
+            (bool, task_result): Tuple containing boolean True if task ended in success,
+                                 and the contents of task.result or task.error depending on state
+        """
+        provision_type = provision_type if provision_type in ['thick', 'thin'] else 'thin'
+        self.refresh()
+        vm = self.raw
+
+        # if passed unit matches existing device unit, match these values too
+        key = None
+        controller_key = None
+        unit_number = None
+        virtual_disk_devices = [
+            device for device
+            in vm.config.hardware.device if isinstance(device, vim.vm.device.VirtualDisk)]
+        for dev in virtual_disk_devices:
+            if unit == int(dev.unitNumber):
+                # user specified unit matching existing disk, match key too
+                key = dev.key
+            unit_number = unit or int(dev.unitNumber) + 1
+            if unit_number == 7:  # reserved
+                unit_number += 1
+            controller_key = dev.controllerKey
+
+        if not (controller_key or unit_number):
+            raise ValueError('Could not identify VirtualDisk device on given vm')
+
+        # create disk backing specification
+        backing_spec = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+        backing_spec.diskMode = 'persistent'
+        backing_spec.thinProvisioned = (provision_type == 'thin')
+
+        # create disk specification, attaching backing
+        disk_spec = vim.vm.device.VirtualDisk()
+        disk_spec.backing = backing_spec
+        disk_spec.unitNumber = unit_number
+        if key:  # only set when overriding existing disk
+            disk_spec.key = key
+        disk_spec.controllerKey = controller_key
+        disk_spec.capacityInKB = capacity_in_kb
+
+        # create device specification, attaching disk
+        device_spec = vim.vm.device.VirtualDeviceSpec()
+        device_spec.fileOperation = 'create'
+        device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+        device_spec.device = disk_spec
+
+        # create vm specification for device changes
+        vm_spec = vim.vm.ConfigSpec()
+        vm_spec.deviceChange = [device_spec]
+
+        # start vm reconfigure task
+        task = vm.ReconfigVM_Task(spec=vm_spec)
+
+        def task_complete(task_obj):
+            status = task_obj.info.state
+            return status not in ['running', 'queued']
+
+        try:
+            wait_for(task_complete, [task])
+        except TimedOutError:
+            self.logger.exception('Task did not go to success state: {}'.format(task))
+        finally:
+            if task.info.state == 'success':
+                result = (True, task.info.result)
+            elif task.info.state == 'error':
+                result = (False, task.info.error)
+            else:  # shouldn't happen
+                result = (None, None)
+            return result
+
+class VMWareSystem(System, VmMixin, TemplateMixin):
     """Client to Vsphere API
 
     Args:
@@ -136,9 +428,6 @@ class VMWareSystem(VMSystem):
         'num_template': lambda self: len(self.list_template()),
         'num_datastore': lambda self: len(self.list_datastore()),
     }
-    POWERED_ON = 'poweredOn'
-    POWERED_OFF = 'poweredOff'
-    SUSPENDED = 'suspended'
 
     def __init__(self, hostname, username, password, **kwargs):
         super(VMWareSystem, self).__init__(kwargs)
@@ -187,7 +476,7 @@ class VMWareSystem(VMSystem):
         container = self.content.viewManager.CreateContainerView(folder, [vimtype], True)
         return container.view
 
-    def _get_obj(self, vimtype, name, folder=None):
+    def get_obj(self, vimtype, name, folder=None):
         """Get an object of type ``vimtype`` with name ``name`` from Vsphere"""
         obj = None
         for item in self._get_obj_list(vimtype, folder):
@@ -221,7 +510,7 @@ class VMWareSystem(VMSystem):
         filter_spec.objectSet = [obj_spec]
         return filter_spec
 
-    def _get_updated_obj(self, obj):
+    def get_updated_obj(self, obj):
         """
         Build a filter spec based on ``obj`` and return the updated object.
 
@@ -245,22 +534,23 @@ class VMWareSystem(VMSystem):
             filter_.Destroy()
         return update.filterSet[0].objectSet[0].obj
 
-    def _get_vm(self, vm_name, force=False):
-        """Returns a vm from the VI object.
+    def get_vm(self, vm_name, force=False):
+        """Returns a VMWareVirtualMachine instance based on the VI object.
 
         Args:
             vm_name (string): The name of the VM
             force (bool): Ignore the cache when updating
         Returns:
-             pyVmomi.vim.VirtualMachine: VM object
+            wrapanapi.systems.virtualcenter.VMWareVirtualMachine object
         """
         if vm_name not in self._vm_cache or force:
-            vm = self._get_obj(vim.VirtualMachine, vm_name)
-            if not vm:
-                raise VMInstanceNotFound(vm_name)
-            self._vm_cache[vm_name] = vm
+            vm = self.get_obj(vim.VirtualMachine, vm_name)
         else:
-            self._vm_cache[vm_name] = self._get_updated_obj(self._vm_cache[vm_name])
+            vm = self.get_updated_obj(self._vm_cache[vm_name])
+        
+        if not vm:
+            raise VMInstanceNotFound(vm_name)
+        self._vm_cache[vm_name] = VMWareVirtualMachine(system=self, name=vm_name, raw=vm)
         return self._vm_cache[vm_name]
 
     def _get_resource_pool(self, resource_pool_name=None):
@@ -273,9 +563,9 @@ class VMWareSystem(VMSystem):
              pyVmomi.vim.ResourcePool: The managed object of the resource pool.
         """
         if resource_pool_name is not None:
-            return self._get_obj(vim.ResourcePool, resource_pool_name)
+            return self.get_obj(vim.ResourcePool, resource_pool_name)
         elif self.default_resource_pool is not None:
-            return self._get_obj(vim.ResourcePool, self.default_resource_pool)
+            return self.get_obj(vim.ResourcePool, self.default_resource_pool)
         else:
             return self._get_obj_list(vim.ResourcePool)[0]
 
@@ -289,11 +579,11 @@ class VMWareSystem(VMSystem):
         Returns:
             string: pyVmomi.vim.TaskInfo.state value if the task is not queued/running/None
         """
-        task = self._get_updated_obj(task)
+        task = self.get_updated_obj(task)
         if task.info.state not in ['queued', 'running', None]:
             return task.info.state
 
-    def _task_status(self, task):
+    def get_task_status(self, task):
         """Update a task and return its state, as a vim.TaskInfo.State string wrapper
 
         Args:
@@ -301,49 +591,8 @@ class VMWareSystem(VMSystem):
         Returns:
             string: pyVmomi.vim.TaskInfo.state value
         """
-        task = self._get_updated_obj(task)
+        task = self.get_updated_obj(task)
         return task.info.state
-
-    def does_vm_exist(self, name):
-        """ Checks if a vm exists or not.
-
-        Args:
-            name: The name of the requested vm.
-        Returns: A boolean, ``True`` if the vm exists, ``False`` if not.
-        """
-        try:
-            return self._get_vm(name) is not None
-        except VMInstanceNotFound:
-            return False
-
-    def current_ip_address(self, vm_name):
-        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
-        try:
-            vm = self._get_vm(vm_name)
-            ip_address = vm.summary.guest.ipAddress
-            if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
-                ip_address = None
-            return ip_address
-        except (AttributeError, TypeError):
-            # AttributeError: vm doesn't have an ip address yet
-            # TypeError: ip address wasn't a string
-            return None
-
-    def get_ip_address(self, vm_name, timeout=600):
-        """ Returns the first IP address for the selected VM.
-
-        Args:
-            vm_name: The name of the vm to obtain the IP for.
-            timeout: The IP address wait timeout.
-        Returns: A string containing the first found IP that isn't the loopback device.
-        """
-        try:
-            ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
-                fail_condition=None, delay=5, num_sec=timeout,
-                message="get_ip_address from vsphere")
-        except TimedOutError:
-            ip_address = None
-        return ip_address
 
     def _get_list_vms(self, get_template=False, inaccessible=False):
         """ Obtains a list of all VMs on the system.
@@ -412,13 +661,6 @@ class VMWareSystem(VMSystem):
             )
         return result
 
-    def get_vm_guid(self, vm_name):
-        vm = self._get_vm(vm_name)
-        try:
-            return str(vm.summary.config.uuid)
-        except AttributeError:
-            return None
-
     def get_vm_name_from_ip(self, ip):
         """ Gets the name of a vm from its IP.
 
@@ -448,60 +690,12 @@ class VMWareSystem(VMSystem):
         else:
             raise VMNotFoundViaIP('The requested IP is not known as a VM')
 
-    def start_vm(self, vm_name):
-        self.wait_vm_steady(vm_name)
-        if self.is_vm_running(vm_name):
-            self.logger.info(" vSphere VM %s is already running" % vm_name)
-            return True
-        else:
-            self.logger.info(" Starting vSphere VM %s" % vm_name)
-            vm = self._get_vm(vm_name)
-            vm.PowerOnVM_Task()
-            self.wait_vm_running(vm_name)
-            return True
-
-    def stop_vm(self, vm_name):
-        self.wait_vm_steady(vm_name)
-        if self.is_vm_stopped(vm_name):
-            self.logger.info(" vSphere VM %s is already stopped" % vm_name)
-            return True
-        else:
-            self.logger.info(" Stopping vSphere VM %s" % vm_name)
-            vm = self._get_vm(vm_name)
-            if self.is_vm_suspended(vm_name):
-                self.logger.info(
-                    " Resuming suspended VM %s before stopping." % vm_name
-                )
-                vm.PowerOnVM_Task()
-                self.wait_vm_running(vm_name)
-            vm.PowerOffVM_Task()
-            self.wait_vm_stopped(vm_name)
-            return True
-
-    def delete_vm(self, vm_name):
-        self.wait_vm_steady(vm_name)
-        self.logger.info(" Deleting vSphere VM %s" % vm_name)
-        vm = self._get_vm(vm_name)
-        self.stop_vm(vm_name)
-
-        task = vm.Destroy_Task()
-
-        try:
-            wait_for(lambda: self._task_status(task) == 'success', delay=3, num_sec=600)
-            return self._task_status(task) == 'success'
-        except TimedOutError:
-            return False
-
     def is_host_connected(self, host_name):
-        host = self._get_obj(vim.HostSystem, name=host_name)
+        host = self.get_obj(vim.HostSystem, name=host_name)
         return host.summary.runtime.connectionState == "connected"
 
     def create_vm(self, vm_name):
         raise NotImplementedError('This function has not yet been implemented.')
-
-    def restart_vm(self, vm_name):
-        self.logger.info(" Restarting vSphere VM %s" % vm_name)
-        return self.stop_vm(vm_name) and self.start_vm(vm_name)
 
     def list_vm(self, inaccessible=False):
         return self._get_list_vms(inaccessible=inaccessible)
@@ -516,7 +710,7 @@ class VMWareSystem(VMSystem):
         return [str(h.name) for h in self._get_obj_list(vim.HostSystem)]
 
     def list_host_datastore_url(self, host_name):
-        host = self._get_obj(vim.HostSystem, name=host_name)
+        host = self.get_obj(vim.HostSystem, name=host_name)
         return [str(d.summary.url) for d in host.datastore]
 
     def list_datastore(self):
@@ -533,108 +727,8 @@ class VMWareSystem(VMSystem):
         # return '{} {}'.format(self.api.get_server_type(), self.api.get_api_version())
         return '{} {}'.format(self.content.about.apiType, self.content.about.apiVersion)
 
-    def connect(self):
-        pass
-
     def disconnect(self):
         pass
-
-    def vm_status(self, vm_name):
-        return str(self._get_vm(vm_name, force=True).runtime.powerState)
-
-    def vm_creation_time(self, vm_name):
-        """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
-
-        The API provides no sensible way to actually get this value. The only way in which
-        vcenter API MAY have this is by filtering through events
-
-        Return tz-naive datetime object
-        """
-        vm = self._get_vm(vm_name)
-
-        filter_spec = vim.event.EventFilterSpec(
-            entity=vim.event.EventFilterSpec.ByEntity(
-                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
-            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
-        collector = self.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
-        collector.SetCollectorPageSize(1000)  # max allowed value
-        events = collector.latestPage
-        collector.DestroyCollector()  # limited number of collectors allowed per client
-
-        if events:
-            creation_time = events.pop().createdTime  # datetime object
-        else:
-            # no events found for VM, fallback to last boot time
-            creation_time = vm.runtime.bootTime
-            if not creation_time:
-                raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
-        # localize and make tz-naive
-        return creation_time.astimezone(pytz.UTC)
-
-    def get_vm_host_name(self, vm_name):
-        vm = self._get_vm(vm_name)
-        return str(vm.runtime.host.name)
-
-    def get_vm_datastore_path(self, vm_name, vm_config_datastore):
-        vm = self._get_vm(vm_name)
-        datastore_url = [str(datastore.url)
-                         for datastore in vm.config.datastoreUrl
-                         if datastore.name in vm_config_datastore]
-        return datastore_url.pop()
-
-    def get_vm_config_files_path(self, vm_name):
-        vm = self._get_vm(vm_name)
-        vmfilespath = vm.config.files.vmPathName
-        return str(vmfilespath)
-
-    def in_steady_state(self, vm_name):
-        return self.vm_status(vm_name) in {self.POWERED_ON, self.POWERED_OFF, self.SUSPENDED}
-
-    def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) == self.POWERED_ON
-
-    def wait_vm_running(self, vm_name, num_sec=240):
-        self.logger.info(" Waiting for vSphere VM %s to change status to ON" % vm_name)
-        wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
-
-    def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) == self.POWERED_OFF
-
-    def wait_vm_stopped(self, vm_name, num_sec=240):
-        self.logger.info(" Waiting for vSphere VM %s to change status to OFF" % vm_name)
-        wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
-
-    def is_vm_suspended(self, vm_name):
-        return self.vm_status(vm_name) == self.SUSPENDED
-
-    def wait_vm_suspended(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for vSphere VM %s to change status to SUSPENDED" % vm_name)
-        wait_for(self.is_vm_suspended, [vm_name], num_sec=num_sec)
-
-    def suspend_vm(self, vm_name):
-        self.wait_vm_steady(vm_name)
-        self.logger.info(" Suspending vSphere VM %s" % vm_name)
-        vm = self._get_vm(vm_name)
-        if self.is_vm_stopped(vm_name):
-            raise VMInstanceNotSuspended(vm_name)
-        else:
-            vm.SuspendVM_Task()
-            self.wait_vm_suspended(vm_name)
-            return True
-
-    def rename_vm(self, vm_name, new_vm_name):
-        vm = self._get_vm(vm_name)
-        task = vm.Rename_Task(newName=new_vm_name)
-        # Cycle until the new named vm is found
-        # That must happen or the error state can come up too
-        while not self.does_vm_exist(new_vm_name):
-            task = self._get_updated_obj(task)
-            if task.info.state == "error":
-                return vm_name  # Old vm name if error
-            time.sleep(0.5)
-        else:
-            # The newly renamed VM is found
-            return new_vm_name
 
     @staticmethod
     def _progress_log_callback(logger, source, destination, progress):
@@ -659,7 +753,7 @@ class VMWareSystem(VMSystem):
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         """Clone a VM"""
         try:
-            vm = self._get_obj(vim.VirtualMachine, name=destination)
+            vm = self.get_obj(vim.VirtualMachine, name=destination)
             if vm and vm.name == destination:
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
@@ -669,13 +763,13 @@ class VMWareSystem(VMSystem):
             progress_callback = partial(self._progress_log_callback, self.logger,
                 source, destination)
 
-        source_template = self._get_vm(source)
+        source_template = self.get_vm(source)
 
         vm_clone_spec = vim.VirtualMachineCloneSpec()
         vm_reloc_spec = vim.VirtualMachineRelocateSpec()
         # DATASTORE
         if isinstance(datastore, six.string_types):
-            vm_reloc_spec.datastore = self._get_obj(vim.Datastore, name=datastore)
+            vm_reloc_spec.datastore = self.get_obj(vim.Datastore, name=datastore)
         elif isinstance(datastore, vim.Datastore):
             vm_reloc_spec.datastore = datastore
         elif datastore is None:
@@ -735,7 +829,7 @@ class VMWareSystem(VMSystem):
             if store[0].info.state not in {"queued", "running"}:
                 return True
             else:
-                store[0] = self._get_updated_obj(store[0])
+                store[0] = self.get_updated_obj(store[0])
                 return False
 
         wait_for(_check, num_sec=provision_timeout, delay=4)
@@ -747,7 +841,7 @@ class VMWareSystem(VMSystem):
             return destination
 
     def mark_as_template(self, vm_name, **kwargs):
-        self._get_obj(vim.VirtualMachine, name=vm_name).MarkAsTemplate()  # Returns None
+        self.get_obj(vim.VirtualMachine, name=vm_name).MarkAsTemplate()  # Returns None
 
     def deploy_template(self, template, **kwargs):
         kwargs["power_on"] = kwargs.pop("power_on", True)
@@ -762,7 +856,7 @@ class VMWareSystem(VMSystem):
         return destination
 
     def remove_host_from_cluster(self, host_name):
-        host = self._get_obj(vim.HostSystem, name=host_name)
+        host = self.get_obj(vim.HostSystem, name=host_name)
         task = host.DisconnectHost_Task()
         status, t = wait_for(self._task_wait, [task])
 
@@ -774,13 +868,6 @@ class VMWareSystem(VMSystem):
         status, t = wait_for(self._task_wait, [task], fail_condition=None)
 
         return status == 'success'
-
-    def vm_hardware_configuration(self, vm_name):
-        vm = self._get_vm(vm_name)
-        return {
-            'ram': vm.config.hardware.memoryMB,
-            'cpu': vm.config.hardware.numCPU,
-        }
 
     def usage_and_quota(self):
         installed_ram = 0
@@ -816,90 +903,3 @@ class VMWareSystem(VMSystem):
             'cpu_total': installed_cpu,
             'cpu_limit': None,
         }
-
-    def add_disk_to_vm(self, vm_name, capacity_in_kb, provision_type=None, unit=None):
-        """
-        Create a disk on the given datastore (by name)
-
-        Community Example used
-        https://github.com/vmware/pyvmomi-community-samples/blob/master/samples/add_disk_to_vm.py
-
-        Return task type from Task.result or Task.error
-        https://github.com/vmware/pyvmomi/blob/master/docs/vim/TaskInfo.rst
-
-        Args:
-            vm_name (string): name of the vm to add disk to
-            capacity_in_kb (int): capacity of the new drive in Kilobytes
-            provision_type (string): 'thin' or 'thick', will default to thin if invalid option
-            unit (int): The unit number of the disk to add, use to override existing disk. Will
-                search for next available unit number by default
-
-        Returns:
-            (bool, task_result): Tuple containing boolean True if task ended in success,
-                                 and the contents of task.result or task.error depending on state
-        """
-        provision_type = provision_type if provision_type in ['thick', 'thin'] else 'thin'
-        vm = self._get_vm(vm_name=vm_name)
-
-        # if passed unit matches existing device unit, match these values too
-        key = None
-        controller_key = None
-        unit_number = None
-        virtual_disk_devices = [
-            device for device
-            in vm.config.hardware.device if isinstance(device, vim.vm.device.VirtualDisk)]
-        for dev in virtual_disk_devices:
-            if unit == int(dev.unitNumber):
-                # user specified unit matching existing disk, match key too
-                key = dev.key
-            unit_number = unit or int(dev.unitNumber) + 1
-            if unit_number == 7:  # reserved
-                unit_number += 1
-            controller_key = dev.controllerKey
-
-        if not (controller_key or unit_number):
-            raise ValueError('Could not identify VirtualDisk device on given vm')
-
-        # create disk backing specification
-        backing_spec = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
-        backing_spec.diskMode = 'persistent'
-        backing_spec.thinProvisioned = (provision_type == 'thin')
-
-        # create disk specification, attaching backing
-        disk_spec = vim.vm.device.VirtualDisk()
-        disk_spec.backing = backing_spec
-        disk_spec.unitNumber = unit_number
-        if key:  # only set when overriding existing disk
-            disk_spec.key = key
-        disk_spec.controllerKey = controller_key
-        disk_spec.capacityInKB = capacity_in_kb
-
-        # create device specification, attaching disk
-        device_spec = vim.vm.device.VirtualDeviceSpec()
-        device_spec.fileOperation = 'create'
-        device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
-        device_spec.device = disk_spec
-
-        # create vm specification for device changes
-        vm_spec = vim.vm.ConfigSpec()
-        vm_spec.deviceChange = [device_spec]
-
-        # start vm reconfigure task
-        task = vm.ReconfigVM_Task(spec=vm_spec)
-
-        def task_complete(task_obj):
-            status = task_obj.info.state
-            return status not in ['running', 'queued']
-
-        try:
-            wait_for(task_complete, [task])
-        except TimedOutError:
-            self.logger.exception('Task did not go to success state: {}'.format(task))
-        finally:
-            if task.info.state == 'success':
-                result = (True, task.info.result)
-            elif task.info.state == 'error':
-                result = (False, task.info.error)
-            else:  # shouldn't happen
-                result = (None, None)
-            return result
