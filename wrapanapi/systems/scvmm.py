@@ -4,20 +4,19 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
-import re
+
 import json
-import winrm
-import tzlocal
-import pytz
-from contextlib import contextmanager
+import re
 from datetime import datetime
-
-from lxml import etree
 from textwrap import dedent
-from wait_for import wait_for
 
+import pytz
+import tzlocal
+import winrm
+from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
+from wrapanapi.exceptions import (ImageNotFoundError, NotFoundError,
+                                  VMInstanceNotFound)
 from wrapanapi.systems import System
-from wrapanapi.entities import VmState, Vm, VmMixin, Template, TemplateMixin
 
 
 def convert_powershell_date(date_obj_string):
@@ -29,21 +28,27 @@ def convert_powershell_date(date_obj_string):
     So this converts to:
     "/Date(1449273876697)/" == datetime.datetime.fromtimestamp(1449273876697/1000.)
     """
-    groups = re.search('^/Date\((\d+)\)/$', date_obj_string)
-    if not groups:
+    match = re.search(r'^/Date\((\d+)\)/$', date_obj_string)
+    if not match:
         raise ValueError('Invalid date object string: {}'.format(date_obj_string))
     return datetime.fromtimestamp(match.groups(1)/1000.)
 
 
 class SCVirtualMachine(Vm):
-    """
-    Represents a VM managed by SCVMM
-    """
     def __init__(self, system, name, raw=None):
+        """
+        Construct an SCVirtualMachine instance tied to a specific system
+
+        Args:
+            system: instance of SCVMMSystem
+            name: name of VM
+            raw: raw json (as dict) for the VM returned by the API
+        """
         super(SCVirtualMachine, self).__init__(system)
-        # TODO: switch to using ID to track VM's instead of name
+        # TODO: switch to using ID to track VM's instead of name?
         self._name = name
         self._raw = raw
+
         self._run_script = self.system.run_script
         self._get_json = self.system.get_json
 
@@ -62,13 +67,14 @@ class SCVirtualMachine(Vm):
             script = '{} | Read-SCVirtualMachine'.format(script)
         data = self._get_json(script.format(self.name))
         if not data:
-            raise VMInstanceNotFoundError(self.name)
+            raise VMInstanceNotFound(self.name)
         return data
 
     def refresh(self):
         data = self._get_myself()
         self._raw = data
 
+    @property
     def raw(self):
         if not self._raw:
             self.refresh()
@@ -80,9 +86,12 @@ class SCVirtualMachine(Vm):
 
     @property
     def exists(self):
-        if self._get_myself():
-            return True
-        return False
+        try:
+            if self._get_myself():
+                return True
+            return False
+        except NotFoundError:
+            return False
 
     @staticmethod
     def state_map():
@@ -106,7 +115,7 @@ class SCVirtualMachine(Vm):
     @property
     def ip(self):
         self.refresh()
-        data = self.run_script(
+        data = self._run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server |"
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
             "ft -HideTableHeaders".format(self.name))
@@ -120,7 +129,7 @@ class SCVirtualMachine(Vm):
         return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
 
     def _do_vm(self, action, params=""):
-        self.logger.info(" {} {} SCVMM VM `{}`".format(action, params, self.name))
+        self.logger.info(" %s %s SCVMM VM '%s'", action, params, self.name)
         self._run_script(
             "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | {}-SCVirtualMachine {}"
             .format(self.name, action, params).strip())
@@ -167,7 +176,7 @@ class SCVirtualMachine(Vm):
         """.format(vm_name=vm_name, src_vm=self.name, vm_host=vm_host, path=path)
         if start_vm:
             script = "{} -StartVM".format(script)
-        self.run_script(script)
+        self._run_script(script)
         return SCVirtualMachine(system=self.system, name=vm_name)
     
     def enable_virtual_services(self):
@@ -179,7 +188,7 @@ class SCVirtualMachine(Vm):
                 Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName "{vm}" }}
             Read-SCVirtualMachine -VM $vm
         """.format(user=self.system.user, password=self.system.password, vm=self.name)
-        self.run_script(script)
+        self._run_script(script)
 
     def get_hardware_configuration(self):
         self.refresh()
@@ -193,7 +202,7 @@ class SCVirtualMachine(Vm):
             foreach ($drive in $DVDDrives) {{$drive | Remove-SCVirtualDVDDrivce}}
             Write-Host "number_dvds_disconnected: " + $DVDDrives.length
         """.format(self.name)
-        output = self.run_script(script)
+        output = self._run_script(script)
         output = output.splitlines()
         num_removed_line = [line for line in output if "number_dvds_disconnected:" in line]
         if num_removed_line:
@@ -208,10 +217,99 @@ class SCVirtualMachine(Vm):
             $VM = Get-SCVirtualMachine -Name \"{name}\" -VMMServer $scvmm_server
             New-SCVMTemplate -Name \"{name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
         """.format(name=self.name, ls=library_server, lp=library_share)
-        self.logger.info("Creating SCVMM Template '%s' from VM '%s'", name, name)
-        self.run_script(script)
+        self.logger.info("Creating SCVMM Template '%s' from VM '%s'", self.name, self.name)
+        self._run_script(script)
         self.system.update_scvmm_library()
-        return True
+        return SCVMTemplate(system=self.system, name=self.name)
+
+
+class SCVMTemplate(Template):
+    def __init__(self, system, name, raw=None):
+        """
+        Construct an SCVMTemplate instance tied to a specific system
+
+        Args:
+            system: instance of SCVMMSystem
+            name: name of template
+            raw: raw json (as dict) for the template returned by the API
+        """
+        super(SCVMTemplate, self).__init__(system)
+        self._name = name
+        self._raw = raw
+
+        self._run_script = self.system.run_script
+        self._get_json = self.system.get_json
+
+    def _get_myself(self):
+        """
+        Get Template from SCVMM
+
+        Returns:
+            dict of raw template json
+        """
+        script = 'Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server'
+        data = self._get_json(script.format(self.name))
+        if not data:
+            raise ImageNotFoundError(self.name)
+        return data
+
+    @property
+    def name(self):
+        return self._name
+
+    def refresh(self):
+        data = self._get_myself()
+        self._raw = data
+
+    @property
+    def raw(self):
+        if not self._raw:
+            self.refresh()
+        return self._raw
+
+    @property
+    def exists(self):
+        try:
+            if self._get_myself():
+                return True
+            return False
+        except NotFoundError:
+            return False
+
+    def deploy(self, vm_name, host_group, timeout=900, vm_cpu=None, vm_ram=None):
+        script = """
+            $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
+            $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
+            $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
+            Update-SCVMConfiguration -VMConfiguration $vmc
+            New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
+        """.format(template=self.name, vm_name=vm_name, host_group=host_group)
+
+        if vm_cpu:
+            script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
+        if vm_ram:
+            script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
+        self.logger.info(" Deploying SCVMM VM '%s' from template '%s' on host group '%s'",
+            vm_name, self.name, host_group)
+        self._run_script(script)
+
+        vm = self.system.get_vm(vm_name)
+        vm.enable_virtual_services()
+        vm.ensure_state(VmState.RUNNING, num_sec=timeout)
+        vm.refresh()
+        return vm
+
+    def delete(self):
+        script = """
+            $Template = Get-SCVMTemplate -Name \"{template}\" -VMMServer $scvmm_server
+            Remove-SCVMTemplate -VMTemplate $Template -Force
+        """.format(template=self.name)
+        self.logger.info("Removing SCVMM VM Template '%s'", self.name)
+        self._run_script(script)
+        self.system.update_scvmm_library()
+
+    def cleanup(self):
+        return self.delete()
 
 
 class SCVMMSystem(System, VmMixin, TemplateMixin):
@@ -222,8 +320,8 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     auth mode so I have to do the connection manually in the script which seems to be VERY slow.
     """
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        'num_vm': lambda self: len(self.list_vms()),
+        'num_template': lambda self: len(self.list_templates()),
     }
 
     def __init__(self, **kwargs):
@@ -293,22 +391,17 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         vm.refresh()
         return vm
 
-    def list_template(self):
-        data = self.run_script(
-            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
+    def list_templates(self):
+        templates = self.get_json("Get-SCVMTemplate -VMMServer $scvmm_server")
+        return [SCVMTemplate(system=self, name=t.name, raw=t) for t in templates]
 
-    def delete_template(self, template):
-        if self.does_template_exist(template):
-            script = """
-                $Template = Get-SCVMTemplate -Name \"{template}\" -VMMServer $scvmm_server
-                Remove-SCVMTemplate -VMTemplate $Template -Force
-            """.format(template=template)
-            self.logger.info("Removing SCVMM VM Template {}".format(template))
-            self.run_script(script)
-            self.update_scvmm_library()
-        else:
-            self.logger.info("Template {} does not exist in SCVMM".format(template))
+    def get_template(self, name):
+        template = SCVMTemplate(system=self, name=name)
+        template.refresh()
+        return template
+
+    def find_templates(self, **kwargs):
+        raise NotImplementedError
 
     def _get_names(self, item_type):
         """
@@ -335,42 +428,6 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
 
     def disconnect(self):
         pass
-
-    def does_template_exist(self, template):
-        result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
-            .format(template)).strip()
-        return bool(result)
-
-    def deploy_template(self, template, host_group, vm_name=None, **kwargs):
-        if not self.does_template_exist(template):
-            self.logger.warn("Template {} does not exist".format(template))
-            raise self.PowerShellScriptError("Template {} does not exist".format(template))
-        else:
-            timeout = kwargs.pop('timeout', 900)
-            vm_cpu = kwargs.get('cpu', 0)
-            vm_ram = kwargs.get('ram', 0)
-            script = """
-                $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
-                $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
-                $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
-                Update-SCVMConfiguration -VMConfiguration $vmc
-                New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
-            """.format(
-                template=template,
-                vm_name=vm_name,
-                host_group=host_group)
-            if vm_cpu:
-                script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
-            if vm_ram:
-                script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
-            self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
-                .format(vm_name, template, host_group))
-            self.run_script(script)
-            self.enable_virtual_services(vm_name)
-            self.start_vm(vm_name)
-            self.wait_vm_running(vm_name, num_sec=timeout)
-            self.update_scvmm_virtualmachine(vm_name)
-            return vm_name
 
     def update_scvmm_library(self):
         # This forces SCVMM to update Library after a template change instead of waiting on timeout

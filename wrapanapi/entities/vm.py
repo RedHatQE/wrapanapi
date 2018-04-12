@@ -72,10 +72,9 @@ class Vm(Entity):
             'deleted': VmState.DELETED,
         }
 
-    @staticmethod
-    def _api_state_to_vmstate(api_state):
+    def _api_state_to_vmstate(self, api_state):
         try:
-            return Vm.state_map[api_state]
+            return self.state_map[api_state]
         except KeyError:
             raise KeyError(
                 'Unknown VM state received from system: {}'.format(api_state))
@@ -130,7 +129,7 @@ class Vm(Entity):
         Returns creation time of VM/instance
         """
 
-    def wait_for_state(self, state, num_sec):
+    def wait_for_state(self, state, num_sec=120):
         """
         Waits for a VM to be in the desired state
 
@@ -140,7 +139,7 @@ class Vm(Entity):
         """
         # TODO: copy from cfme
 
-    def ensure_state(self, state, num_sec):
+    def ensure_state(self, state, num_sec=120):
         """
         Perform the actions required to get the VM to the desired state.
 
@@ -157,7 +156,7 @@ class Vm(Entity):
 
         Returns: boolean
         """
-        return self.state in [VmState.RUNNING, VmState.STOPPED, VmState.SUSPENDED]
+        return self.state in [VmState.RUNNING, VmState.STOPPED, VmState.PAUSED, VmState.SUSPENDED]
 
     def wait_for_steady_state(self, num_sec=None):
         """
@@ -235,25 +234,6 @@ class Vm(Entity):
             'Provider {} does not implement get_hardware_configuration'
             .format(type(self.system).__name__)
         )
-
-    def set_meta_value(self, key, value):
-        """
-        Set meta value for VM/instance.
-        
-        Args:
-            key: key
-            value: value
-        """
-        raise NotImplementedError('set_meta_value not implemented')
-
-    def get_meta_value(self, key):
-        """
-        Get meta value for VM/instance.
-
-        Args:
-            key: key
-        """
-        raise NotImplementedError('get_meta_value not implemented')
 
 
 class VmMixin(EntityMixin):
