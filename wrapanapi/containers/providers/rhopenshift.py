@@ -275,7 +275,9 @@ class Openshift(Kubernetes):
                                                             body={'users': got_users})
         progress_callback("Added service accounts to appropriate scc")
 
-        if version >= '5.9':
+        # appliances prior 5.9 don't need such rights
+        # and those rights are embedded into templates since 5.9.2.2
+        if version >= '5.9' and version < '5.9.2.2':
             # grant roles to orchestrator
             self.logger.info("assigning additional roles to cfme-orchestrator")
             auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
@@ -565,6 +567,31 @@ class Openshift(Kubernetes):
         self.wait_service_account_exist(namespace=namespace, name=sa_name)
         return output
 
+    def create_role_binding(self, namespace, **kwargs):
+        """Creates RoleBinding entity using REST API.
+
+        Args:
+            namespace: openshift namespace where entity has to be created
+            kwargs: RoleBinding data
+        Return: data if entity was created w/o errors
+        """
+        ObjectRef = self.kclient.V1ObjectReference  # noqa
+        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+        # there is some version mismatch in api. so, it would be better to remove version
+        kwargs.pop('api_version', None)
+        role_binding_name = kwargs['metadata']['name']
+
+        # role and subjects data should be turned into objects before passing them to RoleBinding
+        role_name = kwargs.pop('role_ref')['name']
+        role = ObjectRef(name=role_name)
+        subjects = [ObjectRef(namespace=namespace, **subj) for subj in kwargs.pop('subjects')]
+        role_binding = self.ociclient.V1RoleBinding(role_ref=role, subjects=subjects, **kwargs)
+        self.logger.debug("creating role binding %s in project %s", role_binding_name, namespace)
+        output = auth_api.create_namespaced_role_binding(namespace=namespace,
+                                                         body=role_binding)
+        self.wait_role_binding_exist(namespace=namespace, name=role_binding_name)
+        return output
+
     def create_image_stream(self, namespace, **kwargs):
         """Creates Image Stream entity using REST API.
 
@@ -735,6 +762,21 @@ class Openshift(Kubernetes):
         """
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': self.o_api.read_namespaced_image_stream,
+                                     'name': name,
+                                     'namespace': namespace})[0]
+
+    def wait_role_binding_exist(self, namespace, name, wait=10):
+        """Checks whether RoleBinding exists within some time.
+
+        Args:
+            name: entity name
+            namespace: openshift namespace where entity should exist
+            wait: entity should appear for this time then - True, otherwise False
+        Return: True/False
+        """
+        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+        return wait_for(self._does_exist, num_sec=wait,
+                        func_kwargs={'func': auth_api.read_namespaced_role_binding,
                                      'name': name,
                                      'namespace': namespace})[0]
 
