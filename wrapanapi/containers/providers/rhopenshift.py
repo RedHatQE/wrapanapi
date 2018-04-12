@@ -3,6 +3,7 @@ from functools import partial
 from random import choice
 import copy
 import json
+import re
 import six
 import string
 
@@ -21,6 +22,34 @@ from wrapanapi.containers.image_registry import ImageRegistry
 from wrapanapi.containers.project import Project
 from wrapanapi.containers.image import Image
 from wrapanapi.containers.deployment_config import DeploymentConfig
+
+
+# stolen from sprout
+VERSION_REGEXPS = [
+    r"^cfme-(\d)(\d)(\d)(\d)(\d{2})",  # 1.2.3.4.11
+    # newer format
+    r"cfme-(\d)(\d)(\d)[.](\d{2})-",         # cfme-524.02-    -> 5.2.4.2
+    r"cfme-(\d)(\d)(\d)[.](\d{2})[.](\d)-",  # cfme-524.02.1-    -> 5.2.4.2.1
+    # 4 digits
+    r"cfme-(?:nightly-)?(\d)(\d)(\d)(\d)-",      # cfme-5242-    -> 5.2.4.2
+    r"cfme-(\d)(\d)(\d)-(\d)-",     # cfme-520-1-   -> 5.2.0.1
+    # 5 digits  (not very intelligent but no better solution so far)
+    r"cfme-(?:nightly-)?(\d)(\d)(\d)(\d{2})-",   # cfme-53111-   -> 5.3.1.11, cfme-53101 -> 5.3.1.1
+]
+VERSION_REGEXPS = map(re.compile, VERSION_REGEXPS)
+VERSION_REGEXP_UPSTREAM = re.compile(r'^miq-stable-([^-]+)-')
+
+
+def retrieve_cfme_appliance_version(template_name):
+    """If possible, retrieve the appliance's version from template's name."""
+    for regexp in VERSION_REGEXPS:
+        match = regexp.search(template_name)
+        if match is not None:
+            return ".".join(map(str, map(int, match.groups())))
+    else:
+        match = VERSION_REGEXP_UPSTREAM.search(template_name)
+        if match is not None:
+            return match.groups()[0]
 
 
 # this service allows to access db outside of openshift
@@ -217,14 +246,22 @@ class Openshift(Kubernetes):
         self.create_project(name=proj_name)
         progress_callback("Created Project `{}`".format(proj_name))
 
+        version = retrieve_cfme_appliance_version(template)
+
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
-        scc_user_mapping = (
-            {'scc': 'anyuid', 'user': 'cfme-anyuid'},
-            {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
-            {'scc': 'anyuid', 'user': 'cfme-httpd'},
-            {'scc': 'privileged', 'user': 'cfme-privileged'},
-        )
+        if version >= '5.9':
+            scc_user_mapping = (
+                {'scc': 'anyuid', 'user': 'cfme-anyuid'},
+                {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
+                {'scc': 'anyuid', 'user': 'cfme-httpd'},
+                {'scc': 'privileged', 'user': 'cfme-privileged'},
+            )
+        else:
+            scc_user_mapping = (
+                {'scc': 'anyuid', 'user': 'cfme-anyuid'},
+                {'scc': 'privileged', 'user': 'default'},
+            )
 
         self.logger.info("granting required rights to project's service accounts")
         security_api = self.ociclient.SecurityOpenshiftIoV1Api()
@@ -238,30 +275,31 @@ class Openshift(Kubernetes):
                                                             body={'users': got_users})
         progress_callback("Added service accounts to appropriate scc")
 
-        # grant roles to orchestrator
-        self.logger.info("assigning additional roles to cfme-orchestrator")
-        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
-        orchestrator_sa = self.kclient.V1ObjectReference(name='cfme-orchestrator',
-                                                         kind='ServiceAccount',
-                                                         namespace=proj_name)
+        if version >= '5.9':
+            # grant roles to orchestrator
+            self.logger.info("assigning additional roles to cfme-orchestrator")
+            auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+            orchestrator_sa = self.kclient.V1ObjectReference(name='cfme-orchestrator',
+                                                             kind='ServiceAccount',
+                                                             namespace=proj_name)
 
-        view_role = self.kclient.V1ObjectReference(name='view')
-        view_role_binding_name = self.kclient.V1ObjectMeta(name='view')
-        view_role_binding = self.ociclient.V1RoleBinding(role_ref=view_role,
-                                                         subjects=[orchestrator_sa],
-                                                         metadata=view_role_binding_name)
-        self.logger.debug("creating 'view' role binding "
-                          "for cfme-orchestrator sa in project %s", proj_name)
-        auth_api.create_namespaced_role_binding(namespace=proj_name, body=view_role_binding)
+            view_role = self.kclient.V1ObjectReference(name='view')
+            view_role_binding_name = self.kclient.V1ObjectMeta(name='view')
+            view_role_binding = self.ociclient.V1RoleBinding(role_ref=view_role,
+                                                             subjects=[orchestrator_sa],
+                                                             metadata=view_role_binding_name)
+            self.logger.debug("creating 'view' role binding "
+                              "for cfme-orchestrator sa in project %s", proj_name)
+            auth_api.create_namespaced_role_binding(namespace=proj_name, body=view_role_binding)
 
-        edit_role = self.kclient.V1ObjectReference(name='edit')
-        edit_role_binding_name = self.kclient.V1ObjectMeta(name='edit')
-        edit_role_binding = self.ociclient.V1RoleBinding(role_ref=edit_role,
-                                                         subjects=[orchestrator_sa],
-                                                         metadata=edit_role_binding_name)
-        self.logger.debug("creating 'edit' role binding "
-                          "for cfme-orchestrator sa in project %s", proj_name)
-        auth_api.create_namespaced_role_binding(namespace=proj_name, body=edit_role_binding)
+            edit_role = self.kclient.V1ObjectReference(name='edit')
+            edit_role_binding_name = self.kclient.V1ObjectMeta(name='edit')
+            edit_role_binding = self.ociclient.V1RoleBinding(role_ref=edit_role,
+                                                             subjects=[orchestrator_sa],
+                                                             metadata=edit_role_binding_name)
+            self.logger.debug("creating 'edit' role binding "
+                              "for cfme-orchestrator sa in project %s", proj_name)
+            auth_api.create_namespaced_role_binding(namespace=proj_name, body=edit_role_binding)
 
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
         self._restore_missing_project_role_bindings(namespace=proj_name)
@@ -436,7 +474,7 @@ class Openshift(Kubernetes):
                     if key == 'stringData':
                         # this key has to be renamed but its contents should be left intact
                         struct[inflection.underscore(key)] = struct.pop(key)
-                    elif key in ('spec', 'data', 'string_data'):
+                    elif key in ('spec', 'data', 'string_data', 'annotations'):
                         # these keys and data should be left intact
                         pass
                     else:
@@ -884,13 +922,20 @@ class Openshift(Kubernetes):
         """Emulates check is vm(appliance) up and running
 
         Args:
-            vm_name: project(namespace) name
+            vm_name: (str) project(namespace) name
         Return: True/False
         """
         if not self.does_vm_exist(vm_name):
             return False
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
-        for pod_name in self.required_project_pods:
+        version = retrieve_cfme_appliance_version(vm_name)
+
+        if version >= '5.9':
+            pods_to_check = self.required_project_pods
+        else:
+            pods_to_check = self.required_project_pods58
+
+        for pod_name in pods_to_check:
             if self.is_deployment_config(name=pod_name, namespace=vm_name):
                 dc = self.o_api.read_namespaced_deployment_config(name=pod_name, namespace=vm_name)
                 status = dc.status.ready_replicas
