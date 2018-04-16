@@ -305,7 +305,14 @@ class AzureSystem(WrapanapiAPIBaseVM):
                                      vm_name=vm_name)
         first_vm_if = vm.network_profile.network_interfaces[0]
         if_name = os.path.split(first_vm_if.id)[1]
-        public_ip = self.network_client.public_ip_addresses.get(resource_group, if_name)
+        if_obj = self.network_client.network_interfaces.get(resource_group, if_name)
+        ip_config_name = if_obj.ip_configurations[0].name
+        ip_config_obj = self.network_client.network_interface_ip_configurations.get(resource_group,
+                                                                                    if_name,
+                                                                                    ip_config_name)
+        pub_ip_id = ip_config_obj.public_ip_address.id
+        pub_ip_name = os.path.split(pub_ip_id)[1]
+        public_ip = self.network_client.public_ip_addresses.get(resource_group, pub_ip_name)
         return public_ip.ip_address
 
     def get_ip_address(self, vm_name, resource_group=None, **kwargs):
