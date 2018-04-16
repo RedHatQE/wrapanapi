@@ -305,17 +305,25 @@ class AzureSystem(WrapanapiAPIBaseVM):
         To get IP we have to fetch:
                               - nic object from VM
                               - ip_config object from nic
-                              - public_ip object from ip_config"""
+                              - public_ip object from ip_config
+        *_id - is a valid Azure resource id
+        e.g. - /subscriptions/<subscription>/resourceGroups/<resource_group>/providers/
+        Microsoft.Network/publicIPAddresses/<object_name>
+        """
+
         resource_group = resource_group or self.resource_group
         vm = self.vms_collection.get(resource_group_name=resource_group,
                                      vm_name=vm_name)
-        first_vm_if = vm.network_profile.network_interfaces[0]
-        if_name = os.path.split(first_vm_if.id)[1]
+        # Getting id of the first network interface of the vm
+        first_vm_if_id = vm.network_profile.network_interfaces[0].id
+        if_name = os.path.split(first_vm_if_id)[1]
         if_obj = self.network_client.network_interfaces.get(resource_group, if_name)
+        # Getting name of the first IP configuration of the network interface
         ip_config_name = if_obj.ip_configurations[0].name
         ip_config_obj = self.network_client.network_interface_ip_configurations.get(resource_group,
                                                                                     if_name,
                                                                                     ip_config_name)
+        # Getting public IP id from the IP configuration object
         pub_ip_id = ip_config_obj.public_ip_address.id
         pub_ip_name = os.path.split(pub_ip_id)[1]
         public_ip = self.network_client.public_ip_addresses.get(resource_group, pub_ip_name)
