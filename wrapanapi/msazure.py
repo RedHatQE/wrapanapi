@@ -299,7 +299,13 @@ class AzureSystem(WrapanapiAPIBaseVM):
         return vhd_endpoint
 
     def current_ip_address(self, vm_name, resource_group=None):
-        # Returns first active IPv4 IpAddress only
+        """
+        Returns first active IPv4 IpAddress only.
+
+        To get IP we have to fetch:
+                              - nic object from VM
+                              - ip_config object from nic
+                              - public_ip object from ip_config"""
         resource_group = resource_group or self.resource_group
         vm = self.vms_collection.get(resource_group_name=resource_group,
                                      vm_name=vm_name)
