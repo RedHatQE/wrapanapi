@@ -10,7 +10,7 @@ pyvmomi>=6.5.0.2017.5.post1
 python-cinderclient
 python-ironicclient
 python-keystoneclient
-python-novaclient
+python-novaclient==7.1.2
 python-heatclient
 pywinrm
 requests
