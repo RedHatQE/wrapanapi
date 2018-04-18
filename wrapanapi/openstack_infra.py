@@ -4,7 +4,7 @@ from collections import namedtuple
 from ironicclient import client as iclient
 from keystoneclient.v2_0 import client as oskclient
 from novaclient import client as osclient
-from novaclient.client import HTTPClient
+from novaclient.client import SessionClient
 from requests.exceptions import Timeout
 
 from .base import WrapanapiAPIBaseVM
@@ -24,7 +24,7 @@ Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
 def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
     try:
         # Use the original request method to do the actual work
-        return HTTPClient.request(self, url, method, **kwargs)
+        return SessionClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
             self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
@@ -79,12 +79,12 @@ class OpenstackInfraSystem(WrapanapiAPIBaseVM):
                                         timeout=30)
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
-            # replacing the method directly on the HTTPClient class)
-            # so we can still call out to HTTPClient's original request
+            # replacing the method directly on the SessionClient class)
+            # so we can still call out to SessionClient's original request
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
             self._api.client.request = _request_timeout_handler.__get__(self._api.client,
-                HTTPClient)
+                SessionClient)
         return self._api
 
     @property

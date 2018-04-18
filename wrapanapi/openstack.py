@@ -119,8 +119,8 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
                                         timeout=30)
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
-            # replacing the method directly on the HTTPClient class)
-            # so we can still call out to HTTPClient's original request
+            # replacing the method directly on the SessionClient class)
+            # so we can still call out to SessionClient's original request
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
             self._api.client.request = _request_timeout_handler.__get__(self._api.client,
