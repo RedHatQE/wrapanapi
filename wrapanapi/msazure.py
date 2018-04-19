@@ -300,7 +300,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def current_ip_address(self, vm_name, resource_group=None):
         """
-        Returns first active IPv4 IpAddress only.
+        Returns IPv4 Public IP of the primary ip_config of the primary network interface.
 
         To get IP we have to fetch:
                               - nic object from VM
@@ -337,13 +337,15 @@ class AzureSystem(WrapanapiAPIBaseVM):
             public_ip = self.network_client.public_ip_addresses.get(resource_group, pub_ip_name)
             if not public_ip.ip_address:
                 # Dynamic ip will be allocated for Running VMs only
-                raise Exception("Couldn't get Public IP of {}. public_ip_allocation_method - {}. "
+                self.logger.error("Couldn't get Public IP of {}. public_ip_allocation_method - {}. "
                                 "Please check VM status".
                                 format(vm_name, public_ip.public_ip_allocation_method))
+                return None
             return public_ip.ip_address
         except AttributeError:
-            raise AttributeError("VM {} doesn't have public IP on {}:{}".format(vm_name, if_name,
-                                                                                ip_config_name))
+            self.logger.error("VM {} doesn't have public IP on {}:{}".format(vm_name, if_name,
+                                                                             ip_config_name))
+            return None
 
     def get_ip_address(self, vm_name, resource_group=None, **kwargs):
         current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
