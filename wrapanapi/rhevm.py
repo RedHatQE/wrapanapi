@@ -6,6 +6,7 @@ Used to communicate with providers without using CFME facilities
 from __future__ import absolute_import
 import fauxfactory
 import pytz
+import socket
 try:
     from ovirtsdk.api import API
     from ovirtsdk.infrastructure.errors import DisconnectedError, RequestError
@@ -149,18 +150,26 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
                 raise VMInstanceNotFound(vm_name)
             return vm
 
-    def current_ip_address(self, vm_name):
+    def current_ip_address(self, vm_name, ensure_ipv4=False):
         info = self._get_vm(vm_name).get_guest_info()
         if info is None:
             return None
         try:
-            return info.get_ips().get_ip()[0].get_address()
+            ip = info.get_ips().get_ip()[0].get_address()
         except (AttributeError, IndexError):
             return None
+        if ensure_ipv4:
+            try:
+                socket.inet_aton(ip)
+                return ip
+            except:
+                return None
+        else:
+            return ip
 
-    def get_ip_address(self, vm_name, timeout=600):
+    def get_ip_address(self, vm_name, timeout=600, ensure_ipv4=False):
         try:
-            return wait_for(lambda: self.current_ip_address(vm_name),
+            return wait_for(lambda: self.current_ip_address(vm_name, ensure_ipv4=ensure_ipv4),
                 fail_condition=None, delay=5, num_sec=timeout,
                 message="get_ip_address from rhevm")[0]
         except TimedOutError:
