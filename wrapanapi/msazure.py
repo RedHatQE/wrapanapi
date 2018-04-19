@@ -315,19 +315,35 @@ class AzureSystem(WrapanapiAPIBaseVM):
         vm = self.vms_collection.get(resource_group_name=resource_group,
                                      vm_name=vm_name)
         # Getting id of the first network interface of the vm
-        first_vm_if_id = vm.network_profile.network_interfaces[0].id
+        for nic in vm.network_profile.network_interfaces:
+            # nic.primary is None when we have only one network interface attached to the VM
+            if nic.primary is not False:
+                first_vm_if_id = nic.id
+                break
         if_name = os.path.split(first_vm_if_id)[1]
         if_obj = self.network_client.network_interfaces.get(resource_group, if_name)
         # Getting name of the first IP configuration of the network interface
-        ip_config_name = if_obj.ip_configurations[0].name
+        for ip_config in if_obj.ip_configurations:
+            if ip_config.primary is True:
+                ip_config_name = ip_config.name
+                break
         ip_config_obj = self.network_client.network_interface_ip_configurations.get(resource_group,
                                                                                     if_name,
                                                                                     ip_config_name)
         # Getting public IP id from the IP configuration object
-        pub_ip_id = ip_config_obj.public_ip_address.id
-        pub_ip_name = os.path.split(pub_ip_id)[1]
-        public_ip = self.network_client.public_ip_addresses.get(resource_group, pub_ip_name)
-        return public_ip.ip_address
+        try:
+            pub_ip_id = ip_config_obj.public_ip_address.id
+            pub_ip_name = os.path.split(pub_ip_id)[1]
+            public_ip = self.network_client.public_ip_addresses.get(resource_group, pub_ip_name)
+            if not public_ip.ip_address:
+                # Dynamic ip will be allocated for Running VMs only
+                raise Exception("Couldn't get Public IP of {}. public_ip_allocation_method - {}. "
+                                "Please check VM status".
+                                format(vm_name, public_ip.public_ip_allocation_method))
+            return public_ip.ip_address
+        except AttributeError:
+            raise AttributeError("VM {} doesn't have public IP on {}:{}".format(vm_name, if_name,
+                                                                                ip_config_name))
 
     def get_ip_address(self, vm_name, resource_group=None, **kwargs):
         current_ip_address = self.current_ip_address(vm_name, resource_group or self.resource_group)
