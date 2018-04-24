@@ -300,8 +300,6 @@ class AzureSystem(WrapanapiAPIBaseVM):
 
     def current_ip_address(self, vm_name, resource_group=None):
         """
-        Returns IPv4 Public IP of the primary ip_config of the primary network interface.
-
         To get IP we have to fetch:
                               - nic object from VM
                               - ip_config object from nic
@@ -309,8 +307,15 @@ class AzureSystem(WrapanapiAPIBaseVM):
         *_id - is a valid Azure resource id
         e.g. - /subscriptions/<subscription>/resourceGroups/<resource_group>/providers/
         Microsoft.Network/publicIPAddresses/<object_name>
-        """
 
+        Return:
+            1)Public IP which meets requirements(IPv4 Public IP of the primary ip_config of the
+            primary network interface)
+            2)None if no public IP found
+            3)May raise an exception if resource_group wasn't provided and VM doesn't belong to
+            AzureSystem.resource group - provider's default one
+        """
+        # TODO rework after PR240 - verify/get VM's resource group
         resource_group = resource_group or self.resource_group
         vm = self.vms_collection.get(resource_group_name=resource_group,
                                      vm_name=vm_name)
