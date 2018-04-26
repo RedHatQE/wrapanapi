@@ -361,6 +361,19 @@ class AzureSystem(WrapanapiAPIBaseVM):
                 self.subscription_client.subscriptions.list() if
                 s.state == SubscriptionState.enabled]
 
+    def list_region(self, subscription=None):
+        """
+        Get a list of available geo-locations
+
+        NOTE: This operation provides all the locations that are available for resource providers;
+        however, each resource provider may support a subset of this list.
+
+        Return: list of tuples - (name, display_name)
+        """
+        subscription = subscription or self.subscription_id
+        return [(region.name, region.display_name) for region in
+                self.subscription_client.subscriptions.list_locations(subscription)]
+
     def list_storage_accounts_by_resource_group(self, resource_group):
         """List Azure Storage accounts on current subscription by resource group"""
         return [s.name for s in self.storage_client.storage_accounts.list_by_resource_group(
