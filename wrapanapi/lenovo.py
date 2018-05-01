@@ -86,19 +86,19 @@ class LenovoSystem(WrapanapiAPIBase):
         return response['appliance']['version']
 
     def list_servers(self):
+        cabinet_nodes = []
+        chassis_nodes = []
+        inventory = []
+
+        # Collect the nodes associated with a cabinet or chassis
         response = self._service_instance("cabinet?status=includestandalone")
-        cabinets = response['cabinetList'][0]
-        nodes_list = cabinets['nodeList']
+        for cabinet in response['cabinetList']:
+            cabinet_nodes = cabinet['nodeList']
+            inventory.extend([node['itemInventory'] for node in cabinet_nodes])
 
-        inventory = [node['itemInventory'] for node in nodes_list]
-
-        nodes_from_chassis = []
-        if len(cabinets['chassisList']) > 0:
-            chassis_list = cabinets['chassisList'][0]
-            nodes_from_chassis = [node for node in chassis_list['itemInventory']['nodes']
-                                  if node['type'] != 'SCU']
-
-        inventory.extend(nodes_from_chassis)
+            for chassis in cabinet['chassisList']:
+                chassis_nodes = chassis['itemInventory']['nodes']
+                inventory.extend([node for node in chassis_nodes if node['type'] != 'SCU'])
 
         self._servers_list = inventory
         return inventory
@@ -239,7 +239,8 @@ class LenovoSystem(WrapanapiAPIBase):
         memorys = server['memoryModules']
         total_memory = sum([memory['capacity'] for memory in memorys])
 
-        return total_memory
+        # Convert it to bytes, so it matches the value in the UI
+        return (1024 * total_memory)
 
     def get_server_manufacturer(self, server_name):
         server = self.get_server(server_name)
