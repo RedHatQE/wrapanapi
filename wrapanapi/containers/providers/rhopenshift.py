@@ -365,7 +365,7 @@ class Openshift(Kubernetes):
         """
         self.logger.info("starting vm/project %s", vm_name)
         if self.does_project_exist(vm_name):
-            for pod in self.required_project_pods:
+            for pod in self.get_required_pods(vm_name):
                 self.scale_entity(name=pod, namespace=vm_name, replicas=1)
         else:
             raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
@@ -379,7 +379,7 @@ class Openshift(Kubernetes):
         """
         self.logger.info("stopping vm/project %s", vm_name)
         if self.does_project_exist(vm_name):
-            for pod in self.required_project_pods:
+            for pod in self.get_required_pods(vm_name):
                 self.scale_entity(name=pod, namespace=vm_name, replicas=0)
         else:
             raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
@@ -970,14 +970,8 @@ class Openshift(Kubernetes):
         if not self.does_vm_exist(vm_name):
             return False
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
-        version = retrieve_cfme_appliance_version(vm_name)
 
-        if version >= '5.9':
-            pods_to_check = self.required_project_pods
-        else:
-            pods_to_check = self.required_project_pods58
-
-        for pod_name in pods_to_check:
+        for pod_name in self.get_required_pods(vm_name):
             if self.is_deployment_config(name=pod_name, namespace=vm_name):
                 dc = self.o_api.read_namespaced_deployment_config(name=pod_name, namespace=vm_name)
                 status = dc.status.ready_replicas
@@ -1199,3 +1193,15 @@ class Openshift(Kubernetes):
             'cpu_total': installed_cpu,
             'cpu_limit': None,
         }
+
+    def get_required_pods(self, vm_name):
+        """Provides list of pods which should be present in appliance
+            Args:
+                vm_name: openshift project name
+        Returns: list
+        """
+        version = retrieve_cfme_appliance_version(vm_name)
+        if version >= '5.9':
+            return self.required_project_pods
+        else:
+            return self.required_project_pods58
