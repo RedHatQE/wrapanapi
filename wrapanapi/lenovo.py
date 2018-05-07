@@ -26,8 +26,10 @@ class LenovoSystem(WrapanapiAPIBase):
         'cores_capacity': lambda self, requester: self.get_server_cores(requester.name),
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
         'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
-        'num_network_devices': lambda self, requester: len(self.get_network_devices(requester.name)),
-        'num_storage_devices': lambda self, requester: len(self.get_storage_devices(requester.name)),
+        'num_network_devices': lambda self,
+        requester: len(self.get_network_devices(requester.name)),
+        'num_storage_devices': lambda self,
+        requester: len(self.get_storage_devices(requester.name)),
     }
     _inventory_available = {
         'hostname': lambda self, requester: self.get_server_hostname(requester.name),
@@ -368,12 +370,14 @@ class LenovoSystem(WrapanapiAPIBase):
 
         if addin_cards is not None:
             for addin_card in addin_cards:
-                if self.is_network_device(addin_card) and not self.is_device_in_list(addin_card, network_devices):
+                if (self.is_network_device(addin_card) and not
+                        self.is_device_in_list(addin_card, network_devices)):
                     network_devices.append(addin_card)
 
         if pci_devices is not None:
             for pci_device in pci_devices:
-                if self.is_network_device(pci_device) and not self.is_device_in_list(pci_device, network_devices):
+                if (self.is_network_device(pci_device) and not
+                        self.is_device_in_list(pci_device, network_devices)):
                     network_devices.append(pci_device)
 
         return network_devices
@@ -385,12 +389,14 @@ class LenovoSystem(WrapanapiAPIBase):
 
         if addin_cards is not None:
             for addin_card in addin_cards:
-                if self.is_storage_device(addin_card) and not self.is_device_in_list(addin_card, storage_devices):
+                if (self.is_storage_device(addin_card) and not
+                        self.is_device_in_list(addin_card, storage_devices)):
                     storage_devices.append(addin_card)
 
         if pci_devices is not None:
             for pci_device in pci_devices:
-                if self.is_storage_device(pci_device) and not self.is_device_in_list(pci_device, storage_devices):
+                if (self.is_storage_device(pci_device) and not
+                        self.is_device_in_list(pci_device, storage_devices)):
                     storage_devices.append(pci_device)
 
         return storage_devices
@@ -402,20 +408,22 @@ class LenovoSystem(WrapanapiAPIBase):
             if device_id == self.get_device_unique_id(d):
                 return True
 
-        return False    
+        return False
 
     def is_network_device(self, device):
-        device_name = (device.get("productName") if device.get("productName") else device.get("name")).lower()
+        device_name = device.get("productName") if device.get("productName") else device.get("name")
+        device_name = device_name.lower()
 
         return (device.get("class") == "Network controller" or
-                re.search("nic", device_name)               or
+                re.search("nic", device_name) or
                 re.search("ethernet", device_name))
 
     def is_storage_device(self, device):
-        device_name = (device.get("productName") if device.get("productName") else device.get("name")).lower()
+        device_name = device.get("productName") if device.get("productName") else device.get("name")
+        device_name = device_name.lower()
 
         return (device.get("class") == "Mass storage controller" or
-                re.search("serveraid", device_name)              or
+                re.search("serveraid", device_name) or
                 re.search("sd media raid", device_name))
 
     def get_addin_cards(self, server_name):
@@ -431,7 +439,7 @@ class LenovoSystem(WrapanapiAPIBase):
     def get_device_unique_id(self, device):
         unique_id = None
 
-        if device.get("uuid") == None:
+        if device.get("uuid") is None:
             unique_id = device.get("uuid")
         else:
             unique_id = device.get("pciBusNumber") + device.get("pciDeviceNumber")
