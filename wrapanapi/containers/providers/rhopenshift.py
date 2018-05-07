@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-from functools import partial
+from functools import partial, wraps
 from random import choice
 import copy
 import json
@@ -76,6 +76,35 @@ common_service = """
 """
 
 
+def reconnect(decorator):
+    def decorate(cls):
+        for attr in cls.__dict__:
+            if callable(getattr(cls, attr)) and not attr.startswith('_'):
+                setattr(cls, attr, decorator(getattr(cls, attr)))
+        return cls
+    return decorate
+
+
+def unauthenticated_error_handler(method):
+    """Fixes issue with 401 error by restoring connection.
+        Sometimes connection to openshift api endpoint gets expired and openshift returns 401.
+        As a result tasks in some applications like sprout fail.
+    """
+    @wraps(method)
+    def wrap(*args, **kwargs):
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            try:
+                return method(*args, **kwargs)
+            except ApiException as e:
+                if e.reason == 'Unauthorized' and attempt <= attempts:
+                    args[0]._connect()
+                else:
+                    raise e
+    return wrap
+
+
+@reconnect(unauthenticated_error_handler)
 class Openshift(Kubernetes):
 
     _stats_available = Kubernetes._stats_available.copy()
@@ -108,24 +137,36 @@ class Openshift(Kubernetes):
     def __init__(self, hostname, protocol="https", port=8443, k_entry="api/v1", o_entry="oapi/v1",
                  debug=False, verify_ssl=False, **kwargs):
         super(Openshift, self).__init__(kwargs)
+        self.new_client = kwargs.get('new_client', False)
         self.hostname = hostname
+        self.protocol = protocol
+        self.port = port
         self.username = kwargs.get('username', '')
         self.password = kwargs.get('password', '')
         self.base_url = kwargs.get('base_url', None)
         self.token = kwargs.get('token', '')
         self.auth = self.token if self.token else (self.username, self.password)
+        self.debug = debug
+        self.verify_ssl = verify_ssl
+        self.list_image_openshift = self.list_docker_image  # For backward compatibility
         self.old_k_api = self.k_api = ContainerClient(hostname, self.auth, protocol, port, k_entry)
         self.old_o_api = self.o_api = ContainerClient(hostname, self.auth, protocol, port, o_entry)
-        if 'new_client' in kwargs:
-            url = '{proto}://{host}:{port}'.format(proto=protocol, host=self.hostname, port=port)
+        self.api = self.k_api  # default api is the kubernetes one for Kubernetes-class requests
+
+        self._connect()
+
+    def _connect(self):
+        if self.new_client:
+            url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
+                                                   port=self.port)
             ociclient.configuration.host = url
             kubeclient.configuration.host = url
 
-            ociclient.configuration.verify_ssl = verify_ssl
-            kubeclient.configuration.verify_ssl = verify_ssl
+            ociclient.configuration.verify_ssl = self.verify_ssl
+            kubeclient.configuration.verify_ssl = self.verify_ssl
 
-            kubeclient.configuration.debug = debug
-            ociclient.configuration.debug = debug
+            kubeclient.configuration.debug = self.debug
+            ociclient.configuration.debug = self.debug
 
             token = 'Bearer {token}'.format(token=self.token)
             ociclient.configuration.api_key['authorization'] = token
@@ -134,9 +175,6 @@ class Openshift(Kubernetes):
             self.kclient = kubeclient
             self.o_api = ociclient.OapiApi()
             self.k_api = kubeclient.CoreV1Api()
-
-        self.api = self.k_api  # default api is the kubernetes one for Kubernetes-class requests
-        self.list_image_openshift = self.list_docker_image  # For backward compatibility
 
     def list_route(self):
         """Returns list of routes"""
@@ -405,7 +443,7 @@ class Openshift(Kubernetes):
         return self.does_project_exist(vm_name)
 
     @staticmethod
-    def update_template_parameters(template, **params):
+    def _update_template_parameters(template, **params):
         """Updates openshift template parameters.
         Since Openshift REST API doesn't provide any api to change default parameter values as
         it is implemented in `oc process`. This method implements such a parameter replacement.
@@ -451,7 +489,8 @@ class Openshift(Kubernetes):
         updated_data = self.rename_structure(raw_data)
         read_template = self.ociclient.V1Template(**updated_data)
         if parameters:
-            updated_template = self.update_template_parameters(template=read_template, **parameters)
+            updated_template = self._update_template_parameters(template=read_template,
+                                                                **parameters)
         else:
             updated_template = read_template
         raw_response = self.o_api.create_namespaced_processed_template(namespace=namespace,
