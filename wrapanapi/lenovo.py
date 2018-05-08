@@ -235,7 +235,7 @@ class LenovoSystem(WrapanapiAPIBase):
     def get_server_memory(self, server_name):
         server = self.get_server(server_name)
         memorys = server['memoryModules']
-        total_memory = sum([memory['capacity'] for memory in memorys])
+        total_memory = sum([memory['capacity'] * 1024 for memory in memorys])
 
         # Convert it to bytes, so it matches the value in the UI
         return (1024 * total_memory)
