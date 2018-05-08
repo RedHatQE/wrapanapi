@@ -91,8 +91,6 @@ class LenovoSystem(WrapanapiAPIBase):
         return response['appliance']['version']
 
     def list_servers(self):
-        cabinet_nodes = []
-        chassis_nodes = []
         inventory = []
 
         # Collect the nodes associated with a cabinet or chassis
