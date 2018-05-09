@@ -10,7 +10,6 @@ from requests.exceptions import Timeout
 
 from .base import WrapanapiAPIBase
 
-import re
 
 class LenovoSystem(WrapanapiAPIBase):
     """Client to Lenovo API
@@ -27,9 +26,9 @@ class LenovoSystem(WrapanapiAPIBase):
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
         'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
         'num_network_devices': lambda self,
-        requester: len(self.get_network_devices(requester.name)),
+        requester: len(self._get_network_devices(requester.name)),
         'num_storage_devices': lambda self,
-        requester: len(self.get_storage_devices(requester.name)),
+        requester: len(self._get_storage_devices(requester.name)),
     }
     _inventory_available = {
         'hostname': lambda self, requester: self.get_server_hostname(requester.name),
@@ -361,80 +360,80 @@ class LenovoSystem(WrapanapiAPIBase):
         requested_items = requested_items or self._inventory_available
         return {item: self._inventory_available[item](self, requester) for item in requested_items}
 
-    def get_network_devices(self, server_name):
-        addin_cards = self.get_addin_cards(server_name)
-        pci_devices = self.get_pci_devices(server_name)
+    def _get_network_devices(self, server_name):
+        addin_cards = self._get_addin_cards(server_name) or []
+        pci_devices = self._get_pci_devices(server_name) or []
         network_devices = []
 
-        if addin_cards is not None:
-            for addin_card in addin_cards:
-                if (self.is_network_device(addin_card) and not
-                        self.is_device_in_list(addin_card, network_devices)):
-                    network_devices.append(addin_card)
+        for addin_card in addin_cards:
+            if (LenovoSystem._is_network_device(addin_card) and not
+                    LenovoSystem._is_device_in_list(addin_card, network_devices)):
+                network_devices.append(addin_card)
 
-        if pci_devices is not None:
-            for pci_device in pci_devices:
-                if (self.is_network_device(pci_device) and not
-                        self.is_device_in_list(pci_device, network_devices)):
-                    network_devices.append(pci_device)
+        for pci_device in pci_devices:
+            if (LenovoSystem._is_network_device(pci_device) and not
+                    LenovoSystem._is_device_in_list(pci_device, network_devices)):
+                network_devices.append(pci_device)
 
         return network_devices
 
-    def get_storage_devices(self, server_name):
-        addin_cards = self.get_addin_cards(server_name)
-        pci_devices = self.get_pci_devices(server_name)
+    def _get_storage_devices(self, server_name):
+        addin_cards = self._get_addin_cards(server_name) or []
+        pci_devices = self._get_pci_devices(server_name) or []
         storage_devices = []
 
-        if addin_cards is not None:
-            for addin_card in addin_cards:
-                if (self.is_storage_device(addin_card) and not
-                        self.is_device_in_list(addin_card, storage_devices)):
-                    storage_devices.append(addin_card)
+        for addin_card in addin_cards:
+            if (LenovoSystem._is_storage_device(addin_card) and not
+                    LenovoSystem._is_device_in_list(addin_card, storage_devices)):
+                storage_devices.append(addin_card)
 
-        if pci_devices is not None:
-            for pci_device in pci_devices:
-                if (self.is_storage_device(pci_device) and not
-                        self.is_device_in_list(pci_device, storage_devices)):
-                    storage_devices.append(pci_device)
+        for pci_device in pci_devices:
+            if (LenovoSystem._is_storage_device(pci_device) and not
+                    LenovoSystem._is_device_in_list(pci_device, storage_devices)):
+                storage_devices.append(pci_device)
 
         return storage_devices
 
-    def is_device_in_list(self, device, device_list):
-        device_id = self.get_device_unique_id(device)
+    @staticmethod
+    def _is_device_in_list(device, device_list):
+        device_id = LenovoSystem._get_device_unique_id(device)
 
         for d in device_list:
-            if device_id == self.get_device_unique_id(d):
+            if device_id == LenovoSystem._get_device_unique_id(d):
                 return True
 
         return False
 
-    def is_network_device(self, device):
-        device_name = device.get("productName") if device.get("productName") else device.get("name")
+    @staticmethod
+    def _is_network_device(device):
+        device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
         return (device.get("class") == "Network controller" or
-                re.search("nic", device_name) or
-                re.search("ethernet", device_name))
+                "nic" in device_name or
+                "ethernet" in device_name)
 
-    def is_storage_device(self, device):
-        device_name = device.get("productName") if device.get("productName") else device.get("name")
+    @staticmethod
+    def _is_storage_device(device):
+        device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
         return (device.get("class") == "Mass storage controller" or
-                re.search("serveraid", device_name) or
-                re.search("sd media raid", device_name))
+                "serveraid" in device_name or
+                "sd media raid" in device_name)
 
-    def get_addin_cards(self, server_name):
+    def _get_addin_cards(self, server_name):
         server = self.get_server(server_name)
 
         return server.get("addinCards")
 
-    def get_pci_devices(self, server_name):
+    def _get_pci_devices(self, server_name):
         server = self.get_server(server_name)
 
         return server.get("pciDevices")
 
-    def get_device_unique_id(self, device):
+    @staticmethod
+    def _get_device_unique_id(device):
         unique_id = None
 
         if device.get("uuid") is None:
