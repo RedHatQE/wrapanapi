@@ -434,12 +434,8 @@ class LenovoSystem(WrapanapiAPIBase):
 
     @staticmethod
     def _get_device_unique_id(device):
-        unique_id = None
-
-        if device.get("uuid") is None:
-            unique_id = device.get("uuid")
-        else:
-            unique_id = device.get("pciBusNumber") + device.get("pciDeviceNumber")
+        unique_id = (device.get("uuid") or
+                     "{}{}".format(device.get("pciBusNumber"), device.get("pciDeviceNumber")))
 
         return unique_id
 
