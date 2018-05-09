@@ -409,7 +409,7 @@ class LenovoSystem(WrapanapiAPIBase):
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
-        return (device.get("class") == "Network controller" or
+        return (device.get("class").lower() == "network controller" or
                 "nic" in device_name or
                 "ethernet" in device_name)
 
@@ -418,7 +418,7 @@ class LenovoSystem(WrapanapiAPIBase):
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
-        return (device.get("class") == "Mass storage controller" or
+        return (device.get("class").lower() == "mass storage controller" or
                 "serveraid" in device_name or
                 "sd media raid" in device_name)
 
