@@ -169,6 +169,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def content(self):
         """The content node"""
         if not self._content:
+            self.logger.debug("calling RetrieveContent()... this might take awhile")
             self._content = self.service_instance.RetrieveContent()
         return self._content
 
@@ -195,6 +196,22 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 obj = item
                 break
         return obj
+
+    def _search_folders_for_vm(self, name):
+        # First get all VM folders
+        container = self.content.viewManager.CreateContainerView(
+            self.content.rootFolder, [vim.Folder], True)
+        folders = container.view
+        container.Destroy()
+
+        # Now search each folder for VM
+        vm = None
+        for folder in folders:
+            vm = self.content.searchIndex.FindChild(folder, name)
+            if vm:
+                break
+
+        return vm
 
     def _build_filter_spec(self, begin_entity, property_spec):
         """Build a search spec for full inventory traversal, adapted from psphere"""
@@ -248,6 +265,10 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def _get_vm(self, vm_name, force=False):
         """Returns a vm from the VI object.
 
+        Instead of using self._get_obj, this uses more efficient ways of
+        searching for the VM since we can often have lots of VM's on the
+        provider to sort through.
+
         Args:
             vm_name (string): The name of the VM
             force (bool): Ignore the cache when updating
@@ -255,7 +276,8 @@ class VMWareSystem(WrapanapiAPIBaseVM):
              pyVmomi.vim.VirtualMachine: VM object
         """
         if vm_name not in self._vm_cache or force:
-            vm = self._get_obj(vim.VirtualMachine, vm_name)
+            self.logger.debug("Searching all vm folders for vm '%s'", vm_name)
+            vm = self._search_folders_for_vm(vm_name)
             if not vm:
                 raise VMInstanceNotFound(vm_name)
             self._vm_cache[vm_name] = vm
@@ -439,7 +461,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 boot_times[vm.name] = datetime.fromtimestamp(0)
                 try:
                     boot_times[vm.name] = vm.summary.runtime.bootTime
-                except:
+                except Exception:
                     pass
         if boot_times:
             newest_boot_time = sorted(boot_times.items(), key=operator.itemgetter(1),
@@ -659,8 +681,11 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         """Clone a VM"""
         try:
-            vm = self._get_obj(vim.VirtualMachine, name=destination)
-            if vm and vm.name == destination:
+            try:
+                vm = self._get_vm(vm_name=destination)
+            except VMInstanceNotFound:
+                vm = None
+            if vm:
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
             pass
@@ -747,7 +772,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             return destination
 
     def mark_as_template(self, vm_name, **kwargs):
-        self._get_obj(vim.VirtualMachine, name=vm_name).MarkAsTemplate()  # Returns None
+        self._get_vm(vm_name).MarkAsTemplate()  # Returns None
 
     def deploy_template(self, template, **kwargs):
         kwargs["power_on"] = kwargs.pop("power_on", True)
