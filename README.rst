@@ -23,12 +23,12 @@ wrapanapi is a simple virtualization client with support (in varying degrees) fo
 
 * Red Hat Enterprize Virtualization (RHEV)
 * Red Hat Openstack (RHOS)
+* Red Hat Openshift
 * Openshift
 * VMware vCenter
 * Microsoft SCVMM
 * Microsoft Azure
 * Google Compute Engine
-* Kubernetes
 * Hawkular
 * Amazon EC2
 
