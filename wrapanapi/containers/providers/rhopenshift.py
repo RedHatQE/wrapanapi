@@ -93,14 +93,15 @@ def unauthenticated_error_handler(method):
     @wraps(method)
     def wrap(*args, **kwargs):
         attempts = 3
-        for attempt in range(1, attempts + 1):
+        for _ in range(attempts):
             try:
                 return method(*args, **kwargs)
             except ApiException as e:
-                if e.reason == 'Unauthorized' and attempt <= attempts:
+                if e.reason == 'Unauthorized':
                     args[0]._connect()
                 else:
                     raise e
+        return method(*args, **kwargs)
     return wrap
 
 
