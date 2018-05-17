@@ -1241,10 +1241,14 @@ class Openshift(Kubernetes):
         Returns: list
         """
         version = retrieve_cfme_appliance_version(vm_name)
-        if version >= '5.9':
-            return self.required_project_pods
-        else:
+        # this is temporary fix
+        # vm names which come from sprout don't provide enough info about build version.
+        # so statement below will assume that vm is 5.9 if it cannot recognize exact version
+        # this will be fixed soon by making sprout to provide exact version in name or metadata
+        if version and version < '5.9':
             return self.required_project_pods58
+        else:
+            return self.required_project_pods
 
     def get_ip_address(self, vm_name, timeout=600):
         """ Returns the IP address for the selected appliance.
