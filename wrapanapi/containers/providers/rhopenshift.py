@@ -1245,3 +1245,21 @@ class Openshift(Kubernetes):
             return self.required_project_pods
         else:
             return self.required_project_pods58
+
+    def get_ip_address(self, vm_name, timeout=600):
+        """ Returns the IP address for the selected appliance.
+
+        Args:
+            vm_name: The name of the vm to obtain the IP for.
+            timeout: The IP address wait timeout.
+        Returns: A string containing the first found IP that isn't the device.
+        """
+        try:
+            ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
+                                      fail_condition=None,
+                                      delay=5,
+                                      num_sec=timeout,
+                                      message="get_ip_address from openshift")
+        except TimedOutError:
+            ip_address = None
+        return ip_address
