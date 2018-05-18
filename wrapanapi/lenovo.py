@@ -406,18 +406,24 @@ class LenovoSystem(WrapanapiAPIBase):
 
     @staticmethod
     def is_network_device(device):
+        # The device name is stored in either the "productName" field or the "name" field.
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
+        # We expect that supported network devices will have a class of "network controller" or
+        # "nic" or "ethernet" contained in the device name.
         return (device.get("class").lower() == "network controller" or
                 "nic" in device_name or
                 "ethernet" in device_name)
 
     @staticmethod
     def is_storage_device(device):
+        # The device name is stored in either the "productName" field or the "name" field.
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
+        # We expect that supported storage devices will have a class of "mass storage controller"
+        # or "serveraid" or "sd media raid" contained in the device name.
         return (device.get("class").lower() == "mass storage controller" or
                 "serveraid" in device_name or
                 "sd media raid" in device_name)
@@ -434,6 +440,8 @@ class LenovoSystem(WrapanapiAPIBase):
 
     @staticmethod
     def get_device_unique_id(device):
+        # The ID used to uniquely identify each device is the UUID of the device
+        # if it has one or the concatenation of the PCI bus number and PCI device number.
         unique_id = (device.get("uuid") or
                      "{}{}".format(device.get("pciBusNumber"), device.get("pciDeviceNumber")))
 
