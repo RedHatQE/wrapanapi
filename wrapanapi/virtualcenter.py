@@ -4,30 +4,28 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
-try:
-    # In Fedora 22, we see SSL errors when connecting to vSphere, this prevents the error.
-    import ssl
-    ssl._create_default_https_context = ssl._create_unverified_context
-except AttributeError:
-    pass
 
+import atexit
 import operator
 import re
+import ssl
+import threading
 import time
 from datetime import datetime
 from distutils.version import LooseVersion
 from functools import partial
 
-import six
 import pytz
-from wait_for import wait_for, TimedOutError
+import six
+from cached_property import threaded_cached_property
+from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim, vmodl
-from pyVim.connect import SmartConnect, Disconnect
+from wait_for import TimedOutError, wait_for
 
-from .base import WrapanapiAPIBaseVM, VMInfo
-from .exceptions import (VMInstanceNotCloned, VMInstanceNotSuspended, VMNotFoundViaIP,
-    HostNotRemoved, VMInstanceNotFound, VMCreationDateError)
-
+from .base import VMInfo, WrapanapiAPIBaseVM
+from .exceptions import (HostNotRemoved, VMCreationDateError,
+                         VMInstanceNotCloned, VMInstanceNotFound,
+                         VMInstanceNotSuspended, VMNotFoundViaIP)
 
 SELECTION_SPECS = [
     'resource_pool_traversal_spec',
@@ -145,32 +143,66 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         self.hostname = hostname
         self.username = username
         self.password = password
-        self._service_instance = None
-        self._content = None
         self._vm_cache = {}
         self.kwargs = kwargs
 
-    def __del__(self):
-        """Disconnect from the API when the object is deleted"""
-        # This isn't the best place for this, but this class doesn't know when it is no longer in
-        # use, and we need to do some sort of disconnect based on the pyVmomi documentation.
-        if self._service_instance:
-            Disconnect(self._service_instance)
+    def _start_keepalive(self):
+        """
+        Send a 'current time' request to vCenter every 10 min as a
+        connection keep-alive
+        """
+        def _keepalive():
+            while True:
+                self.logger.debug(
+                    "vCenter keep-alive: %s", self.service_instance.CurrentTime()
+                )
+                time.sleep(600)
 
-    @property
+        t = threading.Thread(target=_keepalive)
+        t.daemon = True
+        t.start()
+
+    def _create_service_instance(self):
+        """
+        Create service instance and start a keep-alive thread
+
+        See https://github.com/vmware/pyvmomi/issues/347 for why this is needed.
+        """
+        try:
+            # Disable SSL cert verification
+            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            context.verify_mode = ssl.CERT_NONE
+            si = SmartConnect(
+                host=self.hostname,
+                user=self.username,
+                pwd=self.password,
+                sslContext=context
+            )
+        except Exception:
+            self.logger.error("Failed to connect to vCenter")
+            raise
+
+        # Disconnect at teardown
+        atexit.register(Disconnect, si)
+
+        self.logger.info(
+            "Connected to vCenter host %s as user %s",
+            self.hostname, self.username
+        )
+
+        self._start_keepalive()
+        return si
+
+    @threaded_cached_property
     def service_instance(self):
         """An instance of the service"""
-        if not self._service_instance:
-            self._service_instance = SmartConnect(host=self.hostname, user=self.username,
-                                                  pwd=self.password)
-        return self._service_instance
+        self.logger.debug("Attempting to initiate vCenter service instance")
+        return self._create_service_instance()
 
-    @property
+    @threaded_cached_property
     def content(self):
-        """The content node"""
-        if not self._content:
-            self._content = self.service_instance.RetrieveContent()
-        return self._content
+        self.logger.debug("calling RetrieveContent()... this might take awhile")
+        return self.service_instance.RetrieveContent()
 
     @property
     def version(self):
@@ -195,6 +227,22 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 obj = item
                 break
         return obj
+
+    def _search_folders_for_vm(self, name):
+        # First get all VM folders
+        container = self.content.viewManager.CreateContainerView(
+            self.content.rootFolder, [vim.Folder], True)
+        folders = container.view
+        container.Destroy()
+
+        # Now search each folder for VM
+        vm = None
+        for folder in folders:
+            vm = self.content.searchIndex.FindChild(folder, name)
+            if vm:
+                break
+
+        return vm
 
     def _build_filter_spec(self, begin_entity, property_spec):
         """Build a search spec for full inventory traversal, adapted from psphere"""
@@ -248,6 +296,10 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def _get_vm(self, vm_name, force=False):
         """Returns a vm from the VI object.
 
+        Instead of using self._get_obj, this uses more efficient ways of
+        searching for the VM since we can often have lots of VM's on the
+        provider to sort through.
+
         Args:
             vm_name (string): The name of the VM
             force (bool): Ignore the cache when updating
@@ -255,7 +307,8 @@ class VMWareSystem(WrapanapiAPIBaseVM):
              pyVmomi.vim.VirtualMachine: VM object
         """
         if vm_name not in self._vm_cache or force:
-            vm = self._get_obj(vim.VirtualMachine, vm_name)
+            self.logger.debug("Searching all vm folders for vm '%s'", vm_name)
+            vm = self._search_folders_for_vm(vm_name)
             if not vm:
                 raise VMInstanceNotFound(vm_name)
             self._vm_cache[vm_name] = vm
@@ -439,7 +492,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 boot_times[vm.name] = datetime.fromtimestamp(0)
                 try:
                     boot_times[vm.name] = vm.summary.runtime.bootTime
-                except:
+                except Exception:
                     pass
         if boot_times:
             newest_boot_time = sorted(boot_times.items(), key=operator.itemgetter(1),
@@ -659,8 +712,11 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                  allowed_datastores=None, cpu=None, ram=None, **kwargs):
         """Clone a VM"""
         try:
-            vm = self._get_obj(vim.VirtualMachine, name=destination)
-            if vm and vm.name == destination:
+            try:
+                vm = self._get_vm(vm_name=destination)
+            except VMInstanceNotFound:
+                vm = None
+            if vm:
                 raise Exception("VM already present!")
         except VMInstanceNotFound:
             pass
@@ -747,7 +803,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             return destination
 
     def mark_as_template(self, vm_name, **kwargs):
-        self._get_obj(vim.VirtualMachine, name=vm_name).MarkAsTemplate()  # Returns None
+        self._get_vm(vm_name).MarkAsTemplate()  # Returns None
 
     def deploy_template(self, template, **kwargs):
         kwargs["power_on"] = kwargs.pop("power_on", True)
