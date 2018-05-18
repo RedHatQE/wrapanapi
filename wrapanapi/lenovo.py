@@ -25,6 +25,10 @@ class LenovoSystem(WrapanapiAPIBase):
         'cores_capacity': lambda self, requester: self.get_server_cores(requester.name),
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
         'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
+        'num_network_devices': lambda self,
+        requester: len(self.get_network_devices(requester.name)),
+        'num_storage_devices': lambda self,
+        requester: len(self.get_storage_devices(requester.name)),
     }
     _inventory_available = {
         'hostname': lambda self, requester: self.get_server_hostname(requester.name),
@@ -355,6 +359,93 @@ class LenovoSystem(WrapanapiAPIBase):
         # Retrieve and return the inventory
         requested_items = requested_items or self._inventory_available
         return {item: self._inventory_available[item](self, requester) for item in requested_items}
+
+    def get_network_devices(self, server_name):
+        addin_cards = self.get_addin_cards(server_name) or []
+        pci_devices = self.get_pci_devices(server_name) or []
+        network_devices = []
+
+        for addin_card in addin_cards:
+            if (LenovoSystem.is_network_device(addin_card) and not
+                    LenovoSystem.is_device_in_list(addin_card, network_devices)):
+                network_devices.append(addin_card)
+
+        for pci_device in pci_devices:
+            if (LenovoSystem.is_network_device(pci_device) and not
+                    LenovoSystem.is_device_in_list(pci_device, network_devices)):
+                network_devices.append(pci_device)
+
+        return network_devices
+
+    def get_storage_devices(self, server_name):
+        addin_cards = self.get_addin_cards(server_name) or []
+        pci_devices = self.get_pci_devices(server_name) or []
+        storage_devices = []
+
+        for addin_card in addin_cards:
+            if (LenovoSystem.is_storage_device(addin_card) and not
+                    LenovoSystem.is_device_in_list(addin_card, storage_devices)):
+                storage_devices.append(addin_card)
+
+        for pci_device in pci_devices:
+            if (LenovoSystem.is_storage_device(pci_device) and not
+                    LenovoSystem.is_device_in_list(pci_device, storage_devices)):
+                storage_devices.append(pci_device)
+
+        return storage_devices
+
+    @staticmethod
+    def is_device_in_list(device, device_list):
+        device_id = LenovoSystem.get_device_unique_id(device)
+
+        for d in device_list:
+            if device_id == LenovoSystem.get_device_unique_id(d):
+                return True
+
+        return False
+
+    @staticmethod
+    def is_network_device(device):
+        # The device name is stored in either the "productName" field or the "name" field.
+        device_name = device.get("productName") or device.get("name")
+        device_name = device_name.lower()
+
+        # We expect that supported network devices will have a class of "network controller" or
+        # "nic" or "ethernet" contained in the device name.
+        return (device.get("class").lower() == "network controller" or
+                "nic" in device_name or
+                "ethernet" in device_name)
+
+    @staticmethod
+    def is_storage_device(device):
+        # The device name is stored in either the "productName" field or the "name" field.
+        device_name = device.get("productName") or device.get("name")
+        device_name = device_name.lower()
+
+        # We expect that supported storage devices will have a class of "mass storage controller"
+        # or "serveraid" or "sd media raid" contained in the device name.
+        return (device.get("class").lower() == "mass storage controller" or
+                "serveraid" in device_name or
+                "sd media raid" in device_name)
+
+    def get_addin_cards(self, server_name):
+        server = self.get_server(server_name)
+
+        return server.get("addinCards")
+
+    def get_pci_devices(self, server_name):
+        server = self.get_server(server_name)
+
+        return server.get("pciDevices")
+
+    @staticmethod
+    def get_device_unique_id(device):
+        # The ID used to uniquely identify each device is the UUID of the device
+        # if it has one or the concatenation of the PCI bus number and PCI device number.
+        unique_id = (device.get("uuid") or
+                     "{}{}".format(device.get("pciBusNumber"), device.get("pciDeviceNumber")))
+
+        return unique_id
 
     def disconnect(self):
         self.logger.info("LenovoSystem disconnected")
