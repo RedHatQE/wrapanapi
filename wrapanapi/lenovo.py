@@ -26,9 +26,9 @@ class LenovoSystem(WrapanapiAPIBase):
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
         'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
         'num_network_devices': lambda self,
-        requester: len(self._get_network_devices(requester.name)),
+        requester: len(self.get_network_devices(requester.name)),
         'num_storage_devices': lambda self,
-        requester: len(self._get_storage_devices(requester.name)),
+        requester: len(self.get_storage_devices(requester.name)),
     }
     _inventory_available = {
         'hostname': lambda self, requester: self.get_server_hostname(requester.name),
@@ -360,52 +360,52 @@ class LenovoSystem(WrapanapiAPIBase):
         requested_items = requested_items or self._inventory_available
         return {item: self._inventory_available[item](self, requester) for item in requested_items}
 
-    def _get_network_devices(self, server_name):
-        addin_cards = self._get_addin_cards(server_name) or []
-        pci_devices = self._get_pci_devices(server_name) or []
+    def get_network_devices(self, server_name):
+        addin_cards = self.get_addin_cards(server_name) or []
+        pci_devices = self.get_pci_devices(server_name) or []
         network_devices = []
 
         for addin_card in addin_cards:
-            if (LenovoSystem._is_network_device(addin_card) and not
-                    LenovoSystem._is_device_in_list(addin_card, network_devices)):
+            if (LenovoSystem.is_network_device(addin_card) and not
+                    LenovoSystem.is_device_in_list(addin_card, network_devices)):
                 network_devices.append(addin_card)
 
         for pci_device in pci_devices:
-            if (LenovoSystem._is_network_device(pci_device) and not
-                    LenovoSystem._is_device_in_list(pci_device, network_devices)):
+            if (LenovoSystem.is_network_device(pci_device) and not
+                    LenovoSystem.is_device_in_list(pci_device, network_devices)):
                 network_devices.append(pci_device)
 
         return network_devices
 
-    def _get_storage_devices(self, server_name):
-        addin_cards = self._get_addin_cards(server_name) or []
-        pci_devices = self._get_pci_devices(server_name) or []
+    def get_storage_devices(self, server_name):
+        addin_cards = self.get_addin_cards(server_name) or []
+        pci_devices = self.get_pci_devices(server_name) or []
         storage_devices = []
 
         for addin_card in addin_cards:
-            if (LenovoSystem._is_storage_device(addin_card) and not
-                    LenovoSystem._is_device_in_list(addin_card, storage_devices)):
+            if (LenovoSystem.is_storage_device(addin_card) and not
+                    LenovoSystem.is_device_in_list(addin_card, storage_devices)):
                 storage_devices.append(addin_card)
 
         for pci_device in pci_devices:
-            if (LenovoSystem._is_storage_device(pci_device) and not
-                    LenovoSystem._is_device_in_list(pci_device, storage_devices)):
+            if (LenovoSystem.is_storage_device(pci_device) and not
+                    LenovoSystem.is_device_in_list(pci_device, storage_devices)):
                 storage_devices.append(pci_device)
 
         return storage_devices
 
     @staticmethod
-    def _is_device_in_list(device, device_list):
-        device_id = LenovoSystem._get_device_unique_id(device)
+    def is_device_in_list(device, device_list):
+        device_id = LenovoSystem.get_device_unique_id(device)
 
         for d in device_list:
-            if device_id == LenovoSystem._get_device_unique_id(d):
+            if device_id == LenovoSystem.get_device_unique_id(d):
                 return True
 
         return False
 
     @staticmethod
-    def _is_network_device(device):
+    def is_network_device(device):
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
@@ -414,7 +414,7 @@ class LenovoSystem(WrapanapiAPIBase):
                 "ethernet" in device_name)
 
     @staticmethod
-    def _is_storage_device(device):
+    def is_storage_device(device):
         device_name = device.get("productName") or device.get("name")
         device_name = device_name.lower()
 
@@ -422,18 +422,18 @@ class LenovoSystem(WrapanapiAPIBase):
                 "serveraid" in device_name or
                 "sd media raid" in device_name)
 
-    def _get_addin_cards(self, server_name):
+    def get_addin_cards(self, server_name):
         server = self.get_server(server_name)
 
         return server.get("addinCards")
 
-    def _get_pci_devices(self, server_name):
+    def get_pci_devices(self, server_name):
         server = self.get_server(server_name)
 
         return server.get("pciDevices")
 
     @staticmethod
-    def _get_device_unique_id(device):
+    def get_device_unique_id(device):
         unique_id = (device.get("uuid") or
                      "{}{}".format(device.get("pciBusNumber"), device.get("pciDeviceNumber")))
 
