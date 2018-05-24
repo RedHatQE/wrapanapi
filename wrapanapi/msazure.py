@@ -482,7 +482,7 @@ class AzureSystem(WrapanapiAPIBaseVM):
                     resource_group_name=resource_group or self.resource_group,
                     network_interface_name=nic)
             except CloudError as e:
-                self.logger.info('"%s" nic can\'t be removed', nic)
+                self.logger.error('{} nic can\'t be removed - {}'.format(nic, e.error.error))
                 results.append((nic, e.error.error))
                 continue
             operation.wait()
