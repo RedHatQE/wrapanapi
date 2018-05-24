@@ -84,7 +84,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     """
 
     _stats_available = {
-        'num_vm': lambda self: self.api.get_summary().get_vms().total,
+        'num_vm': lambda self: len(self.list_vm()),
         'num_host': lambda self: len(self.list_host()),
         'num_cluster': lambda self: len(self.list_cluster()),
         'num_template': lambda self: len(self.list_template()),
