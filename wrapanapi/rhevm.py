@@ -426,8 +426,8 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
 
                 if create_new_template:
                     self.stop_vm(vm_name)
-                    vm = self._get_vm_service(vm_name)
-                    actual_cluster = self._get_cluster(cluster) if cluster else vm.get_cluster()
+                    vm = self._get_vm(vm_name)
+                    actual_cluster = self._get_cluster(cluster) if cluster else vm.cluster
                     new_template = types.Template(
                         name=temp_template_name, vm=vm, cluster=actual_cluster)
                     self.api.system_service().templates_service().add(new_template)
