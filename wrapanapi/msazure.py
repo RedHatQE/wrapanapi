@@ -490,9 +490,14 @@ class AzureSystem(WrapanapiAPIBaseVM):
                                        resource_group=resource_group or self.resource_group)
 
         for nic in nic_list:
-            operation = self.network_client.network_interfaces.delete(
-                resource_group_name=resource_group or self.resource_group,
-                network_interface_name=nic)
+            try:
+                operation = self.network_client.network_interfaces.delete(
+                    resource_group_name=resource_group or self.resource_group,
+                    network_interface_name=nic)
+            except CloudError as e:
+                self.logger.error('{} nic can\'t be removed - {}'.format(nic, e.error.error))
+                results.append((nic, e.error.error))
+                continue
             operation.wait()
             self.logger.info('"%s" nic removed', nic)
             results.append((nic, operation.status()))
