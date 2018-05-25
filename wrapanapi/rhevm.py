@@ -269,9 +269,15 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         host_list = self.api.system_service().hosts_service().list(**kwargs)
         return [host.name for host in host_list]
 
-    def list_datastore(self, **kwargs):
+    def list_datastore(self, sd_type=None, **kwargs):
         datastore_list = self.api.system_service().storage_domains_service().list(**kwargs)
-        return [ds.name for ds in datastore_list if ds.status is None]
+        if sd_type:
+            def cond(ds):
+                return ds.status is None and ds.type.value == sd_type
+        else:
+            def cond(ds):
+                return ds.status is None
+        return [ds.name for ds in datastore_list if cond(ds)]
 
     def list_cluster(self, **kwargs):
         cluster_list = self.api.system_service().clusters_service().list(**kwargs)
@@ -738,3 +744,50 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
             else:
                 disk_attachment_service = self._get_disk_attachment_service(vm_name, lun_name)
                 disk_attachment_service.remove(detach_only=True)
+
+    @property
+    def _data_centers_service(self):
+        return self.api.system_service().data_centers_service()
+
+    def _get_attached_storage_domain_service(self, datacenter_id, storage_domain_id):
+        return (self._data_centers_service.data_center_service(datacenter_id).
+                storage_domains_service().storage_domain_service(storage_domain_id))
+
+    def change_storage_domain_state(self, state, storage_domain_name):
+        dcs = self._data_centers_service.list()
+        for dc in dcs:
+            storage_domains = self.api.follow_link(dc.storagedomains)
+            for domain in storage_domains:
+                if domain.name == storage_domain_name:
+                    asds = self._get_attached_storage_domain_service(dc.id, domain.id)
+                    if state == "maintenance" and domain.status.value == "active":
+                        asds.deactivate()
+                    elif state == "active" and domain.status.value != "active":
+                        asds.activate()
+                    wait_for(lambda: domain.status.value == state, delay=5, num_sec=240)
+                    return True
+        return False
+
+    def get_template_from_storage_domain(self, template_name, storage_domain_name):
+        sds = self._get_storage_domain_service(storage_domain_name)
+        for template in sds.templates_service().list(unregistered=False):
+            if template.name == template_name:
+                return template
+        return False
+
+    def import_template(self, edomain, sdomain, cluster, temp_template):
+        export_sd_service = self._get_storage_domain_service(edomain)
+        export_template = self.get_template_from_storage_domain(temp_template, edomain)
+        target_storage_domain = self._get_storage_domain(sdomain)
+        cluster_id = self._get_cluster(cluster).id
+        template_service = export_sd_service.templates_service().template_service(
+            export_template.id)
+        template_service.import_(
+            storage_domain=types.StorageDomain(id=target_storage_domain.id),
+            cluster=types.Cluster(id=cluster_id),
+            template=types.Template(id=export_template.id)
+        )
+
+    def get_storage_domain_connections(self, storage_domain):
+        storage_domain = self._get_storage_domain_service(storage_domain)
+        return self.api.follow_link(storage_domain.storage_connections)
