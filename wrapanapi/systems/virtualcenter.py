@@ -245,17 +245,16 @@ class VMWareVMOrTemplate(Entity):
 
     def _clone(self, destination, resourcepool=None, datastore=None, power_on=True,
                sparse=False, template=False, provision_timeout=1800, progress_callback=None,
-               allowed_datastores=None, cpu=None, ram=None, **kwargs):
-        """
-        Clone this template to a VM
-
+               allowed_datastores=None, cpu=None, ram=None, relocate=False, host=None, **kwargs):
+        """Clone this template to a VM
+        When relocate is True, relocated (migrated) with VMRelocateSpec instead of being cloned
         Returns a VMWareVirtualMachine object
         """
         try:
             vm = self.system.get_vm(destination)
         except VMInstanceNotFound:
             vm = None
-        if vm:
+        if vm and not relocate:
             raise Exception("VM/template of the name {} already present!".format(destination))
 
         if progress_callback is None:
@@ -293,7 +292,8 @@ class VMWareVMOrTemplate(Entity):
             vm_reloc_spec.pool = self._get_resource_pool(resourcepool)
         progress_callback("Picked resource pool `{}`".format(vm_reloc_spec.pool.name))
 
-        vm_reloc_spec.host = None
+        vm_reloc_spec.host = (host if isinstance(host, vim.HostSystem)
+                              else self.system.get_obj(vim.HostSystem, host))  # could be none
         if sparse:
             vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().sparse
         else:
@@ -308,14 +308,18 @@ class VMWareVMOrTemplate(Entity):
             vm_clone_spec.config.numCPUs = int(cpu)
         if ram is not None:
             vm_clone_spec.config.memoryMB = int(ram)
-
         try:
             folder = source_template.parent.parent.vmParent
         except AttributeError:
             folder = source_template.parent
         progress_callback("Picked folder `{}`".format(folder.name))
 
-        task = source_template.CloneVM_Task(folder=folder, name=destination, spec=vm_clone_spec)
+        action = source_template.RelocateVM_Task if relocate else source_template.CloneVM_Task
+        action_args = dict(spec=vm_reloc_spec) if relocate else dict(folder=folder,
+                                                                     name=destination,
+                                                                     spec=vm_clone_spec)
+
+        task = action(**action_args)
 
         def _check(store=[task]):
             try:
@@ -342,6 +346,8 @@ class VMWareVMOrTemplate(Entity):
             entity_cls = VMWareTemplate
         else:
             entity_cls = VMWareVirtualMachine
+        if relocate:
+            self.rename(destination)
         return entity_cls(system=self.system, name=destination)
 
     def add_disk(self, capacity_in_kb, provision_type=None, unit=None):
@@ -524,10 +530,13 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
         self.ensure_state(VmState.STOPPED)
         return super(VMWareVirtualMachine, self).delete()
 
-    def mark_as_template(self, **kwargs):
+    def mark_as_template(self, template_name=None, **kwargs):
+        self.ensure_state(VmState.STOPPED)
         self.raw.MarkAsTemplate()
         template = VMWareTemplate(system=self.system, name=self.name, raw=self.raw)
         template.refresh()
+        if template_name and template_name != template.name:
+            template.rename(template_name)
         return template
 
     def clone(self, vm_name, **kwargs):
