@@ -35,8 +35,9 @@ VERSION_REGEXPS = [
     r"cfme-(\d)(\d)(\d)-(\d)-",     # cfme-520-1-   -> 5.2.0.1
     # 5 digits  (not very intelligent but no better solution so far)
     r"cfme-(?:nightly-)?(\d)(\d)(\d)(\d{2})-",   # cfme-53111-   -> 5.3.1.11, cfme-53101 -> 5.3.1.1
+    r"s-\w+-downstream-(\d)(\d)z-",  # s-tpl-downstream-57z-161116-2yunexwu
 ]
-VERSION_REGEXPS = map(re.compile, VERSION_REGEXPS)
+VERSION_REGEXPS = [re.compile(regex) for regex in VERSION_REGEXPS]
 VERSION_REGEXP_UPSTREAM = re.compile(r'^miq-stable-([^-]+)-')
 
 
@@ -282,7 +283,7 @@ class Openshift(Kubernetes):
                                             proj_name)
         progress_callback = kwargs.get('progress_callback', default_progress_callback)
 
-        self.create_project(name=proj_name)
+        self.create_project(name=proj_name, description=template)
         progress_callback("Created Project `{}`".format(proj_name))
 
         version = retrieve_cfme_appliance_version(template)
@@ -695,15 +696,18 @@ class Openshift(Kubernetes):
                                                 name=pv_claim_name)
         return output
 
-    def create_project(self, name):
+    def create_project(self, name, description=None):
         """Creates Project(namespace) using REST API.
 
         Args:
             name: openshift namespace name
+            description: project description. it is necessary to store appliance version
         Return: data if entity was created w/o errors
         """
         proj = self.ociclient.V1Project()
-        proj.metadata = {'name': name}
+        proj.metadata = {'name': name, 'annotations': {}}
+        if description:
+            proj.metadata['annotations'] = {'openshift.io/description': description}
         self.logger.info("creating new project with name %s", name)
         output = self.o_api.create_project(body=proj)
         self.wait_project_exist(name=name)
@@ -1161,6 +1165,25 @@ class Openshift(Kubernetes):
 
     list_vm = list_project_
 
+    def get_appliance_version(self, vm_name):
+        """Returns appliance version if it is possible
+
+            Args:
+                vm_name: project name
+        Returns: version
+        """
+        try:
+            proj = self.o_api.read_project(vm_name)
+            description = proj.metadata.annotations['openshift.io/description']
+        except (ApiException, KeyError):
+            description = None
+
+        if description:
+            version = retrieve_cfme_appliance_version(description)
+            if version:
+                return version
+        return retrieve_cfme_appliance_version(vm_name)
+
     def delete_template(self, template_name, namespace='openshift'):
         """Deletes template
 
@@ -1240,11 +1263,7 @@ class Openshift(Kubernetes):
                 vm_name: openshift project name
         Returns: list
         """
-        version = retrieve_cfme_appliance_version(vm_name)
-        # this is temporary fix
-        # vm names which come from sprout don't provide enough info about build version.
-        # so statement below will assume that vm is 5.9 if it cannot recognize exact version
-        # this will be fixed soon by making sprout to provide exact version in name or metadata
+        version = self.get_appliance_version(vm_name)
         if version and version < '5.9':
             return self.required_project_pods58
         else:
