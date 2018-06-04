@@ -7,15 +7,16 @@ from __future__ import absolute_import
 import os
 import random
 import time
-from apiclient.discovery import build
-from apiclient.http import MediaFileUpload
-from apiclient import errors
+
+from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from googleapiclient import errors
 from json import dumps as json_dumps
 
 import httplib2
 import iso8601
 import pytz
-from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
 from .base import WrapanapiAPIBaseVM, VMInfo
