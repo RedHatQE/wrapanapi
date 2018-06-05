@@ -17,7 +17,7 @@ VMInfo = namedtuple("VMInfo", ["uuid", "name", "power_state", "ip"])
 
 class WrapanapiAPIBase(object):
     def __init__(self, kwargs):
-        logger = kwargs.get('logger', None)
+        logger = kwargs.get("logger", None)
         self.logger = Logger(logger)
 
     def stats(self, *requested_stats):
@@ -28,9 +28,12 @@ class WrapanapiAPIBase(object):
                 in the _stats_available attibute of the specific class.
         Returns: A dict of stats.
         """
-        if not hasattr(self, '_stats_available'):
-            raise Exception('{} is missing self._stats_available dictionary'.format(
-                self.__class__.__name__))
+        if not hasattr(self, "_stats_available"):
+            raise Exception(
+                "{} is missing self._stats_available dictionary".format(
+                    self.__class__.__name__
+                )
+            )
 
         requested_stats = requested_stats or self._stats_available
         return {stat: self._stats_available[stat](self) for stat in requested_stats}
@@ -50,6 +53,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
       action is complete
 
     """
+
     __metaclass__ = ABCMeta
     STEADY_WAIT_MINS = 3
 
@@ -65,7 +69,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be started
         Returns: whether vm action has been initiated properly
         """
-        raise NotImplementedError('start_vm not implemented.')
+        raise NotImplementedError("start_vm not implemented.")
 
     @abstractmethod
     def wait_vm_running(self, vm_name, num_sec):
@@ -75,7 +79,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be running
             num_sec: number of seconds before timeout
         """
-        raise NotImplementedError('wait_vm_running not implemented.')
+        raise NotImplementedError("wait_vm_running not implemented.")
 
     @abstractmethod
     def stop_vm(self, vm_name):
@@ -85,7 +89,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be stopped
         Returns: whether vm action has been initiated properly
         """
-        raise NotImplementedError('stop_vm not implemented.')
+        raise NotImplementedError("stop_vm not implemented.")
 
     @abstractmethod
     def wait_vm_stopped(self, vm_name, num_sec):
@@ -95,7 +99,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be stopped
             num_sec: number of seconds before timeout
         """
-        raise NotImplementedError('wait_vm_stopped not implemented.')
+        raise NotImplementedError("wait_vm_stopped not implemented.")
 
     @abstractmethod
     def create_vm(self, vm_name, *args, **kwargs):
@@ -105,7 +109,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be created
         Returns: whether vm action has been initiated properly
         """
-        raise NotImplementedError('create_vm not implemented.')
+        raise NotImplementedError("create_vm not implemented.")
 
     @abstractmethod
     def delete_vm(self, vm_name, *args, **kwargs):
@@ -115,7 +119,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be deleted
         Returns: whether vm action has been initiated properly
         """
-        raise NotImplementedError('delete_vm not implemented.')
+        raise NotImplementedError("delete_vm not implemented.")
 
     @abstractmethod
     def restart_vm(self, vm_name):
@@ -125,7 +129,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be restarted
         Returns: whether vm stop/start have been initiated properly
         """
-        raise NotImplementedError('restart_vm not implemented.')
+        raise NotImplementedError("restart_vm not implemented.")
 
     @abstractmethod
     def list_vm(self, **kwargs):
@@ -133,7 +137,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         Returns: list of vm names
         """
-        raise NotImplementedError('list_vm not implemented.')
+        raise NotImplementedError("list_vm not implemented.")
 
     @abstractmethod
     def list_template(self):
@@ -141,7 +145,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         Returns: list of template/image names
         """
-        raise NotImplementedError('list_template not implemented.')
+        raise NotImplementedError("list_template not implemented.")
 
     @abstractmethod
     def list_flavor(self):
@@ -151,7 +155,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         Returns: list of flavor names
         """
-        raise NotImplementedError('list_flavor not implemented.')
+        raise NotImplementedError("list_flavor not implemented.")
 
     def list_network(self):
         """Returns a list of networks.
@@ -160,7 +164,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         Returns: list of network names
         """
-        raise NotImplementedError('list_network not implemented.')
+        raise NotImplementedError("list_network not implemented.")
 
     @abstractmethod
     def info(self):
@@ -168,12 +172,12 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
         Returns: string representation of name/version of mgmt system.
         """
-        raise NotImplementedError('info not implemented.')
+        raise NotImplementedError("info not implemented.")
 
     @abstractmethod
     def disconnect(self):
         """Disconnects the API from mgmt system"""
-        raise NotImplementedError('disconnect not implemented.')
+        raise NotImplementedError("disconnect not implemented.")
 
     @abstractmethod
     def vm_status(self, vm_name):
@@ -183,7 +187,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to get status
         Returns: state of the vm
         """
-        raise NotImplementedError('vm_status not implemented.')
+        raise NotImplementedError("vm_status not implemented.")
 
     @abstractmethod
     def is_vm_running(self, vm_name):
@@ -193,7 +197,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm
         Returns: whether the vm is running or not
         """
-        raise NotImplementedError('is_vm_running not implemented.')
+        raise NotImplementedError("is_vm_running not implemented.")
 
     @abstractmethod
     def is_vm_stopped(self, vm_name):
@@ -203,7 +207,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm
         Returns: whether the vm is stopped or not
         """
-        raise NotImplementedError('is_vm_stopped not implemented.')
+        raise NotImplementedError("is_vm_stopped not implemented.")
 
     @abstractmethod
     def is_vm_suspended(self, vm_name):
@@ -213,7 +217,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm
         Returns: whether the vm is suspended or not
         """
-        raise NotImplementedError('is_vm_suspended not implemented.')
+        raise NotImplementedError("is_vm_suspended not implemented.")
 
     @abstractmethod
     def suspend_vm(self, vm_name):
@@ -223,7 +227,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be suspended
         Returns: whether vm suspend has been initiated properly
         """
-        raise NotImplementedError('restart_vm not implemented.')
+        raise NotImplementedError("restart_vm not implemented.")
 
     @abstractmethod
     def wait_vm_suspended(self, vm_name, num_sec):
@@ -233,7 +237,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: name of the vm to be suspended
             num_sec: number of seconds before timeout
         """
-        raise NotImplementedError('wait_vm_suspended not implemented.')
+        raise NotImplementedError("wait_vm_suspended not implemented.")
 
     @abstractmethod
     def clone_vm(self, source_name, vm_name):
@@ -244,7 +248,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: The name of the new VM
         Returns: IP address of the clone
         """
-        raise NotImplementedError('clone_vm not implemented.')
+        raise NotImplementedError("clone_vm not implemented.")
 
     @abstractmethod
     def does_vm_exist(self, name):
@@ -254,7 +258,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: The name of the VM
         Returns: whether vm exists
         """
-        raise NotImplementedError('does_vm_exist not implemented.')
+        raise NotImplementedError("does_vm_exist not implemented.")
 
     @abstractmethod
     def deploy_template(self, template, *args, **kwargs):
@@ -264,7 +268,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             template: The name of the template to deploy
         Returns: name or id(ec2) of vm
         """
-        raise NotImplementedError('deploy_template not implemented.')
+        raise NotImplementedError("deploy_template not implemented.")
 
     @abstractmethod
     def current_ip_address(self, vm_name):
@@ -274,7 +278,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: The name of the VM
         Returns: vm ip address or None
         """
-        raise NotImplementedError('current_ip_address not implemented.')
+        raise NotImplementedError("current_ip_address not implemented.")
 
     @abstractmethod
     def get_ip_address(self, vm_name):
@@ -284,7 +288,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: The name of the VM
         Returns: vm ip address
         """
-        raise NotImplementedError('get_ip_address not implemented.')
+        raise NotImplementedError("get_ip_address not implemented.")
 
     @abstractmethod
     def remove_host_from_cluster(self, hostname):
@@ -296,7 +300,7 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
         :rtype: boolean
 
         """
-        raise NotImplementedError('remove_host_from_cluster not implemented.')
+        raise NotImplementedError("remove_host_from_cluster not implemented.")
 
     def in_steady_state(self, vm_name):
         """Return whether the specified virtual machine is in steady state
@@ -305,8 +309,11 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
             vm_name: VM name
         Returns: boolean
         """
-        return (self.is_vm_running(vm_name) or self.is_vm_stopped(vm_name) or
-            self.is_vm_suspended(vm_name))
+        return (
+            self.is_vm_running(vm_name)
+            or self.is_vm_stopped(vm_name)
+            or self.is_vm_suspended(vm_name)
+        )
 
     def wait_vm_steady(self, vm_name):
         """Waits 2 (or user-specified time) minutes for VM to settle in steady state
@@ -319,12 +326,14 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
                 lambda: self.in_steady_state(vm_name),
                 num_sec=self.STEADY_WAIT_MINS * 60,
                 delay=2,
-                message="VM %s in steady state" % vm_name
+                message="VM %s in steady state" % vm_name,
             )
         except TimedOutError:
             self.logger.exception(
                 "VM {} got stuck in {} state when waiting for steady state.".format(
-                    vm_name, self.vm_status(vm_name)))
+                    vm_name, self.vm_status(vm_name)
+                )
+            )
             raise
 
     @property
@@ -359,11 +368,13 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
     def set_meta_value(self, instance, key, value):
         raise NotImplementedError(
-            'Provider {} does not implement set_meta_value'.format(type(self).__name__))
+            "Provider {} does not implement set_meta_value".format(type(self).__name__)
+        )
 
     def get_meta_value(self, instance, key):
         raise NotImplementedError(
-            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+            "Provider {} does not implement get_meta_value".format(type(self).__name__)
+        )
 
     def get_vm_guid(self, vm_name):
         for vm in self.list_vm():
@@ -374,11 +385,15 @@ class WrapanapiAPIBaseVM(WrapanapiAPIBase):
 
     def vm_hardware_configuration(self, vm_name):
         raise NotImplementedError(
-            'Provider {} does not implement vm_hardware_configuration'.format(type(self).__name__))
+            "Provider {} does not implement vm_hardware_configuration".format(
+                type(self).__name__
+            )
+        )
 
     def usage_and_quota(self):
         raise NotImplementedError(
-            'Provider {} does not implement usage_and_quota'.format(type(self).__name__))
+            "Provider {} does not implement usage_and_quota".format(type(self).__name__)
+        )
 
 
 class Logger(object):

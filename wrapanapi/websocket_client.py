@@ -5,8 +5,15 @@ import websocket
 
 
 class WebsocketClient(object):
-    def __init__(self, url, username=None, password=None, headers={}, enable_trace=False,
-                 timeout=60):
+    def __init__(
+        self,
+        url,
+        username=None,
+        password=None,
+        headers={},
+        enable_trace=False,
+        timeout=60,
+    ):
         """Simple Web socket client for wrapanapi
 
        Args:
@@ -33,7 +40,9 @@ class WebsocketClient(object):
         else:
             websocket.enableTrace(self.enable_trace)
             if self.username:
-                base64_creds = base64.b64encode("{}:{}".format(self.username, self.password))
+                base64_creds = base64.b64encode(
+                    "{}:{}".format(self.username, self.password)
+                )
                 self.headers.update({"Authorization": "Basic {}".format(base64_creds)})
             self.ws = websocket.create_connection(self.url, header=self.headers)
             self.ws.settimeout(self.timeout)
@@ -85,39 +94,63 @@ class WebsocketClient(object):
 
 class HawkularWebsocketClient(WebsocketClient):
     """This client extended from normal websocket client. designed to hawkular specific"""
-    def __init__(self, url, username=None, password=None, headers={}, enable_trace=False,
-                 timeout=60):
+
+    def __init__(
+        self,
+        url,
+        username=None,
+        password=None,
+        headers={},
+        enable_trace=False,
+        timeout=60,
+    ):
         """Creates hawkular web socket client. for arguments refer 'WebsocketClient'"""
-        super(HawkularWebsocketClient, self).__init__(url=url, username=username, password=password,
-                                                      headers=headers, enable_trace=enable_trace,
-                                                      timeout=timeout)
+        super(HawkularWebsocketClient, self).__init__(
+            url=url,
+            username=username,
+            password=password,
+            headers=headers,
+            enable_trace=enable_trace,
+            timeout=timeout,
+        )
         self.session_id = None
 
     def connect(self):
         """Create connection with hawkular web socket server"""
         super(HawkularWebsocketClient, self).connect()
         response = self.hwk_receive()
-        if 'WelcomeResponse' in response:
-            self.session_id = response['WelcomeResponse']['sessionId']
-            return response['WelcomeResponse']
+        if "WelcomeResponse" in response:
+            self.session_id = response["WelcomeResponse"]["sessionId"]
+            return response["WelcomeResponse"]
         else:
-            raise RuntimeWarning("Key 'WelcomeResponse' not found on response: {}".format(response))
+            raise RuntimeWarning(
+                "Key 'WelcomeResponse' not found on response: {}".format(response)
+            )
             return response
 
     def hwk_receive(self):
         """parse recevied message and returns as dictionary value"""
         payload = self.receive()
-        data = payload.split('=', 1)
+        data = payload.split("=", 1)
         if len(data) != 2:
             raise IndentationError("Unknown payload format! {}".format(payload))
         response = {data[0]: json.loads(data[1])}
-        if 'GenericErrorResponse' in response:
-            raise Exception("Hawkular server sent failure message: {}"
-                            .format(response['GenericErrorResponse']))
+        if "GenericErrorResponse" in response:
+            raise Exception(
+                "Hawkular server sent failure message: {}".format(
+                    response["GenericErrorResponse"]
+                )
+            )
         return response
 
-    def hwk_invoke_operation(self, payload, operation_name="ExecuteOperation", binary_content=None,
-                             binary_file_location=None, wait_for_response=True):
+    def hwk_invoke_operation(
+        self,
+        payload,
+        operation_name="ExecuteOperation",
+        binary_content=None,
+        binary_file_location=None,
+        wait_for_response=True,
+    ):
         """Runs hawkular specific operations
         Args:
             payload: payload to server. only string
@@ -129,7 +162,7 @@ class HawkularWebsocketClient(WebsocketClient):
         """
         _payload = "{}Request={}".format(operation_name, json.dumps(payload))
         if binary_file_location:
-            binary_content = open(binary_file_location, 'rb').read()
+            binary_content = open(binary_file_location, "rb").read()
         if binary_content:
             self.send(_payload + binary_content, binary_stream=True)
         else:

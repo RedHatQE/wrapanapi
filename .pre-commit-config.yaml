@@ -1,13 +1,13 @@
 exclude: doc/en/example/py2py3/test_py2.py
 repos:
 -   repo: https://github.com/ambv/black
-    rev: 18.4a4
+    rev: 18.6b0
     hooks:
     - id: black
       args: [--safe, --quiet]
       python_version: python3.6
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v1.2.3
+    rev: v1.3.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer

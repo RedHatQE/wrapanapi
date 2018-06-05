@@ -3,6 +3,6 @@ from wrapanapi.containers import ContainersResourceBase
 
 
 class Route(ContainersResourceBase):
-    RESOURCE_TYPE = 'route'
+    RESOURCE_TYPE = "route"
     CREATABLE = True
-    API = 'o_api'
+    API = "o_api"

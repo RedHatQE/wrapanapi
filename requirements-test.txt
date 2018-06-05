@@ -1,5 +1,5 @@
 # they packaged the py2 package as universal wheel big nono
---no-binary azure-cosmosdb-table 
+--no-binary azure-cosmosdb-table
 
 -r ./requirements.txt
 

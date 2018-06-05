@@ -5,7 +5,7 @@ from wrapanapi.containers import ContainersResourceBase
 
 
 class Image(ContainersResourceBase):
-    RESOURCE_TYPE = 'image'
+    RESOURCE_TYPE = "image"
 
     def __init__(self, provider, name, image_id, image_project_name=None):
         ContainersResourceBase.__init__(self, provider, name, None)
@@ -13,11 +13,12 @@ class Image(ContainersResourceBase):
         self.image_project_name = image_project_name
 
     def __eq__(self, other):
-        return self.id == getattr(other, 'id', None)
+        return self.id == getattr(other, "id", None)
 
     def __repr__(self):
         return '<{} name="{}" id="{}">'.format(
-            self.__class__.__name__, self.name, self.id)
+            self.__class__.__name__, self.name, self.id
+        )
 
     @staticmethod
     def parse_docker_image_info(image_str):
@@ -29,14 +30,16 @@ class Image(ContainersResourceBase):
             <registry>/jboss-fuse-6/fis-karaf-openshift:<tag>@sha256:<sha256> =>
             <registry>, jboss-fuse-6/fis-karaf-openshift, sha256:<sha256>, <tag>
         """
-        registry, image_str = image_str.split('/', 1) if '/' in image_str else ('', image_str)
-        name, image_id = image_str.split('@')
-        tag = name.split(':')[-1] if ':' in image_str else (image_str, '')
+        registry, image_str = (
+            image_str.split("/", 1) if "/" in image_str else ("", image_str)
+        )
+        name, image_id = image_str.split("@")
+        tag = name.split(":")[-1] if ":" in image_str else (image_str, "")
         return registry, name, image_id, tag
 
     @cached_property
     def docker_image_reference(self):
-        return self.get().get('dockerImageReference', '')
+        return self.get().get("dockerImageReference", "")
 
     @cached_property
     def docker_image_info(self):

@@ -28,8 +28,13 @@ from wait_for import wait_for
 
 from .base import WrapanapiAPIBaseVM, VMInfo
 from .exceptions import (
-    NoMoreFloatingIPs, NetworkNameNotFound, VMInstanceNotFound, VMNotFoundViaIP,
-    ActionTimedOutError, VMError, KeystoneVersionNotSupported
+    NoMoreFloatingIPs,
+    NetworkNameNotFound,
+    VMInstanceNotFound,
+    VMNotFoundViaIP,
+    ActionTimedOutError,
+    VMError,
+    KeystoneVersionNotSupported,
 )
 
 
@@ -47,12 +52,16 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
         return SessionClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
-            self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
+            self._cfme_logger.error(
+                "nova request timed out after {} retries".format(retry_count)
+            )
             raise
         else:
             # feed back into the replaced method that supports retry_count
             retry_count += 1
-            self._cfme_logger.info('nova request timed out; retry {}'.format(retry_count))
+            self._cfme_logger.info(
+                "nova request timed out; retry {}".format(retry_count)
+            )
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
@@ -70,15 +79,15 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self._get_all_instances(True)),
-        'num_template': lambda self: len(self.list_template()),
+        "num_vm": lambda self: len(self._get_all_instances(True)),
+        "num_template": lambda self: len(self.list_template()),
     }
 
     states = {
-        'paused': ('PAUSED',),
-        'running': ('ACTIVE',),
-        'stopped': ('SHUTOFF',),
-        'suspended': ('SUSPENDED',),
+        "paused": ("PAUSED",),
+        "running": ("ACTIVE",),
+        "stopped": ("SHUTOFF",),
+        "suspended": ("SUSPENDED",),
     }
 
     can_suspend = True
@@ -86,14 +95,14 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
 
     def __init__(self, **kwargs):
         super(OpenstackSystem, self).__init__(kwargs)
-        self.tenant = kwargs['tenant']
-        self.username = kwargs['username']
-        self.password = kwargs['password']
-        self.auth_url = kwargs['auth_url']
-        self.keystone_version = kwargs.get('keystone_version', 2)
+        self.tenant = kwargs["tenant"]
+        self.username = kwargs["username"]
+        self.password = kwargs["password"]
+        self.auth_url = kwargs["auth_url"]
+        self.keystone_version = kwargs.get("keystone_version", 2)
         if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
-        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self.domain_id = kwargs["domain_id"] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
         self._kapi = None
@@ -104,11 +113,19 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     @property
     def session(self):
         if not self._session:
-            auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
-                               password=self.password, project_name=self.tenant)
+            auth_kwargs = dict(
+                auth_url=self.auth_url,
+                username=self.username,
+                password=self.password,
+                project_name=self.tenant,
+            )
             if self.keystone_version == 3:
-                auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_name=self.domain_id))
+                auth_kwargs.update(
+                    dict(
+                        user_domain_id=self.domain_id,
+                        project_domain_name=self.domain_id,
+                    )
+                )
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
         return self._session
@@ -116,16 +133,18 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     @property
     def api(self):
         if not self._api:
-            self._api = osclient.Client('2', session=self.session, service_type="compute",
-                                        timeout=30)
+            self._api = osclient.Client(
+                "2", session=self.session, service_type="compute", timeout=30
+            )
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
             # replacing the method directly on the SessionClient class)
             # so we can still call out to SessionClient's original request
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
-            self._api.client.request = _request_timeout_handler.__get__(self._api.client,
-                                                                        SessionClient)
+            self._api.client.request = _request_timeout_handler.__get__(
+                self._api.client, SessionClient
+            )
         return self._api
 
     @property
@@ -147,18 +166,23 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     @property
     def capi(self):
         if not self._capi:
-            self._capi = cinderclient.Client(session=self.session, service_type="volume")
+            self._capi = cinderclient.Client(
+                session=self.session, service_type="volume"
+            )
         return self._capi
 
     @property
     def stackapi(self):
         if not self._stackapi:
             heat_endpoint = self.kapi.session.auth.auth_ref.service_catalog.url_for(
-                service_type='orchestration'
+                service_type="orchestration"
             )
-            self._stackapi = heat_client.Client('1', heat_endpoint,
-                                                token=self.kapi.session.auth.auth_ref.auth_token,
-                                                insecure=True)
+            self._stackapi = heat_client.Client(
+                "1",
+                heat_endpoint,
+                token=self.kapi.session.auth.auth_ref.auth_token,
+                insecure=True,
+            )
         return self._stackapi
 
     def _get_tenants(self):
@@ -183,20 +207,28 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     def _get_role(self, **kwargs):
         return self.kapi.roles.find(**kwargs).id
 
-    def add_tenant(self, tenant_name, description=None, enabled=True, user=None, roles=None,
-                   domain=None):
-        params = dict(description=description,
-                      enabled=enabled)
+    def add_tenant(
+        self,
+        tenant_name,
+        description=None,
+        enabled=True,
+        user=None,
+        roles=None,
+        domain=None,
+    ):
+        params = dict(description=description, enabled=enabled)
         if self.keystone_version == 2:
-            params['tenant_name'] = tenant_name
+            params["tenant_name"] = tenant_name
         elif self.keystone_version == 3:
-            params['name'] = tenant_name
-            params['domain'] = domain
+            params["name"] = tenant_name
+            params["domain"] = domain
         tenant = self.tenant_api.create(**params)
         if user and roles:
             if self.keystone_version == 3:
-                raise NotImplementedError('Role assignments for users are not implemented yet for '
-                                          'Keystone V3')
+                raise NotImplementedError(
+                    "Role assignments for users are not implemented yet for "
+                    "Keystone V3"
+                )
             user = self._get_user(name=user)
             for role in roles:
                 role_id = self._get_role(name=role)
@@ -222,7 +254,10 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             instance.unpause()
         else:
             instance.start()
-        wait_for(lambda: self.is_vm_running(instance_name), message="start %s" % instance_name)
+        wait_for(
+            lambda: self.is_vm_running(instance_name),
+            message="start %s" % instance_name,
+        )
         return True
 
     def stop_vm(self, instance_name):
@@ -232,11 +267,13 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
 
         instance = self._find_instance_by_name(instance_name)
         instance.stop()
-        wait_for(lambda: self.is_vm_stopped(instance_name), message="stop %s" % instance_name)
+        wait_for(
+            lambda: self.is_vm_stopped(instance_name), message="stop %s" % instance_name
+        )
         return True
 
     def create_vm(self):
-        raise NotImplementedError('create_vm not implemented.')
+        raise NotImplementedError("create_vm not implemented.")
 
     def delete_vm(self, instance_name, delete_fip=True):
         self.logger.info(" Deleting OpenStack instance {}".format(instance_name))
@@ -245,9 +282,11 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             self.unassign_and_delete_floating_ip(instance)
         else:
             self.unassign_floating_ip(instance)
-        self.logger.info(" Deleting OpenStack instance {} in progress now.".format(instance_name))
+        self.logger.info(
+            " Deleting OpenStack instance {} in progress now.".format(instance_name)
+        )
         instance.delete()
-        wait_for(lambda: not self.does_vm_exist(instance_name), timeout='3m', delay=5)
+        wait_for(lambda: not self.does_vm_exist(instance_name), timeout="3m", delay=5)
         return True
 
     def restart_vm(self, instance_name):
@@ -266,7 +305,9 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         flavor_list = self.api.flavors.list()
         return [flavor.name for flavor in flavor_list]
 
-    def list_volume(self):  # TODO: maybe names? Could not get it to work via API though ...
+    def list_volume(
+        self
+    ):  # TODO: maybe names? Could not get it to work via API though ...
         volume_list = self.capi.volumes.list()
         return [volume.id for volume in volume_list]
 
@@ -275,7 +316,7 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         return [network.label for network in network_list]
 
     def info(self):
-        return '%s %s' % (self.api.client.service_type, self.api.client.version)
+        return "%s %s" % (self.api.client.service_type, self.api.client.version)
 
     def disconnect(self):
         pass
@@ -291,12 +332,22 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             return inst.status
         if not hasattr(inst, "fault"):
             raise VMError("Instance {} in error state!".format(vm_name))
-        raise VMError("Instance {} error {}: {} | {}".format(
-            vm_name, inst.fault["code"], inst.fault["message"], inst.fault["created"]))
+        raise VMError(
+            "Instance {} error {}: {} | {}".format(
+                vm_name,
+                inst.fault["code"],
+                inst.fault["message"],
+                inst.fault["created"],
+            )
+        )
 
     def create_volume(self, size_gb, **kwargs):
         volume = self.capi.volumes.create(size_gb, **kwargs).id
-        wait_for(lambda: self.capi.volumes.get(volume).status == "available", num_sec=60, delay=0.5)
+        wait_for(
+            lambda: self.capi.volumes.get(volume).status == "available",
+            num_sec=60,
+            delay=0.5,
+        )
         return volume
 
     def delete_volume(self, *ids, **kwargs):
@@ -309,7 +360,9 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         # Wait for them
         wait_for(
             lambda: all(map(lambda id: not self.volume_exists(id), ids)),
-            delay=0.5, num_sec=timeout)
+            delay=0.5,
+            num_sec=timeout,
+        )
 
     def volume_exists(self, id):
         try:
@@ -394,42 +447,52 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         volume = self.capi.volumes.get(volume_id)
         result = {}
         for attachment in volume.attachments:
-            result[self._get_instance_name(attachment["server_id"])] = attachment["device"]
+            result[self._get_instance_name(attachment["server_id"])] = attachment[
+                "device"
+            ]
         return result
 
     def vm_creation_time(self, vm_name):
         instance = self._find_instance_by_name(vm_name)
         # Example vm.created: 2014-08-14T23:29:30Z
-        creation_time = datetime.strptime(instance.created, '%Y-%m-%dT%H:%M:%SZ')
+        creation_time = datetime.strptime(instance.created, "%Y-%m-%dT%H:%M:%SZ")
         # create time is UTC, localize it, strip tzinfo
         return creation_time.replace(tzinfo=pytz.UTC)
 
     def is_vm_running(self, vm_name):
-        return self.vm_status(vm_name) in self.states['running']
+        return self.vm_status(vm_name) in self.states["running"]
 
     def is_vm_stopped(self, vm_name):
-        return self.vm_status(vm_name) in self.states['stopped']
+        return self.vm_status(vm_name) in self.states["stopped"]
 
     def is_vm_suspended(self, vm_name):
-        return self.vm_status(vm_name) in self.states['suspended']
+        return self.vm_status(vm_name) in self.states["suspended"]
 
     def is_vm_paused(self, vm_name):
-        return self.vm_status(vm_name) in self.states['paused']
+        return self.vm_status(vm_name) in self.states["paused"]
 
     def wait_vm_running(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for OS instance %s to change status to ACTIVE" % vm_name)
+        self.logger.info(
+            " Waiting for OS instance %s to change status to ACTIVE" % vm_name
+        )
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
 
     def wait_vm_stopped(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for OS instance %s to change status to SHUTOFF" % vm_name)
+        self.logger.info(
+            " Waiting for OS instance %s to change status to SHUTOFF" % vm_name
+        )
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
 
     def wait_vm_suspended(self, vm_name, num_sec=720):
-        self.logger.info(" Waiting for OS instance %s to change status to SUSPENDED" % vm_name)
+        self.logger.info(
+            " Waiting for OS instance %s to change status to SUSPENDED" % vm_name
+        )
         wait_for(self.is_vm_suspended, [vm_name], num_sec=num_sec)
 
     def wait_vm_paused(self, vm_name, num_sec=720):
-        self.logger.info(" Waiting for OS instance %s to change status to PAUSED" % vm_name)
+        self.logger.info(
+            " Waiting for OS instance %s to change status to PAUSED" % vm_name
+        )
         wait_for(self.is_vm_paused, [vm_name], num_sec=num_sec)
 
     def suspend_vm(self, instance_name):
@@ -439,7 +502,10 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
 
         instance = self._find_instance_by_name(instance_name)
         instance.suspend()
-        wait_for(lambda: self.is_vm_suspended(instance_name), message="suspend %s" % instance_name)
+        wait_for(
+            lambda: self.is_vm_suspended(instance_name),
+            message="suspend %s" % instance_name,
+        )
 
     def pause_vm(self, instance_name):
         self.logger.info(" Pausing OpenStack instance %s" % instance_name)
@@ -448,14 +514,19 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
 
         instance = self._find_instance_by_name(instance_name)
         instance.pause()
-        wait_for(lambda: self.is_vm_paused(instance_name), message="pause %s" % instance_name)
+        wait_for(
+            lambda: self.is_vm_paused(instance_name), message="pause %s" % instance_name
+        )
 
     def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('clone_vm not implemented.')
+        raise NotImplementedError("clone_vm not implemented.")
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
-        return sorted(self.api.floating_ips.findall(fixed_ip=None, pool=pool), key=lambda ip: ip.ip)
+        return sorted(
+            self.api.floating_ips.findall(fixed_ip=None, pool=pool),
+            key=lambda ip: ip.ip,
+        )
 
     def deploy_template(self, template, *args, **kwargs):
         """ Deploys an OpenStack instance from a template.
@@ -483,23 +554,27 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         """
         power_on = kwargs.pop("power_on", True)
         nics = []
-        timeout = kwargs.pop('timeout', 900)
+        timeout = kwargs.pop("timeout", 900)
 
-        if 'flavour_name' in kwargs:
-            flavour = self.api.flavors.find(name=kwargs['flavour_name'])
-        elif 'instance_type' in kwargs:
-            flavour = self.api.flavors.find(name=kwargs['instance_type'])
-        elif 'flavour_id' in kwargs:
-            flavour = self.api.flavors.find(id=kwargs['flavour_id'])
+        if "flavour_name" in kwargs:
+            flavour = self.api.flavors.find(name=kwargs["flavour_name"])
+        elif "instance_type" in kwargs:
+            flavour = self.api.flavors.find(name=kwargs["instance_type"])
+        elif "flavour_id" in kwargs:
+            flavour = self.api.flavors.find(id=kwargs["flavour_id"])
         else:
-            flavour = self.api.flavors.find(name='m1.tiny')
-        ram = kwargs.pop('ram', None)
-        cpu = kwargs.pop('cpu', None)
+            flavour = self.api.flavors.find(name="m1.tiny")
+        ram = kwargs.pop("ram", None)
+        cpu = kwargs.pop("cpu", None)
         if ram or cpu:
             # Find or create a new flavour usable for provisioning
             # Keep the parameters from the original flavour
             self.logger.info(
-                'RAM/CPU override of flavour %s: RAM %r MB, CPU: %r cores', flavour.name, ram, cpu)
+                "RAM/CPU override of flavour %s: RAM %r MB, CPU: %r cores",
+                flavour.name,
+                ram,
+                cpu,
+            )
             ram = ram or flavour.ram
             cpu = cpu or flavour.vcpus
             disk = flavour.disk
@@ -509,13 +584,18 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             is_public = flavour.is_public
             try:
                 new_flavour = self.api.flavors.find(
-                    ram=ram, vcpus=cpu,
-                    disk=disk, ephemeral=ephemeral, swap=swap,
-                    rxtx_factor=rxtx_factor, is_public=is_public)
+                    ram=ram,
+                    vcpus=cpu,
+                    disk=disk,
+                    ephemeral=ephemeral,
+                    swap=swap,
+                    rxtx_factor=rxtx_factor,
+                    is_public=is_public,
+                )
             except os_exceptions.NotFound:
                 # The requested flavor was not found, create a custom one
-                self.logger.info('No suitable flavour found, creating a new one.')
-                base_flavour_name = '{}-{}M-{}C'.format(flavour.name, ram, cpu)
+                self.logger.info("No suitable flavour found, creating a new one.")
+                base_flavour_name = "{}-{}M-{}C".format(flavour.name, ram, cpu)
                 flavour_name = base_flavour_name
                 counter = 0
                 new_flavour = None
@@ -526,40 +606,53 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
                     try:
                         new_flavour = self.api.flavors.create(
                             name=flavour_name,
-                            ram=ram, vcpus=cpu,
-                            disk=disk, ephemeral=ephemeral, swap=swap,
-                            rxtx_factor=rxtx_factor, is_public=is_public)
+                            ram=ram,
+                            vcpus=cpu,
+                            disk=disk,
+                            ephemeral=ephemeral,
+                            swap=swap,
+                            rxtx_factor=rxtx_factor,
+                            is_public=is_public,
+                        )
                     except os_exceptions.Conflict:
                         self.logger.info(
-                            'Name %s is already taken, changing the name', flavour_name)
+                            "Name %s is already taken, changing the name", flavour_name
+                        )
                         counter += 1
-                        flavour_name = base_flavour_name + '_{}'.format(counter)
+                        flavour_name = base_flavour_name + "_{}".format(counter)
                     else:
                         self.logger.info(
-                            'Created a flavour %r with id %r', new_flavour.name, new_flavour.id)
+                            "Created a flavour %r with id %r",
+                            new_flavour.name,
+                            new_flavour.id,
+                        )
                         flavour = new_flavour
             else:
-                self.logger.info('Found a flavour %s', new_flavour.name)
+                self.logger.info("Found a flavour %s", new_flavour.name)
                 flavour = new_flavour
 
-        if 'vm_name' not in kwargs:
-            vm_name = 'new_instance_name'
+        if "vm_name" not in kwargs:
+            vm_name = "new_instance_name"
         else:
-            vm_name = kwargs['vm_name']
-        self.logger.info(" Deploying OpenStack template %s to instance %s (%s)" % (
-            template, kwargs["vm_name"], flavour.name))
+            vm_name = kwargs["vm_name"]
+        self.logger.info(
+            " Deploying OpenStack template %s to instance %s (%s)"
+            % (template, kwargs["vm_name"], flavour.name)
+        )
         if len(self.list_network()) > 1:
-            if 'network_name' not in kwargs:
-                raise NetworkNameNotFound('Must select a network name')
+            if "network_name" not in kwargs:
+                raise NetworkNameNotFound("Must select a network name")
             else:
-                net_id = self.api.networks.find(label=kwargs['network_name']).id
-                nics = [{'net-id': net_id}]
+                net_id = self.api.networks.find(label=kwargs["network_name"]).id
+                nics = [{"net-id": net_id}]
 
         image = self.api.images.find(name=template)
-        instance = self.api.servers.create(vm_name, image, flavour, nics=nics, *args, **kwargs)
+        instance = self.api.servers.create(
+            vm_name, image, flavour, nics=nics, *args, **kwargs
+        )
         self.wait_vm_running(vm_name, num_sec=timeout)
-        if kwargs.get('floating_ip_pool', None):
-            self.assign_floating_ip(instance, kwargs['floating_ip_pool'])
+        if kwargs.get("floating_ip_pool", None):
+            self.assign_floating_ip(instance, kwargs["floating_ip_pool"])
 
         if power_on:
             self.start_vm(vm_name)
@@ -596,31 +689,43 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             if len(free_ips) > 1:
                 # There are 2 and more ips, so we will take the first one (eldest)
                 ip = free_ips[0]
-                self.logger.info("Reusing {} from pool {}".format(ip.ip, floating_ip_pool))
+                self.logger.info(
+                    "Reusing {} from pool {}".format(ip.ip, floating_ip_pool)
+                )
             else:
                 # There is one or none, so create one.
                 try:
                     ip = self.api.floating_ips.create(floating_ip_pool)
                 except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
-                    self.logger.error("Probably no more FIP slots available: {}".format(str(e)))
+                    self.logger.error(
+                        "Probably no more FIP slots available: {}".format(str(e))
+                    )
                     free_ips = self.free_fips(floating_ip_pool)
                     # So, try picking one from the list (there still might be one)
                     if free_ips:
                         # There is something free. Slight risk of race condition
                         ip = free_ips[0]
                         self.logger.info(
-                            "Reused {} from pool {} because no more free spaces for new ips"
-                            .format(ip.ip, floating_ip_pool))
+                            "Reused {} from pool {} because no more free spaces for new ips".format(
+                                ip.ip, floating_ip_pool
+                            )
+                        )
                     else:
                         # Nothing can be done
-                        raise NoMoreFloatingIPs("Provider {} ran out of FIPs".format(self.auth_url))
-                self.logger.info("Created {} in pool {}".format(ip.ip, floating_ip_pool))
+                        raise NoMoreFloatingIPs(
+                            "Provider {} ran out of FIPs".format(self.auth_url)
+                        )
+                self.logger.info(
+                    "Created {} in pool {}".format(ip.ip, floating_ip_pool)
+                )
             instance.add_floating_ip(ip)
 
             # Now the grace period in which a FIP theft could happen
             time.sleep(safety_timer)
 
-        self.logger.info("Instance {} got a floating IP {}".format(instance.name, ip.ip))
+        self.logger.info(
+            "Instance {} got a floating IP {}".format(instance.name, ip.ip)
+        )
         return self.current_ip_address(instance.name)
 
     def unassign_floating_ip(self, instance_or_name):
@@ -641,11 +746,16 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             return None
         floating_ip = floating_ips[0]
         self.logger.info(
-            'Detaching floating IP {}/{} from {}'.format(
-                floating_ip.id, floating_ip.ip, instance.name))
+            "Detaching floating IP {}/{} from {}".format(
+                floating_ip.id, floating_ip.ip, instance.name
+            )
+        )
         instance.remove_floating_ip(floating_ip)
         wait_for(
-            lambda: self.current_ip_address(instance.name) is None, delay=1, timeout='1m')
+            lambda: self.current_ip_address(instance.name) is None,
+            delay=1,
+            timeout="1m",
+        )
         return floating_ip
 
     def delete_floating_ip(self, floating_ip):
@@ -666,11 +776,15 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             if not floating_ip:
                 return False
             floating_ip = floating_ip[0]
-        self.logger.info('Deleting floating IP {}/{}'.format(floating_ip.id, floating_ip.ip))
+        self.logger.info(
+            "Deleting floating IP {}/{}".format(floating_ip.id, floating_ip.ip)
+        )
         floating_ip.delete()
         wait_for(
             lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
-            delay=1, timeout='1m')
+            delay=1,
+            timeout="1m",
+        )
         return True
 
     def unassign_and_delete_floating_ip(self, instance_or_name):
@@ -687,14 +801,14 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
 
     def _get_instance_networks(self, name):
         instance = self._find_instance_by_name(name)
-        return instance._info['addresses']
+        return instance._info["addresses"]
 
     def current_ip_address(self, name):
         networks = self._get_instance_networks(name)
         for network_nics in networks.itervalues():
             for nic in network_nics:
-                if nic['OS-EXT-IPS:type'] == 'floating':
-                    return str(nic['addr'])
+                if nic["OS-EXT-IPS:type"] == "floating":
+                    return str(nic["addr"])
 
     def all_vms(self):
         result = []
@@ -702,14 +816,9 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             ip = None
             for network_nics in vm._info["addresses"].itervalues():
                 for nic in network_nics:
-                    if nic['OS-EXT-IPS:type'] == 'floating':
-                        ip = str(nic['addr'])
-            result.append(VMInfo(
-                vm.id,
-                vm.name,
-                vm.status,
-                ip,
-            ))
+                    if nic["OS-EXT-IPS:type"] == "floating":
+                        ip = str(nic["addr"])
+            result.append(VMInfo(vm.id, vm.name, vm.status, ip))
         return result
 
     def get_vm_name_from_ip(self, ip):
@@ -727,7 +836,7 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             addr = self.get_ip_address(instance.name)
             if addr is not None and ip in addr:
                 return str(instance.name)
-        raise VMNotFoundViaIP('The requested IP is not known as a VM')
+        raise VMNotFoundViaIP("The requested IP is not known as a VM")
 
     def get_ip_address(self, name, **kwargs):
         return self.current_ip_address(name)
@@ -757,7 +866,9 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
                     except os_exceptions.BadRequest:
                         continue
                 else:
-                    raise Exception("Could not get list, maybe mass deletion after 10 marker tries")
+                    raise Exception(
+                        "Could not get list, maybe mass deletion after 10 marker tries"
+                    )
             if temp_list:
                 lists.extend(temp_list)
             else:
@@ -765,7 +876,7 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         return lists
 
     def _get_all_instances(self, filter_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': True})
+        call = partial(self.api.servers.list, True, {"all_tenants": True})
         instances = self._generic_paginator(call)
         if filter_tenants:
             # Filter instances based on their tenant ID
@@ -819,16 +930,19 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
             return False
 
     def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented')
+        raise NotImplementedError("remove_host_from_cluster not implemented")
 
     def get_first_floating_ip(self):
         try:
             self.api.floating_ips.create()
         except os_exceptions.NotFound:
-            self.logger.error('No more Floating IPs available, will attempt to grab a free one')
+            self.logger.error(
+                "No more Floating IPs available, will attempt to grab a free one"
+            )
         try:
-            first_available_ip = (ip for ip in self.api.floating_ips.list()
-                                  if ip.instance_id is None).next()
+            first_available_ip = (
+                ip for ip in self.api.floating_ips.list() if ip.instance_id is None
+            ).next()
         except StopIteration:
             return None
         return first_available_ip.ip
@@ -849,12 +963,19 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
                 instance.stop()
                 self.wait_vm_stopped(copy_name)
             uuid = instance.create_image(original_name)
-            wait_for(lambda: self.api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
+            wait_for(
+                lambda: self.api.images.get(uuid).status == "ACTIVE",
+                num_sec=900,
+                delay=5,
+            )
             instance.delete()
             wait_for(lambda: not self.does_vm_exist(copy_name), num_sec=180, delay=5)
         except Exception as e:
             self.logger.error(
-                "Could not mark {} as a OpenStack template! ({})".format(instance_name, str(e)))
+                "Could not mark {} as a OpenStack template! ({})".format(
+                    instance_name, str(e)
+                )
+            )
             instance.update(original_name)  # Clean up after ourselves
             raise
 
@@ -871,7 +992,9 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     def delete_template(self, template_name):
         template = self._find_template_by_name(template_name)
         template.delete()
-        wait_for(lambda: not self.does_template_exist(template_name), num_sec=120, delay=10)
+        wait_for(
+            lambda: not self.does_template_exist(template_name), num_sec=120, delay=10
+        )
 
     def stack_exist(self, stack_name):
         stack = self.stackapi.stacks.get(stack_name)
@@ -897,7 +1020,10 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     def set_meta_value(self, instance, key, value):
         instance = self._instance_or_name(instance)
         instance.manager.set_meta_item(
-            instance, key, value if isinstance(value, six.string_types) else json.dumps(value))
+            instance,
+            key,
+            value if isinstance(value, six.string_types) else json.dumps(value),
+        )
 
     def get_meta_value(self, instance, key):
         instance = self._instance_or_name(instance)
@@ -909,16 +1035,16 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
                 # Support metadata set by others
                 return data
         except KeyError:
-            raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
+            raise KeyError("Metadata {} not found in {}".format(key, instance.name))
 
     def vm_hardware_configuration(self, vm_name):
         vm = self._find_instance_by_name(vm_name)
-        flavor_id = vm.flavor['id']
+        flavor_id = vm.flavor["id"]
         flavor = self.api.flavors.find(id=flavor_id)
-        return {'ram': flavor.ram, 'cpu': flavor.vcpus}
+        return {"ram": flavor.ram, "cpu": flavor.vcpus}
 
     def usage_and_quota(self):
-        data = self.api.limits.get().to_dict()['absolute']
+        data = self.api.limits.get().to_dict()["absolute"]
         host_cpus = 0
         host_ram = 0
         for hypervisor in self.api.hypervisors.list():
@@ -927,11 +1053,13 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
         # -1 == no limit
         return {
             # RAM
-            'ram_used': data['totalRAMUsed'],
-            'ram_total': host_ram,
-            'ram_limit': data['maxTotalRAMSize'] if data['maxTotalRAMSize'] >= 0 else None,
+            "ram_used": data["totalRAMUsed"],
+            "ram_total": host_ram,
+            "ram_limit": data["maxTotalRAMSize"]
+            if data["maxTotalRAMSize"] >= 0
+            else None,
             # CPU
-            'cpu_used': data['totalCoresUsed'],
-            'cpu_total': host_cpus,
-            'cpu_limit': data['maxTotalCores'] if data['maxTotalCores'] >= 0 else None,
+            "cpu_used": data["totalCoresUsed"],
+            "cpu_total": host_cpus,
+            "cpu_limit": data["maxTotalCores"] if data["maxTotalCores"] >= 0 else None,
         }

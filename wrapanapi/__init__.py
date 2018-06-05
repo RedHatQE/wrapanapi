@@ -14,4 +14,4 @@ from wrapanapi.containers.providers.rhkubernetes import Kubernetes  # NOQA
 from wrapanapi.containers.providers.rhopenshift import Openshift  # NOQA
 from .hawkular import Hawkular  # NOQA
 from .lenovo import LenovoSystem  # NOQA
-from .nuage import NuageSystem # NOQA
+from .nuage import NuageSystem  # NOQA

@@ -37,24 +37,26 @@ kubernetes:
 class Kubernetes(WrapanapiAPIBase):
 
     _stats_available = {
-        'num_container': lambda self: len(self.list_container()),
-        'num_pod': lambda self: len(self.list_container_group()),
-        'num_service': lambda self: len(self.list_service()),
-        'num_replication_controller':
-            lambda self: len(self.list_replication_controller()),
-        'num_replication_controller_labels':
-            lambda self: len(self.list_replication_controller_labels()),
-        'num_image': lambda self: len(self.list_image()),
-        'num_node': lambda self: len(self.list_node()),
-        'num_image_registry': lambda self: len(self.list_image_registry()),
-        'num_project': lambda self: len(self.list_project()),
+        "num_container": lambda self: len(self.list_container()),
+        "num_pod": lambda self: len(self.list_container_group()),
+        "num_service": lambda self: len(self.list_service()),
+        "num_replication_controller": lambda self: len(
+            self.list_replication_controller()
+        ),
+        "num_replication_controller_labels": lambda self: len(
+            self.list_replication_controller_labels()
+        ),
+        "num_image": lambda self: len(self.list_image()),
+        "num_node": lambda self: len(self.list_node()),
+        "num_image_registry": lambda self: len(self.list_image_registry()),
+        "num_project": lambda self: len(self.list_project()),
     }
 
-    def __init__(self, hostname, protocol="https", port=6443, entry='api/v1', **kwargs):
+    def __init__(self, hostname, protocol="https", port=6443, entry="api/v1", **kwargs):
         self.hostname = hostname
-        self.username = kwargs.get('username', '')
-        self.password = kwargs.get('password', '')
-        self.token = kwargs.get('token', '')
+        self.username = kwargs.get("username", "")
+        self.password = kwargs.get("password", "")
+        self.token = kwargs.get("token", "")
         self.auth = self.token if self.token else (self.username, self.password)
         self.api = ContainerClient(hostname, self.auth, protocol, port, entry)
         super(Kubernetes, self).__init__(kwargs)
@@ -70,8 +72,10 @@ class Kubernetes(WrapanapiAPIBase):
         Example:
             localhost:5000/nginx:latest => localhost:5000, nginx, latest
         """
-        registry, image_str = image_str.split('/', 1) if '/' in image_str else ('', image_str)
-        name, tag = image_str.split(':', 1) if ':' in image_str else (image_str, '')
+        registry, image_str = (
+            image_str.split("/", 1) if "/" in image_str else ("", image_str)
+        )
+        name, tag = image_str.split(":", 1) if ":" in image_str else (image_str, "")
         return registry, name, tag
 
     def info(self):
@@ -80,21 +84,23 @@ class Kubernetes(WrapanapiAPIBase):
         for node in self.list_node():
             aggregate_cpu += node.cpu
             aggregate_mem += node.memory
-        return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
+        return {"cpu": aggregate_cpu, "memory": aggregate_mem}
 
     def list_container(self, project_name=None):
         """Returns list of containers (derived from pods)
         If project_name is passed, only the containers under the selected project will be returned
         """
         entities = []
-        entities_j = self.api.get('pod')[1]['items']
+        entities_j = self.api.get("pod")[1]["items"]
         for entity_j in entities_j:
-            if project_name and project_name != entity_j['metadata']['namespace']:
+            if project_name and project_name != entity_j["metadata"]["namespace"]:
                 continue
-            pod = Pod(self, entity_j['metadata']['name'], entity_j['metadata']['namespace'])
-            conts_j = entity_j['spec']['containers']
+            pod = Pod(
+                self, entity_j["metadata"]["name"], entity_j["metadata"]["namespace"]
+            )
+            conts_j = entity_j["spec"]["containers"]
             for cont_j in conts_j:
-                cont = Container(self, cont_j['name'], pod, cont_j['image'])
+                cont = Container(self, cont_j["name"], pod, cont_j["image"])
                 if cont not in entities:
                     entities.append(cont)
         return entities
@@ -103,11 +109,11 @@ class Kubernetes(WrapanapiAPIBase):
         """Returns list of container groups (pods).
         If project_name is passed, only the pods under the selected project will be returned"""
         entities = []
-        entities_j = self.api.get('pod')[1]['items']
+        entities_j = self.api.get("pod")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Pod(self, meta['name'], meta['namespace'])
-            if project_name and project_name != meta['namespace']:
+            meta = entity_j["metadata"]
+            entity = Pod(self, meta["name"], meta["namespace"])
+            if project_name and project_name != meta["namespace"]:
                 continue
             entities.append(entity)
         return entities
@@ -116,11 +122,11 @@ class Kubernetes(WrapanapiAPIBase):
         """Returns list of services.
         If project name is passed, only the services under the selected project will be returned"""
         entities = []
-        entities_j = self.api.get('service')[1]['items']
+        entities_j = self.api.get("service")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Service(self, meta['name'], meta['namespace'])
-            if project_name and project_name != meta['namespace']:
+            meta = entity_j["metadata"]
+            entity = Service(self, meta["name"], meta["namespace"])
+            if project_name and project_name != meta["namespace"]:
                 continue
             entities.append(entity)
         return entities
@@ -128,23 +134,23 @@ class Kubernetes(WrapanapiAPIBase):
     def list_replication_controller(self):
         """Returns list of replication controllers"""
         entities = []
-        entities_j = self.api.get('replicationcontroller')[1]['items']
+        entities_j = self.api.get("replicationcontroller")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Replicator(self, meta['name'], meta['namespace'])
+            meta = entity_j["metadata"]
+            entity = Replicator(self, meta["name"], meta["namespace"])
             entities.append(entity)
         return entities
 
     def list_image(self):
         """Returns list of images (derived from pods)"""
         entities = []
-        entities_j = self.api.get('pod')[1]['items']
+        entities_j = self.api.get("pod")[1]["items"]
         for entity_j in entities_j:
-            imgs_j = entity_j['status'].get('containerStatuses', [])
-            img_project_name = entity_j['metadata'].get('namespace', [])
+            imgs_j = entity_j["status"].get("containerStatuses", [])
+            img_project_name = entity_j["metadata"].get("namespace", [])
             for img_j in imgs_j:
-                _, name, _ = self._parse_image_info(img_j['image'])
-                img = Image(self, name, img_j['imageID'], img_project_name)
+                _, name, _ = self._parse_image_info(img_j["image"])
+                img = Image(self, name, img_j["imageID"], img_project_name)
                 if img not in entities:
                     entities.append(img)
         return entities
@@ -152,24 +158,24 @@ class Kubernetes(WrapanapiAPIBase):
     def list_node(self):
         """Returns list of nodes"""
         entities = []
-        entities_j = self.api.get('node')[1]['items']
+        entities_j = self.api.get("node")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Node(self, meta['name'])
+            meta = entity_j["metadata"]
+            entity = Node(self, meta["name"])
             entities.append(entity)
         return entities
 
     def list_image_registry(self):
         """Returns list of image registries (derived from pods)"""
         entities = []
-        entities_j = self.api.get('pod')[1]['items']
+        entities_j = self.api.get("pod")[1]["items"]
         for entity_j in entities_j:
-            imgs_j = entity_j['status'].get('containerStatuses', [])
+            imgs_j = entity_j["status"].get("containerStatuses", [])
             for img_j in imgs_j:
-                registry, _, _ = self._parse_image_info(img_j['image'])
+                registry, _, _ = self._parse_image_info(img_j["image"])
                 if not registry:
                     continue
-                host, _ = registry.split(':') if ':' in registry else (registry, '')
+                host, _ = registry.split(":") if ":" in registry else (registry, "")
                 entity = ImageRegistry(self, host, registry, None)
                 if entity not in entities:
                     entities.append(entity)
@@ -178,18 +184,18 @@ class Kubernetes(WrapanapiAPIBase):
     def list_project(self):
         """Returns list of projects (namespaces in k8s)"""
         entities = []
-        entities_j = self.api.get('namespace')[1]['items']
+        entities_j = self.api.get("namespace")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Project(self, meta['name'])
+            meta = entity_j["metadata"]
+            entity = Project(self, meta["name"])
             entities.append(entity)
         return entities
 
     def list_volume(self):
         entities = []
-        entities_j = self.api.get('persistentvolume')[1]['items']
+        entities_j = self.api.get("persistentvolume")[1]["items"]
         for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Volume(self, meta['name'])
+            meta = entity_j["metadata"]
+            entity = Volume(self, meta["name"])
             entities.append(entity)
         return entities

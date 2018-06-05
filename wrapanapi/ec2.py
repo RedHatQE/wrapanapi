@@ -19,9 +19,12 @@ import os
 
 from .base import WrapanapiAPIBaseVM
 from .exceptions import (
-    ActionTimedOutError, ActionNotSupported,
-    MultipleInstancesError, VMInstanceNotFound,
-    MultipleImagesError, ImageNotFoundError
+    ActionTimedOutError,
+    ActionNotSupported,
+    MultipleInstancesError,
+    VMInstanceNotFound,
+    MultipleImagesError,
+    ImageNotFoundError,
 )
 
 
@@ -53,60 +56,92 @@ class EC2System(WrapanapiAPIBaseVM):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        "num_vm": lambda self: len(self.list_vm()),
+        "num_template": lambda self: len(self.list_template()),
     }
 
     states = {
-        'running': ('running',),
-        'stopped': ('stopped', 'terminated'),
-        'suspended': (),
-        'deleted': ('terminated',),
+        "running": ("running",),
+        "stopped": ("stopped", "terminated"),
+        "suspended": (),
+        "deleted": ("terminated",),
     }
 
     # Possible stack states for reference
     stack_states = {
-        'active': ('CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
-                   'UPDATE_ROLLBACK_COMPLETE'),
-        'complete': ('CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'),
-        'failed': ('ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
-                   'UPDATE_ROLLBACK_FAILED'),
-        'deleted': ('DELETE_COMPLETE',),
-        'in_progress': ('CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
-                        'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
-                        'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
-                        'REVIEW_IN_PROGRESS')
+        "active": (
+            "CREATE_COMPLETE",
+            "ROLLBACK_COMPLETE",
+            "CREATE_FAILED",
+            "UPDATE_ROLLBACK_COMPLETE",
+        ),
+        "complete": ("CREATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"),
+        "failed": (
+            "ROLLBACK_COMPLETE",
+            "CREATE_FAILED",
+            "ROLLBACK_FAILED",
+            "DELETE_FAILED",
+            "UPDATE_ROLLBACK_FAILED",
+        ),
+        "deleted": ("DELETE_COMPLETE",),
+        "in_progress": (
+            "CREATE_IN_PROGRESS",
+            "ROLLBACK_IN_PROGRESS",
+            "DELETE_IN_PROGRESS",
+            "UPDATE_IN_PROGRESS",
+            "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS",
+            "UPDATE_ROLLBACK_IN_PROGRESS",
+            "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS",
+            "REVIEW_IN_PROGRESS",
+        ),
     }
 
     can_suspend = False
 
     def __init__(self, **kwargs):
         super(EC2System, self).__init__(kwargs)
-        username = kwargs.get('username')
-        password = kwargs.get('password')
+        username = kwargs.get("username")
+        password = kwargs.get("password")
         connection_config = Config(
-            signature_version='s3v4',
-            retries=dict(
-                max_attempts=10
-            )
+            signature_version="s3v4", retries=dict(max_attempts=10)
         )
 
-        regionname = kwargs.get('region')
-        region = get_region(kwargs.get('region'))
+        regionname = kwargs.get("region")
+        region = get_region(kwargs.get("region"))
         self.api = EC2Connection(username, password, region=region)
-        self.sqs_connection = connection.SQSConnection(username, password, region=_regions(
-            regionmodule=sqs, regionname=regionname))
-        self.elb_connection = ELBConnection(username, password, region=_regions(
-            regionmodule=elb, regionname=regionname))
-        self.s3_connection = boto3.resource('s3', aws_access_key_id=username,
-            aws_secret_access_key=password, region_name=regionname, config=connection_config)
-        self.ec2_connection = boto3.client('ec2', aws_access_key_id=username,
-            aws_secret_access_key=password, region_name=regionname, config=connection_config)
-        self.stackapi = CloudFormationConnection(username, password, region=_regions(
-            regionmodule=cloudformation, regionname=regionname))
-        self.cloudformation_connection = boto3.client('cloudformation', aws_access_key_id=username,
-            aws_secret_access_key=password, region_name=regionname, config=connection_config)
-        self.sns_connection = boto3.client('sns', region_name=regionname)
+        self.sqs_connection = connection.SQSConnection(
+            username, password, region=_regions(regionmodule=sqs, regionname=regionname)
+        )
+        self.elb_connection = ELBConnection(
+            username, password, region=_regions(regionmodule=elb, regionname=regionname)
+        )
+        self.s3_connection = boto3.resource(
+            "s3",
+            aws_access_key_id=username,
+            aws_secret_access_key=password,
+            region_name=regionname,
+            config=connection_config,
+        )
+        self.ec2_connection = boto3.client(
+            "ec2",
+            aws_access_key_id=username,
+            aws_secret_access_key=password,
+            region_name=regionname,
+            config=connection_config,
+        )
+        self.stackapi = CloudFormationConnection(
+            username,
+            password,
+            region=_regions(regionmodule=cloudformation, regionname=regionname),
+        )
+        self.cloudformation_connection = boto3.client(
+            "cloudformation",
+            aws_access_key_id=username,
+            aws_secret_access_key=password,
+            region_name=regionname,
+            config=connection_config,
+        )
+        self.sns_connection = boto3.client("sns", region_name=regionname)
         self.kwargs = kwargs
 
     def disconnect(self):
@@ -118,7 +153,7 @@ class EC2System(WrapanapiAPIBaseVM):
 
     def info(self):
         """Returns the current versions of boto and the EC2 API being used"""
-        return '%s %s' % (boto.UserAgent, self.api.APIVersion)
+        return "%s %s" % (boto.UserAgent, self.api.APIVersion)
 
     def list_vm(self, include_terminated=True):
         """Returns a list from instance IDs currently active on EC2 (not terminated)"""
@@ -126,20 +161,24 @@ class EC2System(WrapanapiAPIBaseVM):
         if include_terminated:
             instances = [inst for inst in self._get_all_instances()]
         else:
-            instances = [inst for inst in self._get_all_instances() if inst.state != 'terminated']
-        return [i.tags.get('Name', i.id) for i in instances]
+            instances = [
+                inst for inst in self._get_all_instances() if inst.state != "terminated"
+            ]
+        return [i.tags.get("Name", i.id) for i in instances]
 
     def list_template(self):
-        private_images = self.api.get_all_images(owners=['self'],
-                                                 filters={'image-type': 'machine'})
-        shared_images = self.api.get_all_images(executable_by=['self'],
-                                                filters={'image-type': 'machine'})
+        private_images = self.api.get_all_images(
+            owners=["self"], filters={"image-type": "machine"}
+        )
+        shared_images = self.api.get_all_images(
+            executable_by=["self"], filters={"image-type": "machine"}
+        )
         combined_images = list(set(private_images) | set(shared_images))
         # Try to pull the image name (might not exist), falling back on ID (must exist)
         return map(lambda i: i.name or i.id, combined_images)
 
     def list_flavor(self):
-        raise NotImplementedError('This function is not supported on this platform.')
+        raise NotImplementedError("This function is not supported on this platform.")
 
     def vm_status(self, instance_id):
         """Returns the status of the requested instance
@@ -169,11 +208,13 @@ class EC2System(WrapanapiAPIBaseVM):
     def vm_creation_time(self, instance_id):
         instance = self._get_instance(instance_id)
         # Example instance.launch_time: 2014-08-13T22:09:40.000Z
-        launch_time = datetime.strptime(instance.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
+        launch_time = datetime.strptime(instance.launch_time, "%Y-%m-%dT%H:%M:%S.%fZ")
         # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
         return launch_time.replace(tzinfo=pytz.UTC)
 
-    def create_vm(self, image_id, min_count=1, max_count=1, instance_type='t1.micro', vm_name=''):
+    def create_vm(
+        self, image_id, min_count=1, max_count=1, instance_type="t1.micro", vm_name=""
+    ):
         """
             Creates aws instances.
         TODO:
@@ -192,26 +233,30 @@ class EC2System(WrapanapiAPIBaseVM):
         Returns:
             List of created aws instances' IDs.
         """
-        self.logger.info(" Creating instances[%d] with name %s,type %s and image ID: %s ",
-                         max_count, vm_name, instance_type, image_id)
+        self.logger.info(
+            " Creating instances[%d] with name %s,type %s and image ID: %s ",
+            max_count,
+            vm_name,
+            instance_type,
+            image_id,
+        )
         try:
-            result = self.ec2_connection.run_instances(ImageId=image_id, MinCount=min_count,
-                MaxCount=max_count, InstanceType=instance_type, TagSpecifications=[
+            result = self.ec2_connection.run_instances(
+                ImageId=image_id,
+                MinCount=min_count,
+                MaxCount=max_count,
+                InstanceType=instance_type,
+                TagSpecifications=[
                     {
-                        'ResourceType': 'instance',
-                        'Tags': [
-                            {
-                                'Key': 'Name',
-                                'Value': vm_name,
-                            },
-                        ]
-                    },
-                ]
+                        "ResourceType": "instance",
+                        "Tags": [{"Key": "Name", "Value": vm_name}],
+                    }
+                ],
             )
-            instances = result.get('Instances')
+            instances = result.get("Instances")
             instance_ids = []
             for instance in instances:
-                instance_ids.append(instance.get('InstanceId'))
+                instance_ids.append(instance.get("InstanceId"))
             return instance_ids
         except Exception:
             self.logger.exception("Create of {} instance failed.".format(vm_name))
@@ -228,7 +273,7 @@ class EC2System(WrapanapiAPIBaseVM):
         instance_id = self._get_instance_id_by_name(instance_id)
         try:
             self.api.terminate_instances([instance_id])
-            self._block_until(instance_id, self.states['deleted'])
+            self._block_until(instance_id, self.states["deleted"])
             return True
         except ActionTimedOutError:
             return False
@@ -247,17 +292,20 @@ class EC2System(WrapanapiAPIBaseVM):
 
     def stack_exist(self, stack_name):
         try:
-            stacks = [stack for stack in self.describe_stack(stack_name)
-                      if stack.stack_name == stack_name]
+            stacks = [
+                stack
+                for stack in self.describe_stack(stack_name)
+                if stack.stack_name == stack_name
+            ]
         except boto.exception.BotoServerError as e:
-            if e.message == 'Stack with id {} does not exist'.format(stack_name):
+            if e.message == "Stack with id {} does not exist".format(stack_name):
                 return False
             else:
                 raise
         else:
             return bool(stacks)
 
-    def list_stack(self, stack_status_filter=stack_states['active']):
+    def list_stack(self, stack_status_filter=stack_states["active"]):
         """
         Returns a list of Stack objects
         stack_status_filter:  filters stacks in certain status. Can be a either a single valid stack
@@ -272,7 +320,7 @@ class EC2System(WrapanapiAPIBaseVM):
         Args:
             stack_name: Unique name of stack
         """
-        self.logger.info(" Terminating EC2 stack {}" .format(stack_name))
+        self.logger.info(" Terminating EC2 stack {}".format(stack_name))
         try:
             self.cloudformation_connection.delete_stack(StackName=stack_name)
             return True
@@ -290,7 +338,7 @@ class EC2System(WrapanapiAPIBaseVM):
         instance_id = self._get_instance_id_by_name(instance_id)
         try:
             self.api.start_instances([instance_id])
-            self._block_until(instance_id, self.states['running'])
+            self._block_until(instance_id, self.states["running"])
             return True
         except ActionTimedOutError:
             return False
@@ -306,7 +354,7 @@ class EC2System(WrapanapiAPIBaseVM):
         instance_id = self._get_instance_id_by_name(instance_id)
         try:
             self.api.stop_instances([instance_id])
-            self._block_until(instance_id, self.states['stopped'], timeout=360)
+            self._block_until(instance_id, self.states["stopped"], timeout=360)
             return True
         except ActionTimedOutError:
             return False
@@ -340,13 +388,15 @@ class EC2System(WrapanapiAPIBaseVM):
         Returns: Whether or not the requested instance is running
         """
         try:
-            running = self.vm_status(instance_id) in self.states['running']
+            running = self.vm_status(instance_id) in self.states["running"]
             return running
-        except Exception: # noqa
+        except Exception:  # noqa
             return False
 
     def wait_vm_running(self, instance_id, num_sec=360):
-        self.logger.info(" Waiting for EC2 instance %s to change status to running" % instance_id)
+        self.logger.info(
+            " Waiting for EC2 instance %s to change status to running" % instance_id
+        )
         wait_for(self.is_vm_running, [instance_id], num_sec=num_sec)
 
     def is_vm_stopped(self, instance_id):
@@ -356,11 +406,12 @@ class EC2System(WrapanapiAPIBaseVM):
             instance_id: ID of the instance to inspect
         Returns: Whether or not the requested instance is stopped
         """
-        return self.vm_status(instance_id) in self.states['stopped']
+        return self.vm_status(instance_id) in self.states["stopped"]
 
     def wait_vm_stopped(self, instance_id, num_sec=360):
         self.logger.info(
-            " Waiting for EC2 instance %s to change status to stopped or terminated" % instance_id
+            " Waiting for EC2 instance %s to change status to stopped or terminated"
+            % instance_id
         )
         wait_for(self.is_vm_stopped, [instance_id], num_sec=num_sec)
 
@@ -395,7 +446,7 @@ class EC2System(WrapanapiAPIBaseVM):
         raise ActionNotSupported()
 
     def clone_vm(self, source_name, vm_name):
-        raise NotImplementedError('This function has not yet been implemented.')
+        raise NotImplementedError("This function has not yet been implemented.")
 
     def deploy_template(self, template, *args, **kwargs):
         """Instantiate the requested template image (ami id)
@@ -420,21 +471,21 @@ class EC2System(WrapanapiAPIBaseVM):
         self.logger.info(" Deploying EC2 template %s" % template)
 
         # strip out kwargs that ec2 doesn't understand
-        timeout = kwargs.pop('timeout', 900)
-        vm_name = kwargs.pop('vm_name', None)
-        power_on = kwargs.pop('power_on', True)
+        timeout = kwargs.pop("timeout", 900)
+        vm_name = kwargs.pop("vm_name", None)
+        power_on = kwargs.pop("power_on", True)
 
         # Make sure we only provision one VM
-        kwargs.update({'min_count': 1, 'max_count': 1})
+        kwargs.update({"min_count": 1, "max_count": 1})
 
         if vm_name and self.does_vm_exist(vm_name):
             self.logger.warn("Instance '{}' already exists".format(vm_name))
             raise MultipleInstancesError("Instance '{}' already exists".format(vm_name))
 
         # sanity-check inputs
-        if 'instance_type' not in kwargs:
-            kwargs['instance_type'] = 'm1.small'
-        if not template.startswith('ami'):
+        if "instance_type" not in kwargs:
+            kwargs["instance_type"] = "m1.small"
+        if not template.startswith("ami"):
             # assume this is a lookup by name, get the ami id
             template = self._get_ami_id_by_name(template)
 
@@ -451,20 +502,24 @@ class EC2System(WrapanapiAPIBaseVM):
         return instances[0].id
 
     def set_name(self, instance_id, new_name):
-        self.logger.info("Setting name of EC2 instance %s to %s" % (instance_id, new_name))
+        self.logger.info(
+            "Setting name of EC2 instance %s to %s" % (instance_id, new_name)
+        )
         instance = self._get_instance(instance_id)
-        instance.add_tag('Name', new_name)
+        instance.add_tag("Name", new_name)
         return new_name
 
     def get_name(self, instance_id):
-        return self._get_instance(instance_id).tags.get('Name', instance_id)
+        return self._get_instance(instance_id).tags.get("Name", instance_id)
 
     def _get_instance(self, instance_id):
         instance_id = self._get_instance_id_by_name(instance_id)
         reservations = self.api.get_all_instances([instance_id])
         instances = self._get_instances_from_reservations(reservations)
         if len(instances) > 1:
-            raise MultipleInstancesError("Instance '{}' is not unique".format(instance_id))
+            raise MultipleInstancesError(
+                "Instance '{}' is not unique".format(instance_id)
+            )
 
         try:
             return instances[0]
@@ -481,31 +536,33 @@ class EC2System(WrapanapiAPIBaseVM):
         # Quick validation that the instance name isn't actually an ID
         # If people start naming their instances in such a way to break this,
         # check, that would be silly, but we can upgrade to regex if necessary.
-        pattern = re.compile('^i-\w{8,17}$')
+        pattern = re.compile("^i-\w{8,17}$")
         if pattern.match(instance_name):
             return instance_name
 
         # Filter by the 'Name' tag
-        filters = {
-            'tag:Name': instance_name,
-        }
+        filters = {"tag:Name": instance_name}
         reservations = self.api.get_all_instances(filters=filters)
         instances = self._get_instances_from_reservations(reservations)
         if not instances:
             raise VMInstanceNotFound(instance_name)
         elif len(instances) > 1:
-            raise MultipleInstancesError("Instance name '{}' is not unique".format(instance_name))
+            raise MultipleInstancesError(
+                "Instance name '{}' is not unique".format(instance_name)
+            )
 
         # We have an instance! return its ID
         return instances[0].id
 
     def _get_ami_id_by_name(self, image_name):
-        matches = self.api.get_all_images(filters={'name': image_name})
+        matches = self.api.get_all_images(filters={"name": image_name})
         if not matches:
             raise ImageNotFoundError(image_name)
         elif len(matches) > 1:
-            raise MultipleImagesError('Template name %s returned more than one image_name. '
-                'Use the ami-ID or remove duplicates from EC2' % image_name)
+            raise MultipleImagesError(
+                "Template name %s returned more than one image_name. "
+                "Use the ami-ID or remove duplicates from EC2" % image_name
+            )
 
         return matches[0].id
 
@@ -541,13 +598,17 @@ class EC2System(WrapanapiAPIBaseVM):
         wait_for(lambda: self.vm_status(instance_id) in expected, num_sec=timeout)
 
     def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented')
+        raise NotImplementedError("remove_host_from_cluster not implemented")
 
     def create_s3_bucket(self, bucket_name):
         self.logger.info("Creating bucket: {}".format(bucket_name))
         try:
-            self.s3_connection.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={
-                'LocationConstraint': self.kwargs.get('region')})
+            self.s3_connection.create_bucket(
+                Bucket=bucket_name,
+                CreateBucketConfiguration={
+                    "LocationConstraint": self.kwargs.get("region")
+                },
+            )
             self.logger.info("Success: Bucket was successfully created.")
             return True
         except Exception:
@@ -556,7 +617,9 @@ class EC2System(WrapanapiAPIBaseVM):
 
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
         bucket = self.s3_connection.Bucket(bucket_name)
-        self.logger.info("uploading file {} to bucket: {}".format(file_path, bucket_name))
+        self.logger.info(
+            "uploading file {} to bucket: {}".format(file_path, bucket_name)
+        )
         if os.path.isfile(file_path):
             try:
                 bucket.upload_file(file_path, file_name)
@@ -593,18 +656,23 @@ class EC2System(WrapanapiAPIBaseVM):
         bucket = self.s3_connection.Bucket(name=bucket_name)
         try:
             bucket.delete_objects(
-                Delete={'Objects': [{'Key': object_key} for object_key in object_keys]})
+                Delete={"Objects": [{"Key": object_key} for object_key in object_keys]}
+            )
             return True
         except Exception:
             self.logger.exception(
-                'Deleting object keys {} from Bucket "{}" failed'.format(object_keys, bucket_name))
+                'Deleting object keys {} from Bucket "{}" failed'.format(
+                    object_keys, bucket_name
+                )
+            )
             return False
 
     def get_all_disassociated_addresses(self):
         return [
-            addr for addr
-            in self.api.get_all_addresses()
-            if not addr.instance_id and not addr.network_interface_id]
+            addr
+            for addr in self.api.get_all_addresses()
+            if not addr.instance_id and not addr.network_interface_id
+        ]
 
     def release_vpc_address(self, alloc_id):
         self.logger.info(" Releasing EC2 VPC EIP {}".format(str(alloc_id)))
@@ -625,8 +693,11 @@ class EC2System(WrapanapiAPIBaseVM):
             return False
 
     def get_all_unattached_volumes(self):
-        return [volume for volume in self.api.get_all_volumes() if not
-                volume.attach_data.status]
+        return [
+            volume
+            for volume in self.api.get_all_volumes()
+            if not volume.attach_data.status
+        ]
 
     def delete_sqs_queue(self, queue_name):
         self.logger.info(" Deleting SQS queue {}".format(queue_name))
@@ -643,9 +714,10 @@ class EC2System(WrapanapiAPIBaseVM):
 
     def get_all_unused_loadbalancers(self):
         return [
-            loadbalancer for loadbalancer
-            in self.elb_connection.get_all_load_balancers()
-            if not loadbalancer.instances]
+            loadbalancer
+            for loadbalancer in self.elb_connection.get_all_load_balancers()
+            if not loadbalancer.instances
+        ]
 
     def delete_loadbalancer(self, loadbalancer):
         self.logger.info(" Deleting Elastic Load Balancer {}".format(loadbalancer.name))
@@ -657,22 +729,33 @@ class EC2System(WrapanapiAPIBaseVM):
             return False
 
     def get_all_unused_network_interfaces(self):
-        return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
+        return [
+            eni
+            for eni in self.api.get_all_network_interfaces()
+            if eni.status == "available"
+        ]
 
     def import_image(self, s3bucket, s3key, format="vhd", description=None):
-        self.logger.info(" Importing image %s from %s bucket with description %s in %s started "
-            "successfully.", s3key, s3bucket, description, format)
+        self.logger.info(
+            " Importing image %s from %s bucket with description %s in %s started "
+            "successfully.",
+            s3key,
+            s3bucket,
+            description,
+            format,
+        )
         try:
-            result = self.ec2_connection.import_image(DiskContainers=[
-                {
-                    'Description': description if description is not None else s3key,
-                    'Format': format,
-                    'UserBucket': {
-                        'S3Bucket': s3bucket,
-                        'S3Key': s3key
+            result = self.ec2_connection.import_image(
+                DiskContainers=[
+                    {
+                        "Description": description
+                        if description is not None
+                        else s3key,
+                        "Format": format,
+                        "UserBucket": {"S3Bucket": s3bucket, "S3Key": s3key},
                     }
-                }
-            ])
+                ]
+            )
             task_id = result.get("ImportTaskId")
             return task_id
 
@@ -681,24 +764,32 @@ class EC2System(WrapanapiAPIBaseVM):
             return False
 
     def get_import_image_task(self, task_id):
-        result = self.ec2_connection.describe_import_image_tasks(ImportTaskIds=[task_id])
+        result = self.ec2_connection.describe_import_image_tasks(
+            ImportTaskIds=[task_id]
+        )
         result_task = result.get("ImportImageTasks")
         return result_task[0]
 
     def get_image_id_if_import_completed(self, task_id):
         result = self.get_import_image_task(task_id)
         result_status = result.get("Status")
-        if result_status == 'completed':
+        if result_status == "completed":
             return result.get("ImageId")
         else:
             return False
 
     def copy_image(self, source_region, source_image, image_id):
-        self.logger.info(" Copying image %s from region %s to region %s with image id %s",
-            source_image, source_region, self.kwargs.get('region'), image_id)
+        self.logger.info(
+            " Copying image %s from region %s to region %s with image id %s",
+            source_image,
+            source_region,
+            self.kwargs.get("region"),
+            image_id,
+        )
         try:
-            self.ec2_connection.copy_image(SourceRegion=source_region, SourceImageId=source_image,
-                                       Name=image_id)
+            self.ec2_connection.copy_image(
+                SourceRegion=source_region, SourceImageId=source_image, Name=image_id
+            )
             return True
 
         except Exception:
@@ -707,7 +798,9 @@ class EC2System(WrapanapiAPIBaseVM):
 
     def deregister_image(self, image_id, delete_snapshot=True):
         """Deregister the given AMI ID, only valid for self owned AMI's"""
-        images = self.api.get_all_images(owners=['self'], filters={'image-type': 'machine'})
+        images = self.api.get_all_images(
+            owners=["self"], filters={"image-type": "machine"}
+        )
         matching_images = [image for image in images if image.id == image_id]
 
         try:
@@ -715,7 +808,7 @@ class EC2System(WrapanapiAPIBaseVM):
                 image.deregister(delete_snapshot=delete_snapshot)
             return True
         except Exception:
-            self.logger.exception('Deregister of image_id {} failed'.format(image_id))
+            self.logger.exception("Deregister of image_id {} failed".format(image_id))
             return False
 
     def list_topics(self):
@@ -729,9 +822,9 @@ class EC2System(WrapanapiAPIBaseVM):
         # like this: arn:aws:sns:sa-east-1:ACCOUNT_NUM:AWSConfig_topic
 
         topic_found = [
-            t.get('TopicArn')
-            for t in topics.get('Topics')
-            if t.get('TopicArn').split(':')[-1] == topic_name
+            t.get("TopicArn")
+            for t in topics.get("Topics")
+            if t.get("TopicArn").split(":")[-1] == topic_name
         ]
         if topic_found:
             return topic_found[0]
@@ -764,14 +857,9 @@ class EC2System(WrapanapiAPIBaseVM):
             try:
                 response = self.ec2_connection.describe_volumes(
                     VolumeIds=[volume_id],
-                    Filters=[
-                        {
-                            'Name': 'status',
-                            'Values': ['available']
-                        }
-                    ]
+                    Filters=[{"Name": "status", "Values": ["available"]}],
                 )
-                if response.get('Volumes'):
+                if response.get("Volumes"):
                     return True
                 else:
                     return False
@@ -780,17 +868,11 @@ class EC2System(WrapanapiAPIBaseVM):
         elif volume_name:
             response = self.ec2_connection.describe_volumes(
                 Filters=[
-                    {
-                        'Name': 'status',
-                        'Values': ['available']
-                    },
-                    {
-                        'Name': 'tag:Name',
-                        'Values': [volume_name]
-                    }
+                    {"Name": "status", "Values": ["available"]},
+                    {"Name": "tag:Name", "Values": [volume_name]},
                 ]
             )
-            if response.get('Volumes'):
+            if response.get("Volumes"):
                 return True
             else:
                 return False
@@ -812,8 +894,10 @@ class EC2System(WrapanapiAPIBaseVM):
         """
         if snapshot_id:
             try:
-                response = self.ec2_connection.describe_snapshots(SnapshotIds=[snapshot_id])
-                if response.get('Snapshots'):
+                response = self.ec2_connection.describe_snapshots(
+                    SnapshotIds=[snapshot_id]
+                )
+                if response.get("Snapshots"):
                     return True
                 else:
                     return False
@@ -821,14 +905,9 @@ class EC2System(WrapanapiAPIBaseVM):
                 return False
         elif snapshot_name:
             response = self.ec2_connection.describe_snapshots(
-                Filters=[
-                    {
-                        'Name': 'tag:Name',
-                        'Values': [snapshot_name]
-                    }
-                ]
+                Filters=[{"Name": "tag:Name", "Values": [snapshot_name]}]
             )
-            if response.get('Snapshots'):
+            if response.get("Snapshots"):
                 return True
             else:
                 return False
@@ -848,41 +927,47 @@ class EC2System(WrapanapiAPIBaseVM):
             False when snapshot copy didn't start.
         """
         if not source_region:
-            source_region = self.kwargs.get('region')
+            source_region = self.kwargs.get("region")
         try:
             self.ec2_connection.copy_snapshot(
-                SourceRegion=source_region, SourceSnapshotId=source_snapshot_id,
-                DestinationRegion=source_region
+                SourceRegion=source_region,
+                SourceSnapshotId=source_snapshot_id,
+                DestinationRegion=source_region,
             )
             return True
         except Exception:
-            self.logger.exception("Copy snapshot with id {} failed.".format(source_snapshot_id))
+            self.logger.exception(
+                "Copy snapshot with id {} failed.".format(source_snapshot_id)
+            )
             return False
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List EC2 Load Balancers")
-        return [loadbalancer.name for loadbalancer in self.elb_connection.get_all_load_balancers()]
+        return [
+            loadbalancer.name
+            for loadbalancer in self.elb_connection.get_all_load_balancers()
+        ]
 
     def list_network(self):
         self.logger.info("Attempting to List EC2 Virtual Private Networks")
-        networks = self.ec2_connection.describe_network_acls()['NetworkAcls']
+        networks = self.ec2_connection.describe_network_acls()["NetworkAcls"]
         # EC2 api does not return the tags of the networks.... so returns only the IDs.
-        return [vpc_id['VpcId'] for vpc_id in networks]
+        return [vpc_id["VpcId"] for vpc_id in networks]
 
     def list_subnet(self):
         self.logger.info("Attempting to List EC2 Subnets")
-        subnets = self.ec2_connection.describe_subnets()['Subnets']
+        subnets = self.ec2_connection.describe_subnets()["Subnets"]
         subnets_names = []
 
         # Subnets are not having mandatory tags names. They can have multiple tags, but only the tag
         # 'Name' will be taken as the subnet name. If not tag is given, CFME displays the SubnetId
         for subnet in subnets:
-            if 'Tags' in subnet and len(subnet['Tags']):
-                for tag in subnet['Tags']:
-                    if 'Name' in tag.values():
-                        subnets_names.append(tag['Value'])
+            if "Tags" in subnet and len(subnet["Tags"]):
+                for tag in subnet["Tags"]:
+                    if "Name" in tag.values():
+                        subnets_names.append(tag["Value"])
             else:
-                subnets_names.append(subnet['SubnetId'])
+                subnets_names.append(subnet["SubnetId"])
         return subnets_names
 
     def list_security_group(self):
@@ -890,18 +975,18 @@ class EC2System(WrapanapiAPIBaseVM):
         return [sec_gp.name for sec_gp in self.api.get_all_security_groups()]
 
     def list_router(self):
-        route_tables = self.ec2_connection.describe_route_tables()['RouteTables']
+        route_tables = self.ec2_connection.describe_route_tables()["RouteTables"]
         routers_names = []
 
         # Routers names are tags which are not mandatory, and tag with key called Name will be
         # used to name the router. If no tag name is provided, the routerTableId will be
         # displayed as name in CFME.
         for route in route_tables:
-            if len(route['Tags']):
-                for tag in route['Tags']:
-                    if 'Name' in tag.values():
-                        routers_names.append(tag['Value'])
+            if len(route["Tags"]):
+                for tag in route["Tags"]:
+                    if "Name" in tag.values():
+                        routers_names.append(tag["Value"])
             else:
-                routers_names.append(route['RouteTableId'])
+                routers_names.append(route["RouteTableId"])
 
         return routers_names

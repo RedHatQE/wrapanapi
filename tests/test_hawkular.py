@@ -19,21 +19,22 @@ def fake_urlopen(c_client, url, headers, params):
     """
     # Map path from url to a file
     parsed_url = urlparse("{}/{}".format(c_client.api_entry, url)).path
-    if parsed_url.startswith('/hawkular/inventory/traversal') \
-            or parsed_url.startswith('/hawkular/inventory/entity'):
+    if parsed_url.startswith("/hawkular/inventory/traversal") or parsed_url.startswith(
+        "/hawkular/inventory/entity"
+    ):
         # Change parsed url, when we use default one, 'd;configuration' replaced with 'd'
         parsed_url = "{}/{}".format(urlparse("{}".format(c_client.api_entry)).path, url)
-        parsed_url = parsed_url.replace('traversal/', '')
-        parsed_url = parsed_url.replace('entity/', '')
-        parsed_url = parsed_url.replace('f;', 'feeds/')
-        parsed_url = parsed_url.replace('r;', 'resources/', 1)
-        parsed_url = parsed_url.replace('r;', '')
-        parsed_url = parsed_url.replace('rt;', 'resourceTypes/')
-        parsed_url = parsed_url.replace('rl;defines/', '')
-        parsed_url = parsed_url.replace('type=rt', 'resourceTypes')
-        parsed_url = parsed_url.replace('type=r', 'resources')
-        parsed_url = parsed_url.replace('type=f', 'feeds')
-        parsed_url = parsed_url.replace('d;configuration', 'data')
+        parsed_url = parsed_url.replace("traversal/", "")
+        parsed_url = parsed_url.replace("entity/", "")
+        parsed_url = parsed_url.replace("f;", "feeds/")
+        parsed_url = parsed_url.replace("r;", "resources/", 1)
+        parsed_url = parsed_url.replace("r;", "")
+        parsed_url = parsed_url.replace("rt;", "resourceTypes/")
+        parsed_url = parsed_url.replace("rl;defines/", "")
+        parsed_url = parsed_url.replace("type=rt", "resourceTypes")
+        parsed_url = parsed_url.replace("type=r", "resources")
+        parsed_url = parsed_url.replace("type=f", "feeds")
+        parsed_url = parsed_url.replace("d;configuration", "data")
     resource_file = os.path.normpath("tests/resources/{}.json".format(parsed_url))
     # Must return a file-like object
     return json.load(open(resource_file))
@@ -66,26 +67,30 @@ def provider():
     A stub urlopen() implementation that load json responses from
     the filesystem.
     """
-    if not os.getenv('HAWKULAR_HOSTNAME'):
-        patcher = patch('wrapanapi.rest_client.ContainerClient.get_json', fake_urlopen)
+    if not os.getenv("HAWKULAR_HOSTNAME"):
+        patcher = patch("wrapanapi.rest_client.ContainerClient.get_json", fake_urlopen)
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.delete_status', fake_urldelete)
+        patcher = patch(
+            "wrapanapi.rest_client.ContainerClient.delete_status", fake_urldelete
+        )
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.post_status', fake_urlpost)
+        patcher = patch(
+            "wrapanapi.rest_client.ContainerClient.post_status", fake_urlpost
+        )
         patcher.start()
-        patcher = patch('wrapanapi.rest_client.ContainerClient.put_status', fake_urlput)
+        patcher = patch("wrapanapi.rest_client.ContainerClient.put_status", fake_urlput)
         patcher.start()
 
     hwk = hawkular.Hawkular(
-        hostname=os.getenv('HAWKULAR_HOSTNAME', 'localhost'),
-        protocol=os.getenv('HAWKULAR_PROTOCOL', 'http'),
-        port=os.getenv('HAWKULAR_PORT', 8080),
-        username=os.getenv('HAWKULAR_USERNAME', 'jdoe'),
-        password=os.getenv('HAWKULAR_PASSWORD', 'password'),
-        ws_connect=False
+        hostname=os.getenv("HAWKULAR_HOSTNAME", "localhost"),
+        protocol=os.getenv("HAWKULAR_PROTOCOL", "http"),
+        port=os.getenv("HAWKULAR_PORT", 8080),
+        username=os.getenv("HAWKULAR_USERNAME", "jdoe"),
+        password=os.getenv("HAWKULAR_PASSWORD", "password"),
+        ws_connect=False,
     )
     yield hwk
-    if not os.getenv('HAWKULAR_HOSTNAME'):
+    if not os.getenv("HAWKULAR_HOSTNAME"):
         patcher.stop()
 
 
@@ -104,23 +109,34 @@ def datasource(provider):
         assert r_data
 
         name_ext = "MWTest"
-        new_datasource = hawkular.Resource(name="{}{}".format(datasource.name, name_ext),
-                                id="{}{}".format(datasource.id, name_ext),
-                                path=hawkular.CanonicalPath(
-                                    "{}{}".format(datasource.path.to_string, name_ext)))
+        new_datasource = hawkular.Resource(
+            name="{}{}".format(datasource.name, name_ext),
+            id="{}{}".format(datasource.id, name_ext),
+            path=hawkular.CanonicalPath(
+                "{}{}".format(datasource.path.to_string, name_ext)
+            ),
+        )
         new_datasource.path.resource_id = new_datasource.path.resource_id[1]
-        resource_type = hawkular.ResourceType(id=None, name=None,
-                                              path=CanonicalPath("/rt;Datasource"))
+        resource_type = hawkular.ResourceType(
+            id=None, name=None, path=CanonicalPath("/rt;Datasource")
+        )
 
-        new_datasource_data = hawkular.ResourceData(name=None, path=None, value=r_data.value)
+        new_datasource_data = hawkular.ResourceData(
+            name=None, path=None, value=r_data.value
+        )
         new_datasource_data.value.update(
-            {"JNDI Name": "{}{}".format(r_data.value["JNDI Name"], name_ext),
-             "Enabled": "true"
-             }
+            {
+                "JNDI Name": "{}{}".format(r_data.value["JNDI Name"], name_ext),
+                "Enabled": "true",
+            }
         )
         _delete_resource(provider, new_datasource)
-        result = _create_resource(provider, resource=new_datasource,
-                                  resource_data=new_datasource_data, resource_type=resource_type)
+        result = _create_resource(
+            provider,
+            resource=new_datasource,
+            resource_data=new_datasource_data,
+            resource_type=resource_type,
+        )
         assert result, "Create should be successful"
         r_data = _read_resource_data(provider, new_datasource)
         assert r_data, "Resource data should exist"
@@ -211,8 +227,9 @@ def test_get_config_data(provider):
     found = False
     servers = provider.inventory.list_server()
     for server in servers:
-        r_data = provider.inventory.get_config_data(feed_id=server.path.feed_id,
-                                                    resource_id=server.id)
+        r_data = provider.inventory.get_config_data(
+            feed_id=server.path.feed_id, resource_id=server.id
+        )
         if r_data:
             found = True
             assert r_data.name
@@ -225,13 +242,13 @@ def test_edit_resource_data(provider, datasource):
     """ Checks whether resource data is edited """
     r_data = _read_resource_data(provider, datasource)
     assert r_data, "Resource data should exist"
-    r_data.value['Enabled'] = "false"
+    r_data.value["Enabled"] = "false"
     result = _update_resource_data(provider, r_data, datasource)
     assert result, "Update should be successful"
     r_data = _read_resource_data(provider, datasource)
     # skip value verification for mocked provider
-    if os.getenv('HAWKULAR_HOSTNAME'):
-        assert r_data.value['Enabled'] == "false"
+    if os.getenv("HAWKULAR_HOSTNAME"):
+        assert r_data.value["Enabled"] == "false"
 
 
 def test_delete_resource(provider, datasource):
@@ -242,30 +259,37 @@ def test_delete_resource(provider, datasource):
     assert result, "Delete should be successful"
     r_data = _read_resource_data(provider, datasource)
     # skip deleted verification for mocked provider
-    if os.getenv('HAWKULAR_HOSTNAME'):
+    if os.getenv("HAWKULAR_HOSTNAME"):
         assert not r_data
 
 
 def _read_resource_data(provider, resource):
-    return provider.inventory.get_config_data(feed_id=resource.path.feed_id,
-                                              resource_id=resource.path.resource_id)
+    return provider.inventory.get_config_data(
+        feed_id=resource.path.feed_id, resource_id=resource.path.resource_id
+    )
 
 
 def _create_resource(provider, resource, resource_data, resource_type):
-    return provider.inventory.create_resource(resource=resource, resource_data=resource_data,
-                                              resource_type=resource_type,
-                                              feed_id=resource.path.feed_id)
+    return provider.inventory.create_resource(
+        resource=resource,
+        resource_data=resource_data,
+        resource_type=resource_type,
+        feed_id=resource.path.feed_id,
+    )
 
 
 def _update_resource_data(provider, resource_data, resource):
-    return provider.inventory.edit_config_data(resource_data=resource_data,
-                                               feed_id=resource.path.feed_id,
-                                               resource_id=resource.path.resource_id)
+    return provider.inventory.edit_config_data(
+        resource_data=resource_data,
+        feed_id=resource.path.feed_id,
+        resource_id=resource.path.resource_id,
+    )
 
 
 def _delete_resource(provider, resource):
-    return provider.inventory.delete_resource(feed_id=resource.path.feed_id,
-                    resource_id=resource.path.resource_id)
+    return provider.inventory.delete_resource(
+        feed_id=resource.path.feed_id, resource_id=resource.path.resource_id
+    )
 
 
 def test_list_server_datasource(provider):
@@ -278,8 +302,11 @@ def test_list_server_datasource(provider):
         assert datasource.id
         assert datasource.name
         assert datasource.path
-    assert found | provider.inventory._stats_available['num_datasource'](provider.inventory) > 0,\
-        "No any datasource is listed for any of feeds, but they exists"
+    assert (
+        found
+        | provider.inventory._stats_available["num_datasource"](provider.inventory)
+        > 0
+    ), "No any datasource is listed for any of feeds, but they exists"
 
 
 def test_path(provider):
@@ -302,7 +329,7 @@ def test_num_server(provider):
     feeds = provider.inventory.list_feed()
     for feed in feeds:
         servers_count += len(provider.inventory.list_server(feed_id=feed.id))
-    num_server = provider.inventory._stats_available['num_server'](provider.inventory)
+    num_server = provider.inventory._stats_available["num_server"](provider.inventory)
     assert num_server == servers_count, "Number of servers is wrong"
 
 
@@ -311,8 +338,12 @@ def test_num_deployment(provider):
     deployments_count = 0
     feeds = provider.inventory.list_feed()
     for feed in feeds:
-        deployments_count += len(provider.inventory.list_server_deployment(feed_id=feed.id))
-    num_deployment = provider.inventory._stats_available['num_deployment'](provider.inventory)
+        deployments_count += len(
+            provider.inventory.list_server_deployment(feed_id=feed.id)
+        )
+    num_deployment = provider.inventory._stats_available["num_deployment"](
+        provider.inventory
+    )
     assert num_deployment == deployments_count, "Number of deployments is wrong"
 
 
@@ -321,8 +352,12 @@ def test_num_datasource(provider):
     datasources_count = 0
     feeds = provider.inventory.list_feed()
     for feed in feeds:
-        datasources_count += len(provider.inventory.list_server_datasource(feed_id=feed.id))
-    num_datasource = provider.inventory._stats_available['num_datasource'](provider.inventory)
+        datasources_count += len(
+            provider.inventory.list_server_datasource(feed_id=feed.id)
+        )
+    num_datasource = provider.inventory._stats_available["num_datasource"](
+        provider.inventory
+    )
     assert num_datasource == datasources_count, "Number of datasources is wrong"
 
 
@@ -332,7 +367,9 @@ def test_num_messaging(provider):
     feeds = provider.inventory.list_feed()
     for feed in feeds:
         messagings_count += len(provider.inventory.list_messaging(feed_id=feed.id))
-    num_messaging = provider.inventory._stats_available['num_messaging'](provider.inventory)
+    num_messaging = provider.inventory._stats_available["num_messaging"](
+        provider.inventory
+    )
     assert num_messaging == messagings_count, "Number of messagings is wrong"
 
 

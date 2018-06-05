@@ -37,4 +37,3 @@ suds; python_version == '2.7'
 
 # lxml super SGML parser, needs libxml2-devel and libxslt-devel
 lxml
-

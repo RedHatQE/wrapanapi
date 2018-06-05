@@ -3,10 +3,9 @@ from .pod import Pod
 
 
 class Container(object):
-
     def __init__(self, provider, name, pod, image):
         if not isinstance(pod, Pod):
-            raise TypeError('pod argument should be an Pod instance')
+            raise TypeError("pod argument should be an Pod instance")
         self.provider = provider
         self.name = name
         self.pod = pod

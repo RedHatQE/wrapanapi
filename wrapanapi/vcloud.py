@@ -11,9 +11,18 @@ from .base import WrapanapiAPIBase
 class VmwareCloudSystem(WrapanapiAPIBase):
     """Client to VMware vCloud API"""
 
-    def __init__(self, hostname, username, organization, password, api_port, api_version, **kwargs):
+    def __init__(
+        self,
+        hostname,
+        username,
+        organization,
+        password,
+        api_port,
+        api_version,
+        **kwargs
+    ):
         super(VmwareCloudSystem, self).__init__(kwargs)
-        self.endpoint = 'https://{}:{}'.format(hostname, api_port)
+        self.endpoint = "https://{}:{}".format(hostname, api_port)
         self.username = username
         self.organization = organization
         self.password = password
@@ -24,9 +33,7 @@ class VmwareCloudSystem(WrapanapiAPIBase):
     def client(self):
         if self._client is None:
             self._client = Client(
-                self.endpoint,
-                api_version=self.api_version,
-                verify_ssl_certs=False,
+                self.endpoint, api_version=self.api_version, verify_ssl_certs=False
             )
             self.client.set_credentials(
                 BasicLoginCredentials(self.username, self.organization, self.password)
@@ -48,24 +55,20 @@ class VmwareCloudSystem(WrapanapiAPIBase):
         org_resource = client.get_org()
         org = Org(client, resource=org_resource)
 
-        stats = {
-            'num_availability_zone': 0,
-            'num_orchestration_stack': 0,
-            'num_vm': 0
-        }
+        stats = {"num_availability_zone": 0, "num_orchestration_stack": 0, "num_vm": 0}
 
         for vdc_info in org.list_vdcs():
-            stats['num_availability_zone'] += 1
-            vdc = VDC(client, resource=org.get_vdc(vdc_info['name']))
+            stats["num_availability_zone"] += 1
+            vdc = VDC(client, resource=org.get_vdc(vdc_info["name"]))
             for vapp_info in vdc.list_resources():
                 try:
-                    vapp_resource = vdc.get_vapp(vapp_info.get('name'))
+                    vapp_resource = vdc.get_vapp(vapp_info.get("name"))
                 except Exception:
                     continue  # not a vapp (probably vapp template or something)
 
                 vapp = VApp(client, resource=vapp_resource)
-                stats['num_orchestration_stack'] += 1
-                stats['num_vm'] += len(vapp.get_all_vms())
+                stats["num_orchestration_stack"] += 1
+                stats["num_vm"] += len(vapp.get_all_vms())
 
         return stats
 

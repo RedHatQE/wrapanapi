@@ -3,8 +3,8 @@ from wrapanapi.containers import ContainersResourceBase
 
 
 class Volume(ContainersResourceBase):
-    RESOURCE_TYPE = 'persistentvolume'
-    KIND = 'PersistentVolume'
+    RESOURCE_TYPE = "persistentvolume"
+    KIND = "PersistentVolume"
     CREATABLE = True
 
     def __init__(self, provider, name):
@@ -12,12 +12,13 @@ class Volume(ContainersResourceBase):
 
     def __repr__(self):
         return '<{} name="{}" capacity="{}">'.format(
-            self.__class__.__name__, self.name, self.capacity)
+            self.__class__.__name__, self.name, self.capacity
+        )
 
     @property
     def capacity(self):
-        return self.spec['capacity']['storage']
+        return self.spec["capacity"]["storage"]
 
     @property
     def accessmodes(self):
-        self.spec['accessModes']
+        self.spec["accessModes"]

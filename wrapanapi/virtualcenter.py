@@ -23,76 +23,81 @@ from pyVmomi import vim, vmodl
 from wait_for import TimedOutError, wait_for
 
 from .base import VMInfo, WrapanapiAPIBaseVM
-from .exceptions import (HostNotRemoved, VMCreationDateError,
-                         VMInstanceNotCloned, VMInstanceNotFound,
-                         VMInstanceNotSuspended, VMNotFoundViaIP)
+from .exceptions import (
+    HostNotRemoved,
+    VMCreationDateError,
+    VMInstanceNotCloned,
+    VMInstanceNotFound,
+    VMInstanceNotSuspended,
+    VMNotFoundViaIP,
+)
 
 SELECTION_SPECS = [
-    'resource_pool_traversal_spec',
-    'resource_pool_vm_traversal_spec',
-    'folder_traversal_spec',
-    'datacenter_host_traversal_spec',
-    'datacenter_vm_traversal_spec',
-    'compute_resource_rp_traversal_spec',
-    'compute_resource_host_traversal_spec',
-    'host_vm_traversal_spec',
-    'datacenter_datastore_traversal_spec'
+    "resource_pool_traversal_spec",
+    "resource_pool_vm_traversal_spec",
+    "folder_traversal_spec",
+    "datacenter_host_traversal_spec",
+    "datacenter_vm_traversal_spec",
+    "compute_resource_rp_traversal_spec",
+    "compute_resource_host_traversal_spec",
+    "host_vm_traversal_spec",
+    "datacenter_datastore_traversal_spec",
 ]
 TRAVERSAL_SPECS = [
     {
-        'name': 'resource_pool_traversal_spec',
-        'type': vim.ResourcePool,
-        'path': 'resourcePool',
-        'select_indices': [0, 1]
+        "name": "resource_pool_traversal_spec",
+        "type": vim.ResourcePool,
+        "path": "resourcePool",
+        "select_indices": [0, 1],
     },
     {
-        'name': 'resource_pool_vm_traversal_spec',
-        'type': vim.ResourcePool,
-        'path': 'vm',
-        'select_indices': []
+        "name": "resource_pool_vm_traversal_spec",
+        "type": vim.ResourcePool,
+        "path": "vm",
+        "select_indices": [],
     },
     {
-        'name': 'compute_resource_rp_traversal_spec',
-        'type': vim.ComputeResource,
-        'path': 'resourcePool',
-        'select_indices': [0, 1]
+        "name": "compute_resource_rp_traversal_spec",
+        "type": vim.ComputeResource,
+        "path": "resourcePool",
+        "select_indices": [0, 1],
     },
     {
-        'name': 'compute_resource_host_traversal_spec',
-        'type': vim.ComputeResource,
-        'path': 'host',
-        'select_indices': []
+        "name": "compute_resource_host_traversal_spec",
+        "type": vim.ComputeResource,
+        "path": "host",
+        "select_indices": [],
     },
     {
-        'name': 'datacenter_host_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'hostFolder',
-        'select_indices': [2]
+        "name": "datacenter_host_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "hostFolder",
+        "select_indices": [2],
     },
     {
-        'name': 'datacenter_datastore_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'datastoreFolder',
-        'select_indices': [2]
+        "name": "datacenter_datastore_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "datastoreFolder",
+        "select_indices": [2],
     },
     {
-        'name': 'datacenter_vm_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'vmFolder',
-        'select_indices': [2]
+        "name": "datacenter_vm_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "vmFolder",
+        "select_indices": [2],
     },
     {
-        'name': 'host_vm_traversal_spec',
-        'type': vim.HostSystem,
-        'path': 'vm',
-        'select_indices': [2]
+        "name": "host_vm_traversal_spec",
+        "type": vim.HostSystem,
+        "path": "vm",
+        "select_indices": [2],
     },
     {
-        'name': 'folder_traversal_spec',
-        'type': vim.Folder,
-        'path': 'childEntity',
-        'select_indices': [2, 3, 4, 5, 6, 7, 1, 8]
-    }
+        "name": "folder_traversal_spec",
+        "type": vim.Folder,
+        "path": "childEntity",
+        "select_indices": [2, 3, 4, 5, 6, 7, 1, 8],
+    },
 ]
 
 
@@ -100,14 +105,14 @@ def get_task_error_message(task):
     """Depending on the error type, a different attribute may contain the error message. This
     function will figure out the error message.
     """
-    if hasattr(task.info.error, 'message'):
+    if hasattr(task.info.error, "message"):
         message = str(task.info.error.message)
-    elif hasattr(task.info.error, 'localizedMessage'):
+    elif hasattr(task.info.error, "localizedMessage"):
         message = str(task.info.error.localizedMessage)
-    elif hasattr(task.info.error, 'msg'):
+    elif hasattr(task.info.error, "msg"):
         message = str(task.info.error.msg)
     else:
-        message = 'Unknown error type: {}'.format(task.info.error)
+        message = "Unknown error type: {}".format(task.info.error)
     return message
 
 
@@ -125,18 +130,19 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         https://developercenter.vmware.com/web/dp/doc/preview?id=155
 
     """
+
     _api = None
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_host': lambda self: len(self.list_host()),
-        'num_cluster': lambda self: len(self.list_cluster()),
-        'num_template': lambda self: len(self.list_template()),
-        'num_datastore': lambda self: len(self.list_datastore()),
+        "num_vm": lambda self: len(self.list_vm()),
+        "num_host": lambda self: len(self.list_host()),
+        "num_cluster": lambda self: len(self.list_cluster()),
+        "num_template": lambda self: len(self.list_template()),
+        "num_datastore": lambda self: len(self.list_datastore()),
     }
-    POWERED_ON = 'poweredOn'
-    POWERED_OFF = 'poweredOff'
-    SUSPENDED = 'suspended'
+    POWERED_ON = "poweredOn"
+    POWERED_OFF = "poweredOff"
+    SUSPENDED = "suspended"
 
     def __init__(self, hostname, username, password, **kwargs):
         super(VMWareSystem, self).__init__(kwargs)
@@ -151,6 +157,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         Send a 'current time' request to vCenter every 10 min as a
         connection keep-alive
         """
+
         def _keepalive():
             while True:
                 self.logger.debug(
@@ -176,7 +183,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 host=self.hostname,
                 user=self.username,
                 pwd=self.password,
-                sslContext=context
+                sslContext=context,
             )
         except Exception:
             self.logger.error("Failed to connect to vCenter")
@@ -186,8 +193,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         atexit.register(Disconnect, si)
 
         self.logger.info(
-            "Connected to vCenter host %s as user %s",
-            self.hostname, self.username
+            "Connected to vCenter host %s as user %s", self.hostname, self.username
         )
 
         self._start_keepalive()
@@ -216,7 +222,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def _get_obj_list(self, vimtype, folder=None):
         """Get a list of objects of type ``vimtype``"""
         folder = folder or self.content.rootFolder
-        container = self.content.viewManager.CreateContainerView(folder, [vimtype], True)
+        container = self.content.viewManager.CreateContainerView(
+            folder, [vimtype], True
+        )
         return container.view
 
     def _get_obj(self, vimtype, name, folder=None):
@@ -231,7 +239,8 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def _search_folders_for_vm(self, name):
         # First get all VM folders
         container = self.content.viewManager.CreateContainerView(
-            self.content.rootFolder, [vim.Folder], True)
+            self.content.rootFolder, [vim.Folder], True
+        )
         folders = container.view
         container.Destroy()
 
@@ -247,17 +256,21 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def _build_filter_spec(self, begin_entity, property_spec):
         """Build a search spec for full inventory traversal, adapted from psphere"""
         # Create selection specs
-        selection_specs = [vmodl.query.PropertyCollector.SelectionSpec(name=ss)
-                           for ss in SELECTION_SPECS]
+        selection_specs = [
+            vmodl.query.PropertyCollector.SelectionSpec(name=ss)
+            for ss in SELECTION_SPECS
+        ]
         # Create traversal specs
         traversal_specs = []
         for spec_values in TRAVERSAL_SPECS:
             spec = vmodl.query.PropertyCollector.TraversalSpec()
-            spec.name = spec_values['name']
-            spec.type = spec_values['type']
-            spec.path = spec_values['path']
-            if spec_values.get('select_indices'):
-                spec.selectSet = [selection_specs[i] for i in spec_values['select_indices']]
+            spec.name = spec_values["name"]
+            spec.type = spec_values["type"]
+            spec.path = spec_values["path"]
+            if spec_values.get("select_indices"):
+                spec.selectSet = [
+                    selection_specs[i] for i in spec_values["select_indices"]
+                ]
             traversal_specs.append(spec)
         # Create an object spec
         obj_spec = vmodl.query.PropertyCollector.ObjectSpec()
@@ -277,7 +290,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
              obj (pyVmomi.ManagedObject): The managed object to update, will be a specific subclass
         """
         # Set up the filter specs
-        property_spec = vmodl.query.PropertyCollector.PropertySpec(type=type(obj), all=True)
+        property_spec = vmodl.query.PropertyCollector.PropertySpec(
+            type=type(obj), all=True
+        )
         object_spec = vmodl.query.PropertyCollector.ObjectSpec(obj=obj)
         filter_spec = vmodl.query.PropertyCollector.FilterSpec()
         filter_spec.propSet = [property_spec]
@@ -287,7 +302,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         filter_ = property_collector.CreateFilter(filter_spec, True)
         update = property_collector.WaitForUpdates(None)
         if not update or not update.filterSet or not update.filterSet[0]:
-            self.logger.warning('No object found when updating %s', str(obj))
+            self.logger.warning("No object found when updating %s", str(obj))
             return
         if filter_:
             filter_.Destroy()
@@ -343,7 +358,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             string: pyVmomi.vim.TaskInfo.state value if the task is not queued/running/None
         """
         task = self._get_updated_obj(task)
-        if task.info.state not in ['queued', 'running', None]:
+        if task.info.state not in ["queued", "running", None]:
             return task.info.state
 
     def _task_status(self, task):
@@ -370,11 +385,11 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             return False
 
     def current_ip_address(self, vm_name):
-        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        ipv4_re = r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
         try:
             vm = self._get_vm(vm_name)
             ip_address = vm.summary.guest.ipAddress
-            if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
+            if not re.match(ipv4_re, ip_address) or ip_address == "127.0.0.1":
                 ip_address = None
             return ip_address
         except (AttributeError, TypeError):
@@ -391,9 +406,13 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         Returns: A string containing the first found IP that isn't the loopback device.
         """
         try:
-            ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
-                fail_condition=None, delay=5, num_sec=timeout,
-                message="get_ip_address from vsphere")
+            ip_address, tc = wait_for(
+                lambda: self.current_ip_address(vm_name),
+                fail_condition=None,
+                delay=5,
+                num_sec=timeout,
+                message="get_ip_address from vsphere",
+            )
         except TimedOutError:
             ip_address = None
         return ip_address
@@ -411,11 +430,17 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         # so we skip the network overhead of returning full managed objects
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template', 'config.uuid',
-            'runtime.connectionState']
+        property_spec.pathSet = [
+            "name",
+            "config.template",
+            "config.uuid",
+            "runtime.connectionState",
+        ]
         property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
-        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        object_contents = self.content.propertyCollector.RetrieveProperties(
+            specSet=[pfs]
+        )
 
         # Ensure get_template is either True or False to match the config.template property
         get_template = bool(get_template)
@@ -428,24 +453,27 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             # object already "knows" the answer in its cached object
             # content. So we just pull the value straight out of the cache.
             vm_props = {p.name: p.val for p in object_content.propSet}
-            if vm_props.get('config.template') == get_template:
-                if (vm_props.get('runtime.connectionState') == "inaccessible" and
-                        inaccessible) or vm_props.get(
-                            'runtime.connectionState') != "inaccessible":
-                    obj_list.append(vm_props['name'])
+            if vm_props.get("config.template") == get_template:
+                if (
+                    vm_props.get("runtime.connectionState") == "inaccessible"
+                    and inaccessible
+                ) or vm_props.get("runtime.connectionState") != "inaccessible":
+                    obj_list.append(vm_props["name"])
         return obj_list
 
     def all_vms(self):
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template']
+        property_spec.pathSet = ["name", "config.template"]
         property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
-        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        object_contents = self.content.propertyCollector.RetrieveProperties(
+            specSet=[pfs]
+        )
         result = []
         for vm in object_contents:
             vm_props = {p.name: p.val for p in vm.propSet}
-            if vm_props.get('config.template'):
+            if vm_props.get("config.template"):
                 continue
             try:
                 ip = str(vm.obj.summary.guest.ipAddress)
@@ -495,11 +523,12 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 except Exception:
                     pass
         if boot_times:
-            newest_boot_time = sorted(boot_times.items(), key=operator.itemgetter(1),
-                                      reverse=True)[0]
+            newest_boot_time = sorted(
+                boot_times.items(), key=operator.itemgetter(1), reverse=True
+            )[0]
             return newest_boot_time[0]
         else:
-            raise VMNotFoundViaIP('The requested IP is not known as a VM')
+            raise VMNotFoundViaIP("The requested IP is not known as a VM")
 
     def start_vm(self, vm_name):
         self.wait_vm_steady(vm_name)
@@ -522,9 +551,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             self.logger.info(" Stopping vSphere VM %s" % vm_name)
             vm = self._get_vm(vm_name)
             if self.is_vm_suspended(vm_name):
-                self.logger.info(
-                    " Resuming suspended VM %s before stopping." % vm_name
-                )
+                self.logger.info(" Resuming suspended VM %s before stopping." % vm_name)
                 vm.PowerOnVM_Task()
                 self.wait_vm_running(vm_name)
             vm.PowerOffVM_Task()
@@ -540,8 +567,8 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         task = vm.Destroy_Task()
 
         try:
-            wait_for(lambda: self._task_status(task) == 'success', delay=3, num_sec=600)
-            return self._task_status(task) == 'success'
+            wait_for(lambda: self._task_status(task) == "success", delay=3, num_sec=600)
+            return self._task_status(task) == "success"
         except TimedOutError:
             return False
 
@@ -550,7 +577,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         return host.summary.runtime.connectionState == "connected"
 
     def create_vm(self, vm_name):
-        raise NotImplementedError('This function has not yet been implemented.')
+        raise NotImplementedError("This function has not yet been implemented.")
 
     def restart_vm(self, vm_name):
         self.logger.info(" Restarting vSphere VM %s" % vm_name)
@@ -563,7 +590,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         return self._get_list_vms(get_template=True)
 
     def list_flavor(self):
-        raise NotImplementedError('This function is not supported on this platform.')
+        raise NotImplementedError("This function is not supported on this platform.")
 
     def list_host(self):
         return [str(h.name) for h in self._get_obj_list(vim.HostSystem)]
@@ -584,7 +611,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
     def info(self):
         # NOTE: Can't find these two methods in either psphere or suds
         # return '{} {}'.format(self.api.get_server_type(), self.api.get_api_version())
-        return '{} {}'.format(self.content.about.apiType, self.content.about.apiVersion)
+        return "{} {}".format(self.content.about.apiType, self.content.about.apiVersion)
 
     def connect(self):
         pass
@@ -607,9 +634,13 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
         filter_spec = vim.event.EventFilterSpec(
             entity=vim.event.EventFilterSpec.ByEntity(
-                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
-            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
-        collector = self.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
+                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self
+            ),
+            eventTypeId=["VmDeployedEvent", "VmCreatedEvent"],
+        )
+        collector = self.content.eventManager.CreateCollectorForEvents(
+            filter=filter_spec
+        )
         collector.SetCollectorPageSize(1000)  # max allowed value
         events = collector.latestPage
         collector.DestroyCollector()  # limited number of collectors allowed per client
@@ -620,7 +651,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             # no events found for VM, fallback to last boot time
             creation_time = vm.runtime.bootTime
             if not creation_time:
-                raise VMCreationDateError('Could not find a creation date for {}'.format(vm_name))
+                raise VMCreationDateError(
+                    "Could not find a creation date for {}".format(vm_name)
+                )
         # localize and make tz-naive
         return creation_time.astimezone(pytz.UTC)
 
@@ -630,9 +663,11 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
     def get_vm_datastore_path(self, vm_name, vm_config_datastore):
         vm = self._get_vm(vm_name)
-        datastore_url = [str(datastore.url)
-                         for datastore in vm.config.datastoreUrl
-                         if datastore.name in vm_config_datastore]
+        datastore_url = [
+            str(datastore.url)
+            for datastore in vm.config.datastoreUrl
+            if datastore.name in vm_config_datastore
+        ]
         return datastore_url.pop()
 
     def get_vm_config_files_path(self, vm_name):
@@ -641,7 +676,11 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         return str(vmfilespath)
 
     def in_steady_state(self, vm_name):
-        return self.vm_status(vm_name) in {self.POWERED_ON, self.POWERED_OFF, self.SUSPENDED}
+        return self.vm_status(vm_name) in {
+            self.POWERED_ON,
+            self.POWERED_OFF,
+            self.SUSPENDED,
+        }
 
     def is_vm_running(self, vm_name):
         return self.vm_status(vm_name) == self.POWERED_ON
@@ -661,7 +700,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         return self.vm_status(vm_name) == self.SUSPENDED
 
     def wait_vm_suspended(self, vm_name, num_sec=360):
-        self.logger.info(" Waiting for vSphere VM %s to change status to SUSPENDED" % vm_name)
+        self.logger.info(
+            " Waiting for vSphere VM %s to change status to SUSPENDED" % vm_name
+        )
         wait_for(self.is_vm_suspended, [vm_name], num_sec=num_sec)
 
     def suspend_vm(self, vm_name):
@@ -691,25 +732,46 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
     @staticmethod
     def _progress_log_callback(logger, source, destination, progress):
-        logger.info("Provisioning progress {}->{}: {}".format(
-            source, destination, str(progress)))
+        logger.info(
+            "Provisioning progress {}->{}: {}".format(
+                source, destination, str(progress)
+            )
+        )
 
     def _pick_datastore(self, allowed_datastores):
         # Pick a datastore by space
         possible_datastores = [
-            ds for ds in self._get_obj_list(vim.Datastore)
-            if ds.name in allowed_datastores and ds.summary.accessible and
-            ds.summary.multipleHostAccess and ds.overallStatus != "red"]
+            ds
+            for ds in self._get_obj_list(vim.Datastore)
+            if ds.name in allowed_datastores
+            and ds.summary.accessible
+            and ds.summary.multipleHostAccess
+            and ds.overallStatus != "red"
+        ]
         possible_datastores.sort(
             key=lambda ds: float(ds.summary.freeSpace) / float(ds.summary.capacity),
-            reverse=True)
+            reverse=True,
+        )
         if not possible_datastores:
             raise Exception("No possible datastores!")
         return possible_datastores[0]
 
-    def clone_vm(self, source, destination, resourcepool=None, datastore=None, power_on=True,
-                 sparse=False, template=False, provision_timeout=1800, progress_callback=None,
-                 allowed_datastores=None, cpu=None, ram=None, **kwargs):
+    def clone_vm(
+        self,
+        source,
+        destination,
+        resourcepool=None,
+        datastore=None,
+        power_on=True,
+        sparse=False,
+        template=False,
+        provision_timeout=1800,
+        progress_callback=None,
+        allowed_datastores=None,
+        cpu=None,
+        ram=None,
+        **kwargs
+    ):
         """Clone a VM"""
         try:
             try:
@@ -722,8 +784,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             pass
 
         if progress_callback is None:
-            progress_callback = partial(self._progress_log_callback, self.logger,
-                source, destination)
+            progress_callback = partial(
+                self._progress_log_callback, self.logger, source, destination
+            )
 
         source_template = self._get_vm(source)
 
@@ -746,7 +809,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
                 else:
                     vm_reloc_spec.datastore = datastores
         else:
-            raise NotImplementedError("{} not supported for datastore".format(datastore))
+            raise NotImplementedError(
+                "{} not supported for datastore".format(datastore)
+            )
         progress_callback("Picked datastore `{}`".format(vm_reloc_spec.datastore.name))
 
         # RESOURCE POOL
@@ -778,12 +843,19 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             folder = source_template.parent
         progress_callback("Picked folder `{}`".format(folder.name))
 
-        task = source_template.CloneVM_Task(folder=folder, name=destination, spec=vm_clone_spec)
+        task = source_template.CloneVM_Task(
+            folder=folder, name=destination, spec=vm_clone_spec
+        )
 
         def _check(store=[task]):
             try:
-                if hasattr(store[0].info, 'progress') and store[0].info.progress is not None:
-                    progress_callback("{}/{}%".format(store[0].info.state, store[0].info.progress))
+                if (
+                    hasattr(store[0].info, "progress")
+                    and store[0].info.progress is not None
+                ):
+                    progress_callback(
+                        "{}/{}%".format(store[0].info.state, store[0].info.progress)
+                    )
                 else:
                     progress_callback("{}".format(store[0].info.state))
             except AttributeError:
@@ -796,8 +868,8 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
         wait_for(_check, num_sec=provision_timeout, delay=4)
 
-        if task.info.state != 'success':
-            self.logger.error('Clone VM failed: %s', get_task_error_message(task))
+        if task.info.state != "success":
+            self.logger.error("Clone VM failed: %s", get_task_error_message(task))
             raise VMInstanceNotCloned(source)
         else:
             return destination
@@ -822,21 +894,21 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         task = host.DisconnectHost_Task()
         status, t = wait_for(self._task_wait, [task])
 
-        if status != 'success':
-            raise HostNotRemoved("Host {} not removed: {}".format(
-                host_name, get_task_error_message(task)))
+        if status != "success":
+            raise HostNotRemoved(
+                "Host {} not removed: {}".format(
+                    host_name, get_task_error_message(task)
+                )
+            )
 
         task = host.Destroy_Task()
         status, t = wait_for(self._task_wait, [task], fail_condition=None)
 
-        return status == 'success'
+        return status == "success"
 
     def vm_hardware_configuration(self, vm_name):
         vm = self._get_vm(vm_name)
-        return {
-            'ram': vm.config.hardware.memoryMB,
-            'cpu': vm.config.hardware.numCPU,
-        }
+        return {"ram": vm.config.hardware.memoryMB, "cpu": vm.config.hardware.numCPU}
 
     def usage_and_quota(self):
         installed_ram = 0
@@ -849,28 +921,30 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template']
-        property_spec.type = 'VirtualMachine'
+        property_spec.pathSet = ["name", "config.template"]
+        property_spec.type = "VirtualMachine"
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
-        object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
+        object_contents = self.content.propertyCollector.RetrieveProperties(
+            specSet=[pfs]
+        )
         for vm in object_contents:
             vm_props = {p.name: p.val for p in vm.propSet}
-            if vm_props.get('config.template'):
+            if vm_props.get("config.template"):
                 continue
-            if vm.obj.summary.runtime.powerState.lower() != 'poweredon':
+            if vm.obj.summary.runtime.powerState.lower() != "poweredon":
                 continue
             used_ram += vm.obj.summary.config.memorySizeMB
             used_cpu += vm.obj.summary.config.numCpu
 
         return {
             # RAM
-            'ram_used': used_ram,
-            'ram_total': installed_ram,
-            'ram_limit': None,
+            "ram_used": used_ram,
+            "ram_total": installed_ram,
+            "ram_limit": None,
             # CPU
-            'cpu_used': used_cpu,
-            'cpu_total': installed_cpu,
-            'cpu_limit': None,
+            "cpu_used": used_cpu,
+            "cpu_total": installed_cpu,
+            "cpu_limit": None,
         }
 
     def add_disk_to_vm(self, vm_name, capacity_in_kb, provision_type=None, unit=None):
@@ -894,7 +968,9 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             (bool, task_result): Tuple containing boolean True if task ended in success,
                                  and the contents of task.result or task.error depending on state
         """
-        provision_type = provision_type if provision_type in ['thick', 'thin'] else 'thin'
+        provision_type = (
+            provision_type if provision_type in ["thick", "thin"] else "thin"
+        )
         vm = self._get_vm(vm_name=vm_name)
 
         # if passed unit matches existing device unit, match these values too
@@ -902,8 +978,10 @@ class VMWareSystem(WrapanapiAPIBaseVM):
         controller_key = None
         unit_number = None
         virtual_disk_devices = [
-            device for device
-            in vm.config.hardware.device if isinstance(device, vim.vm.device.VirtualDisk)]
+            device
+            for device in vm.config.hardware.device
+            if isinstance(device, vim.vm.device.VirtualDisk)
+        ]
         for dev in virtual_disk_devices:
             if unit == int(dev.unitNumber):
                 # user specified unit matching existing disk, match key too
@@ -914,12 +992,12 @@ class VMWareSystem(WrapanapiAPIBaseVM):
             controller_key = dev.controllerKey
 
         if not (controller_key or unit_number):
-            raise ValueError('Could not identify VirtualDisk device on given vm')
+            raise ValueError("Could not identify VirtualDisk device on given vm")
 
         # create disk backing specification
         backing_spec = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
-        backing_spec.diskMode = 'persistent'
-        backing_spec.thinProvisioned = (provision_type == 'thin')
+        backing_spec.diskMode = "persistent"
+        backing_spec.thinProvisioned = provision_type == "thin"
 
         # create disk specification, attaching backing
         disk_spec = vim.vm.device.VirtualDisk()
@@ -932,7 +1010,7 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
         # create device specification, attaching disk
         device_spec = vim.vm.device.VirtualDeviceSpec()
-        device_spec.fileOperation = 'create'
+        device_spec.fileOperation = "create"
         device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
         device_spec.device = disk_spec
 
@@ -945,16 +1023,16 @@ class VMWareSystem(WrapanapiAPIBaseVM):
 
         def task_complete(task_obj):
             status = task_obj.info.state
-            return status not in ['running', 'queued']
+            return status not in ["running", "queued"]
 
         try:
             wait_for(task_complete, [task])
         except TimedOutError:
-            self.logger.exception('Task did not go to success state: {}'.format(task))
+            self.logger.exception("Task did not go to success state: {}".format(task))
         finally:
-            if task.info.state == 'success':
+            if task.info.state == "success":
                 result = (True, task.info.result)
-            elif task.info.state == 'error':
+            elif task.info.state == "error":
                 result = (False, task.info.error)
             else:  # shouldn't happen
                 result = (None, None)

@@ -25,16 +25,20 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     It still has some drawback, the main one is that pywinrm does not support domains with simple
     auth mode so I have to do the connection manually in the script which seems to be VERY slow.
     """
+
     STATE_RUNNING = "Running"
-    STATES_STOPPED = {"PowerOff", "Stopped"}  # TODO:  "Stopped" when using shutdown. Differ it?
+    STATES_STOPPED = {
+        "PowerOff",
+        "Stopped",
+    }  # TODO:  "Stopped" when using shutdown. Differ it?
     STATE_PAUSED = "Paused"
     STATES_STEADY = {STATE_RUNNING, STATE_PAUSED}
     STATES_STEADY.update(STATES_STOPPED)
-    STATES_FAILED = {'Creation Failed'}
+    STATES_FAILED = {"Creation Failed"}
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vm()),
-        'num_template': lambda self: len(self.list_template()),
+        "num_vm": lambda self: len(self.list_vm()),
+        "num_template": lambda self: len(self.list_template()),
     }
 
     def __init__(self, **kwargs):
@@ -54,11 +58,15 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         we need to create our own authentication object (PSCredential) which will provide the
         domain. Then it works. Big drawback is speed of this solution.
         """
-        return dedent("""
+        return dedent(
+            """
         $secpasswd = ConvertTo-SecureString "{}" -AsPlainText -Force
         $mycreds = New-Object System.Management.Automation.PSCredential ("{}\\{}", $secpasswd)
         $scvmm_server = Get-SCVMMServer -Computername localhost -Credential $mycreds
-        """.format(self.password, self.domain, self.user))
+        """.format(
+                self.password, self.domain, self.user
+            )
+        )
 
     def run_script(self, script):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
@@ -66,15 +74,15 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         self.logger.debug(" Running PowerShell script:\n{}\n".format(script))
         result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
         if result.status_code != 0:
-            raise self.PowerShellScriptError("Script returned {}!: {}"
-                .format(result.status_code, result.std_err))
+            raise self.PowerShellScriptError(
+                "Script returned {}!: {}".format(result.status_code, result.std_err)
+            )
         return result.std_out.strip()
 
     def _do_vm(self, vm_name, action, params=""):
         self.logger.info(" {} {} SCVMM VM `{}`".format(action, params, vm_name))
-        self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | {}-SCVirtualMachine {}"
-            .format(vm_name, action, params).strip())
+        script = 'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server | {}-SCVirtualMachine {}'
+        self.run_script(script.format(vm_name, action, params).strip())
 
     def start_vm(self, vm_name, force_start=False):
         """Start or resume virtual machine.
@@ -94,7 +102,8 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         wait_for(
             lambda: self.is_vm_running(vm_name),
             message="SCVMM VM {} be running.".format(vm_name),
-            num_sec=num_sec)
+            num_sec=num_sec,
+        )
 
     def stop_vm(self, vm_name, shutdown=False):
         self._do_vm(vm_name, "Stop", "-Force" if not shutdown else "")
@@ -103,26 +112,35 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         wait_for(
             lambda: self.is_vm_stopped(vm_name),
             message="SCVMM VM {} be stopped.".format(vm_name),
-            num_sec=num_sec)
+            num_sec=num_sec,
+        )
 
     def create_vm(self, vm_name):
-        raise NotImplementedError('create_vm not implemented.')
+        raise NotImplementedError("create_vm not implemented.")
 
     def rename_vm(self, vm_name, vm_new_name):
-        if not self.is_vm_stopped(vm_name) and self.vm_status(vm_name) not in self.STATES_FAILED:
+        if (
+            not self.is_vm_stopped(vm_name)
+            and self.vm_status(vm_name) not in self.STATES_FAILED
+        ):
             self.stop_vm(vm_name)
             self.wait_vm_stopped(vm_name)
         script = """
             Get-SCVirtualMachine -Name "{vm_name}" | Set-SCVirtualMachine -Name "{vm_new_name}"
-        """.format(vm_name=vm_name, vm_new_name=vm_new_name)
-        self.logger.info(" Renaming SCVMM VM `{}` to  `{}`"
-            .format(vm_name, vm_new_name))
+        """.format(
+            vm_name=vm_name, vm_new_name=vm_new_name
+        )
+        self.logger.info(
+            " Renaming SCVMM VM `{}` to  `{}`".format(vm_name, vm_new_name)
+        )
         self.run_script(script)
 
     def delete_vm(self, vm_name):
         try:
-            if not self.is_vm_stopped(vm_name) and self.vm_status(
-                    vm_name) not in self.STATES_FAILED:
+            if (
+                not self.is_vm_stopped(vm_name)
+                and self.vm_status(vm_name) not in self.STATES_FAILED
+            ):
                 self.stop_vm(vm_name)
                 self.wait_vm_stopped(vm_name)
         except Exception as e:
@@ -131,7 +149,9 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             script = """
                 $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
                 Remove-SCVirtualMachine -VM $VM
-            """.format(vm_name=vm_name)
+            """.format(
+                vm_name=vm_name
+            )
             self.logger.info("Deleting SCVMM VM {}".format(vm_name))
             self.run_script(script)
 
@@ -140,7 +160,9 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             script = """
                 $Template = Get-SCVMTemplate -Name \"{template}\" -VMMServer $scvmm_server
                 Remove-SCVMTemplate -VMTemplate $Template -Force
-            """.format(template=template)
+            """.format(
+                template=template
+            )
             self.logger.info("Removing SCVMM VM Template {}".format(template))
             self.run_script(script)
             self.update_scvmm_library()
@@ -153,23 +175,27 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     def list_vm(self, **kwargs):
         data = self.run_script(
             "Get-SCVirtualMachine -All -VMMServer $scvmm_server |"
-            "Select name | ConvertTo-Xml -as String")
+            "Select name | ConvertTo-Xml -as String"
+        )
         return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_hosts(self, **kwargs):
         data = self.run_script(
-            "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String")
+            "Get-SCVMHost -VMMServer $scvmm_server | ConvertTo-Xml -as String"
+        )
         return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_cluster(self, **kwargs):
         """List all clusters' names."""
         data = self.run_script(
-            "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
+            "Get-SCVMHostCluster -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String"
+        )
         return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def all_vms(self, **kwargs):
         vm_list = []
-        data = self.run_script("""
+        data = self.run_script(
+            """
             $outputCollection = @()
             $VMs = Get-SCVirtualMachine -All -VMMServer $scvmm_server |
             Select VMId, Name, StatusString
@@ -191,43 +217,50 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
                 $outputCollection += $outObj
             }
             $outputCollection | ConvertTo-Xml -as String
-            """)
+            """
+        )
         vms = etree.fromstring(data)
         for vm in vms:
-            VMId = vm.xpath("./Property[@Name='VMId']/text()")[0],
-            Name = vm.xpath("./Property[@Name='Name']/text()")[0],
-            Status = vm.xpath("./Property[@Name='Status']/text()")[0],
+            VMId = (vm.xpath("./Property[@Name='VMId']/text()")[0],)
+            Name = (vm.xpath("./Property[@Name='Name']/text()")[0],)
+            Status = (vm.xpath("./Property[@Name='Status']/text()")[0],)
             IPv4 = vm.xpath("./Property[@Name='IPv4']/text()")[0]
             vm_data = (
-                None if VMId == 'None' else VMId[0],
+                None if VMId == "None" else VMId[0],
                 Name[0],
                 Status[0],
-                None if IPv4 == 'None' else IPv4)
+                None if IPv4 == "None" else IPv4,
+            )
             vm_list.append(VMInfo(*vm_data))
         return vm_list
 
     def list_template(self):
         data = self.run_script(
-            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String")
+            "Get-SCVMTemplate -VMMServer $scvmm_server | Select name | ConvertTo-Xml -as String"
+        )
         return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
+        raise NotImplementedError("list_flavor not implemented.")
 
     def list_network(self):
         data = self.run_script(
-            "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String")
-        return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='Name']/text()")
+            "Get-SCLogicalNetwork -VMMServer $scvmm_server | ConvertTo-Xml -as String"
+        )
+        return etree.fromstring(data).xpath("./Object/Property[@Name='Name']/text()")
 
     def vm_creation_time(self, vm_name):
         xml = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\""
-            " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name))
+            'Get-SCVirtualMachine -Name "{}"'
+            " -VMMServer $scvmm_server | ConvertTo-Xml -as String".format(vm_name)
+        )
         xml_time = etree.fromstring(xml).xpath(
-            "./Object/Property[@Name='CreationTime']/text()")[0]
+            "./Object/Property[@Name='CreationTime']/text()"
+        )[0]
         creation_time = datetime.strptime(xml_time, "%m/%d/%Y %I:%M:%S %p")
-        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
+        return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(
+            pytz.UTC
+        )
 
     def info(self, vm_name):
         pass
@@ -238,20 +271,28 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             $vm = Get-SCVirtualMachine -Name \"{}\"
             $conf = @{{"ram"=$vm.Memory; "cpu"=$vm.CPUCount}}
             $conf|ConvertTo-Json -Depth 3 -Compress
-            """.format(vm_name))
+            """.format(
+                vm_name
+            )
+        )
         result = json.loads(data)
-        return {str(key): (str(val) if isinstance(val, six.string_types) else val) for key, val in
-                result.items()}
+        return {
+            str(key): (str(val) if isinstance(val, six.string_types) else val)
+            for key, val in result.items()
+        }
 
     def disconnect(self):
         pass
 
     def vm_status(self, vm_name):
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
-            .format(vm_name))
+        script = (
+            'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server '
+            "| ConvertTo-Xml -as String"
+        )
+        data = self.run_script(script.format(vm_name))
         return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='StatusString']/text()")[0]
+            "./Object/Property[@Name='StatusString']/text()"
+        )[0]
 
     def is_vm_running(self, vm_name):
         return self.vm_status(vm_name) == self.STATE_RUNNING
@@ -272,37 +313,44 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         wait_for(
             lambda: self.is_vm_suspended(vm_name),
             message="SCVMM VM {} suspended.".format(vm_name),
-
-            num_sec=num_sec)
+            num_sec=num_sec,
+        )
 
     def clone_vm(self, vm_source, vm_host, path, vm_name):
         script = """
         $vm_new = Get-SCVirtualMachine -Name "{vm_source}" -VMMServer $scvmm_server
         $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
         New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}" -StartVM
-        """.format(vm_name=vm_name, vm_source=vm_source, vm_host=vm_host, path=path)
-        self.logger.info(" Deploying SCVMM VM `{}` from Clone of `{}`"
-            .format(vm_name, vm_source))
+        """.format(
+            vm_name=vm_name, vm_source=vm_source, vm_host=vm_host, path=path
+        )
+        self.logger.info(
+            " Deploying SCVMM VM `{}` from Clone of `{}`".format(vm_name, vm_source)
+        )
         self.run_script(script)
 
     def does_vm_exist(self, vm_name):
-        result = self.run_script("Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server"
-            .format(vm_name)).strip()
+        result = self.run_script(
+            'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server'.format(vm_name)
+        ).strip()
         return bool(result)
 
     def does_template_exist(self, template):
-        result = self.run_script("Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server"
-            .format(template)).strip()
+        result = self.run_script(
+            'Get-SCVMTemplate -Name "{}" -VMMServer $scvmm_server'.format(template)
+        ).strip()
         return bool(result)
 
     def deploy_template(self, template, host_group, vm_name=None, **kwargs):
         if not self.does_template_exist(template):
             self.logger.warn("Template {} does not exist".format(template))
-            raise self.PowerShellScriptError("Template {} does not exist".format(template))
+            raise self.PowerShellScriptError(
+                "Template {} does not exist".format(template)
+            )
         else:
-            timeout = kwargs.pop('timeout', 900)
-            vm_cpu = kwargs.get('cpu', 0)
-            vm_ram = kwargs.get('ram', 0)
+            timeout = kwargs.pop("timeout", 900)
+            vm_cpu = kwargs.get("cpu", 0)
+            vm_ram = kwargs.get("ram", 0)
             script = """
                 $tpl = Get-SCVMTemplate -Name "{template}" -VMMServer $scvmm_server
                 $vm_hg = Get-SCVMHostGroup -Name "{host_group}" -VMMServer $scvmm_server
@@ -310,15 +358,17 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
                 Update-SCVMConfiguration -VMConfiguration $vmc
                 New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
             """.format(
-                template=template,
-                vm_name=vm_name,
-                host_group=host_group)
+                template=template, vm_name=vm_name, host_group=host_group
+            )
             if vm_cpu:
                 script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
             if vm_ram:
                 script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
-            self.logger.info(" Deploying SCVMM VM `{}` from template `{}` on host group `{}`"
-                .format(vm_name, template, host_group))
+            self.logger.info(
+                " Deploying SCVMM VM `{}` from template `{}` on host group `{}`".format(
+                    vm_name, template, host_group
+                )
+            )
             self.run_script(script)
             self.enable_virtual_services(vm_name)
             self.start_vm(vm_name)
@@ -335,7 +385,9 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {{
              Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }}
         Read-SCVirtualMachine -VM $vm
-         """.format(user=self.user, password=self.password, vm_name=vm_name)
+         """.format(
+            user=self.user, password=self.password, vm_name=vm_name
+        )
         self.run_script(script)
 
     def update_scvmm_virtualmachine(self, vm_name):
@@ -343,18 +395,25 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         script = """
             $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
             Read-SCVirtualMachine -VM $vm
-         """.format(vm_name=vm_name)
-        self.logger.info("Updating SCVMM VM \"{vm_name}\" using Read-SCVirtualMachine"
-            .format(vm_name=vm_name))
+         """.format(
+            vm_name=vm_name
+        )
+        self.logger.info(
+            'Updating SCVMM VM "{vm_name}" using Read-SCVirtualMachine'.format(
+                vm_name=vm_name
+            )
+        )
         self.run_script(script)
 
     def update_scvmm_vmhost(self, host):
         # This forces SCVMM to update VM properties on the host if Host has lost some VMs
-        self.logger.info("Updating \"{}\" Host using Read-SCVirtualMachine".format(host))
+        self.logger.info('Updating "{}" Host using Read-SCVirtualMachine'.format(host))
         script = """
             $sc_host = Get-SCVMHost -VMMServer $scvmm_server
             Read-SCVirtualMachine -VMHost \"{}\"
-        """.format(host)
+        """.format(
+            host
+        )
         self.run_script(script)
 
     def update_scvmm_library(self):
@@ -371,9 +430,14 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         script = """
         $VM = Get-SCVirtualMachine -Name \"{vm_name}\" -VMMServer $scvmm_server
         New-SCVMTemplate -Name \"{vm_name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
-        """.format(vm_name=vm_name, ls=library, lp=library_share)
-        self.logger.info("Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl"
-            .format(vm_name=vm_name))
+        """.format(
+            vm_name=vm_name, ls=library, lp=library_share
+        )
+        self.logger.info(
+            "Creating SCVMM Template `{vm_name}` from VM `{vm_name}`-tpl".format(
+                vm_name=vm_name
+            )
+        )
         self.run_script(script)
         self.update_scvmm_library()
 
@@ -386,22 +450,23 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
 
     def current_ip_address(self, vm_name):
         data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server |"
+            'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server |'
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
-            "ft -HideTableHeaders".format(vm_name))
-        return data.translate(None, '{}')
+            "ft -HideTableHeaders".format(vm_name)
+        )
+        return data.translate(None, "{}")
 
     def get_vms_vmhost(self, vm_name):
         data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server|"
-            "select VmHost | ConvertTo-Xml -as String".format(vm_name))
-        return etree.fromstring(data).xpath(
-            "./Object/Property[@Name='VMHost']/text()")
+            'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server|'
+            "select VmHost | ConvertTo-Xml -as String".format(vm_name)
+        )
+        return etree.fromstring(data).xpath("./Object/Property[@Name='VMHost']/text()")
 
     def get_ip_address(self, vm_name, **kwargs):
         # Forcing an update to account for any delayed status changes
         self.update_scvmm_virtualmachine(vm_name)
-        if not re.findall(r'[0-9]+(?:.[0-9]+){3}', self.current_ip_address(vm_name)):
+        if not re.findall(r"[0-9]+(?:.[0-9]+){3}", self.current_ip_address(vm_name)):
             return None
         return self.current_ip_address(vm_name)
 
@@ -414,7 +479,9 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             $VM = Get-SCVirtualMachine -Name "{}"
             $DVDDrive = Get-SCVirtualDVDDrive -VM $VM
             $DVDDrive[0] | Remove-SCVirtualDVDDrive
-        """.format(vm_name)
+        """.format(
+            vm_name
+        )
         while self.data(vm_name).VirtualDVDDrives is not None:
             self.run_script(script)
             number_dvds_disconnected += 1
@@ -422,9 +489,11 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
 
     def data(self, vm_name):
         """Returns detailed informations about SCVMM VM"""
-        data = self.run_script(
-            "Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | ConvertTo-Xml -as String"
-            .format(vm_name))
+        script = (
+            'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server '
+            "| ConvertTo-Xml -as String"
+        )
+        data = self.run_script(script.format(vm_name))
         return self.SCVMMDataHolderDict(etree.fromstring(data).xpath("./Object")[0])
 
     ##

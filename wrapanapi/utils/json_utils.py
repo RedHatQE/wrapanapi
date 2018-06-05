@@ -4,23 +4,17 @@ import six
 
 
 def json_load_byteified(file_handle):
-    return _byteify(
-        json.load(file_handle, object_hook=_byteify),
-        ignore_dicts=True
-    )
+    return _byteify(json.load(file_handle, object_hook=_byteify), ignore_dicts=True)
 
 
 def json_loads_byteified(json_text):
-    return _byteify(
-        json.loads(json_text, object_hook=_byteify),
-        ignore_dicts=True
-    )
+    return _byteify(json.loads(json_text, object_hook=_byteify), ignore_dicts=True)
 
 
 def _byteify(data, ignore_dicts=False):
     # if this is a unicode string, return its string representation
     if isinstance(data, six.text_type):
-        return data.encode('utf-8')
+        return data.encode("utf-8")
     # if this is a list of values, return list of byteified values
     if isinstance(data, list):
         return [_byteify(item, ignore_dicts=True) for item in data]
