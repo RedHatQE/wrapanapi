@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 import dateparser
 from ast import literal_eval
-from inspect import getmro
+import six
 
 
 def _try_parse_datetime(time_string):
@@ -23,7 +23,7 @@ def _eval(text_value):
     for eval_ in evaluators:
         try:
             return eval_(text_value)
-        except:
+        except Exception:
             pass
     return text_value
 
@@ -37,8 +37,8 @@ def eval_strings(content):
             * content: list or tuple or any iterable array
                        representing the json content.
     """
-    for i in (content if dict in getmro(type(content)) else xrange(len(content))):
-        if basestring in getmro(type(content[i])):
+    for i in (content if isinstance(content, dict) else range(len(content))):
+        if isinstance(content[i], six.string_types):
             content[i] = _eval(content[i])
         elif hasattr(content[i], '__iter__'):
             content[i] = eval_strings(content[i])

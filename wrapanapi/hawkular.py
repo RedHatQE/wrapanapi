@@ -1059,7 +1059,7 @@ class HawkularInventoryInMetrics(HawkularService):
                                                 CanonicalPath(
                                                     resource_j['data']['resourceTypePath']),
                                                 data_value)
-                except:
+                except Exception:
                     raise KeyError('Resource data not found for resource {} in feed '.format(
                         resource_id, feed_id))
         return None
@@ -1116,7 +1116,7 @@ class HawkularInventoryInMetrics(HawkularService):
         if include_data:
             try:
                 data_value = child_j['children']['dataEntity'][0]['data']['value']
-            except:
+            except Exception:
                 raise KeyError('Data value not found for {}'.format(child_j))
         return data_value
 

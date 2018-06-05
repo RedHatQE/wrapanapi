@@ -11,6 +11,7 @@ from functools import partial
 import json
 import time
 import pytz
+import six
 from cinderclient.v2 import client as cinderclient
 from cinderclient import exceptions as cinder_exceptions
 from heatclient import client as heat_client
@@ -896,7 +897,7 @@ class OpenstackSystem(WrapanapiAPIBaseVM):
     def set_meta_value(self, instance, key, value):
         instance = self._instance_or_name(instance)
         instance.manager.set_meta_item(
-            instance, key, value if isinstance(value, basestring) else json.dumps(value))
+            instance, key, value if isinstance(value, six.string_types) else json.dumps(value))
 
     def get_meta_value(self, instance, key):
         instance = self._instance_or_name(instance)

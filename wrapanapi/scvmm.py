@@ -11,7 +11,7 @@ import tzlocal
 import pytz
 from contextlib import contextmanager
 from datetime import datetime
-
+import six
 from lxml import etree
 from textwrap import dedent
 from wait_for import wait_for
@@ -240,7 +240,7 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
             $conf|ConvertTo-Json -Depth 3 -Compress
             """.format(vm_name))
         result = json.loads(data)
-        return {str(key): (str(val) if isinstance(val, unicode) else val) for key, val in
+        return {str(key): (str(val) if isinstance(val, six.string_types) else val) for key, val in
                 result.items()}
 
     def disconnect(self):
