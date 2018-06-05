@@ -25,6 +25,7 @@ packaging
 azure>=3.0.0
 azure-storage-common>=1.0
 pyvcloud==19.1.2
+oauth2client
 
 # suds jurko supports python3, suds is only used on python2
 suds-jurko; python_version > '3.0'
