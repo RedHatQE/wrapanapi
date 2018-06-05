@@ -1129,7 +1129,7 @@ class Openshift(Kubernetes):
             common_svc = self.k_api.read_namespaced_service(name='common-service',
                                                             namespace=vm_name)
             return common_svc.spec.external_i_ps[0]
-        except:
+        except Exception:
             return None
 
     def is_vm_suspended(self, vm_name):
