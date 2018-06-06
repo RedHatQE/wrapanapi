@@ -40,11 +40,18 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
     def __init__(self, **kwargs):
         super(SCVMMSystem, self).__init__(kwargs)
         self.host = kwargs["hostname"]
+        self.port = kwargs.get("winrm_port", 5985)
+        self.scheme = kwargs.get("winrm_scheme", "http")
+        self.winrm_validate_ssl_cert = kwargs.get("winrm_validate_ssl_cert", False)
         self.user = kwargs["username"]
         self.password = kwargs["password"]
         self.domain = kwargs["domain"]
         self.provisioning = kwargs["provisioning"]
-        self.api = winrm.Session(self.host, auth=(self.user, self.password))
+        self.api = winrm.Session(
+            '{scheme}://{host}:{port}'.format(scheme=self.scheme, host=self.host, port=self.port),
+            auth=(self.user, self.password),
+            server_cert_validation='validate' if self.winrm_validate_ssl_cert else 'ignore',
+        )
 
     @property
     def pre_script(self):
