@@ -789,5 +789,4 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         )
 
     def get_storage_domain_connections(self, storage_domain):
-        storage_domain = self._get_storage_domain_service(storage_domain)
-        return self.api.follow_link(storage_domain.storage_connections)
+        return self._get_storage_domain_service(storage_domain).storage_connections_service().list()
