@@ -338,11 +338,11 @@ class SCVMMSystem(WrapanapiAPIBaseVM):
         script = """
         $vm = Get-SCVirtualMachine -Name \"{vm_name}\"
         $secpswd = ConvertTo-SecureString "{password}" -AsPlainText -Force
-        $mycreds = New-Object System.Management.Automation.PSCredential("LOCAL\\{user}", $secpswd)
+        $mycreds = New-Object System.Management.Automation.PSCredential("{dom}\\{user}", $secpswd)
         Invoke-Command -ComputerName $vm.HostName -Credential $mycreds -ScriptBlock {{
-             Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }}
-        Read-SCVirtualMachine -VM $vm
-         """.format(user=self.user, password=self.password, vm_name=vm_name)
+            Enable-VMIntegrationService -Name 'Guest Service Interface' -VMName \"{vm_name}\" }}
+        Read-SCVirtualMachine -VM $vm""".format(
+            dom=self.domain, user=self.user, password=self.password, vm_name=vm_name)
         self.run_script(script)
 
     def update_scvmm_virtualmachine(self, vm_name):
