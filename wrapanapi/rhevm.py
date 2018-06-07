@@ -356,12 +356,43 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     def _get_vm_nic(self, vm_name, nic_name):
         return self._get_vm_nic_service(vm_name, nic_name).get()
 
-    def update_vm_nic(self, vm_name, network_name, nic_name='nic1',
-                      interface=types.NicInterface.VIRTIO):
+    def _get_network(self, network_name):
+        """retreive a network object by name"""
+        networks = self.api.system_service().networks_service().list(
+            search='name={}'.format(network_name))
+        try:
+            return networks[0]
+        except IndexError:
+            raise ItemNotFound('No match for network by "name={}"'.format(network_name))
+
+    def update_vm_nic(self, vm_name, network_name, nic_name='nic1', interface='VIRTIO'):
         nic = self._get_vm_nic(vm_name, nic_name)
-        nic_service = self._get_vm_nic_service(vm_name, nic_name)
-        nic.network = types.Network(name=network_name)
-        nic.interface = interface
+        nic.network = self._get_network(network_name)
+        try:
+            nic.vnic_profile = [v
+                                for v in self.api.system_service().vnic_profiles_service().list()
+                                if v.name == network_name][0]
+        except IndexError:
+            raise ItemNotFound('Unable to find vnic_profile matching network {}'
+                               .format(network_name))
+        nic.interface = getattr(types.NicInterface, interface)
+        self._get_vm_nic_service(vm_name, nic_name).update(nic)
+
+    # TODO combine with vm function above to update nic for either
+    def update_template_nic(self, template_name, network_name, nic_name='nic1', interface='VIRTIO'):
+        nic = [n
+               for n in self._get_template_service(template_name).nics_service().list()
+               if n.name == nic_name][0]
+        nic.network = self._get_network(network_name)
+        try:
+            nic.vnic_profile = [v
+                                for v in self.api.system_service().vnic_profiles_service().list()
+                                if v.name == network_name][0]
+        except IndexError:
+            raise ItemNotFound('Unable to find vnic_profile matching network {}'
+                               .format(network_name))
+        nic.interface = getattr(types.NicInterface, interface)
+        nic_service = self._get_template_service(template_name).nics_service().nic_service(nic.id)
         nic_service.update(nic)
 
     def _get_cluster(self, cluster_name):
@@ -391,7 +422,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
                 )
             )
         if 'ram' in kwargs:
-            vm_kwargs['memory'] = int(kwargs['ram']) * 1024 * 1024  # MB
+            vm_kwargs['memory'] = int(kwargs['ram'])
         self._vms_service.add(types.Vm(**vm_kwargs))
         self.wait_vm_stopped(kwargs['vm_name'], num_sec=timeout)
         if power_on:
@@ -691,7 +722,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
                         )
                     ]
                 ),
-                interface=types.DiskInterface(interface),
+                interface=types.DiskInterface(getattr(types.DiskInterface, interface or 'VIRTIO')),
                 active=active
             )
         )
@@ -780,9 +811,9 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         export_template = self.get_template_from_storage_domain(temp_template, edomain)
         target_storage_domain = self._get_storage_domain(sdomain)
         cluster_id = self._get_cluster(cluster).id
-        template_service = export_sd_service.templates_service().template_service(
+        sd_template_service = export_sd_service.templates_service().template_service(
             export_template.id)
-        template_service.import_(
+        sd_template_service.import_(
             storage_domain=types.StorageDomain(id=target_storage_domain.id),
             cluster=types.Cluster(id=cluster_id),
             template=types.Template(id=export_template.id)
