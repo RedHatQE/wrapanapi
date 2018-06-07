@@ -494,13 +494,13 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
         except ItemNotFound:
             return False
 
-    def delete_template(self, template_name):
+    def delete_template(self, template_name, timeout=120):
         template_service = self._get_template_service(template_name)
         self._wait_template_ok(template_name)
         template_service.remove()
         wait_for(
             lambda: not self.does_template_exist(template_name),
-            num_sec=15 * 60, delay=20)
+            num_sec=timeout, delay=5)
 
     def vm_hardware_configuration(self, vm_name):
         vm = self._get_vm(vm_name)
@@ -756,7 +756,7 @@ class RHEVMSystem(WrapanapiAPIBaseVM):
     def change_storage_domain_state(self, state, storage_domain_name):
         dcs = self._data_centers_service.list()
         for dc in dcs:
-            storage_domains = self.api.follow_link(dc.storagedomains)
+            storage_domains = self.api.follow_link(dc.storage_domains)
             for domain in storage_domains:
                 if domain.name == storage_domain_name:
                     asds = self._get_attached_storage_domain_service(dc.id, domain.id)
