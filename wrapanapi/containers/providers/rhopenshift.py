@@ -942,7 +942,7 @@ class Openshift(Kubernetes):
                                                            metadata=role_binding_name)
         auth_api.create_namespaced_role_binding(namespace=namespace, body=puller_role_binding)
 
-    def delete_project(self, name, wait=120):
+    def delete_project(self, name, wait=300):
         """Removes project(namespace) and all entities in it.
 
         Args:
