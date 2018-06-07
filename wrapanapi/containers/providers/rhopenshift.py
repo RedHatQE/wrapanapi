@@ -161,22 +161,20 @@ class Openshift(Kubernetes):
         if self.new_client:
             url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
                                                    port=self.port)
-            ociclient.configuration.host = url
-            kubeclient.configuration.host = url
-
-            ociclient.configuration.verify_ssl = self.verify_ssl
-            kubeclient.configuration.verify_ssl = self.verify_ssl
-
-            kubeclient.configuration.debug = self.debug
-            ociclient.configuration.debug = self.debug
 
             token = 'Bearer {token}'.format(token=self.token)
-            ociclient.configuration.api_key['authorization'] = token
-            kubeclient.configuration.api_key['authorization'] = token
+            config = ociclient.Configuration()
+            config.host = url
+            config.verify_ssl = self.verify_ssl
+            config.debug = self.debug
+            config.api_key['authorization'] = token
+
             self.ociclient = ociclient
             self.kclient = kubeclient
-            self.o_api = ociclient.OapiApi()
-            self.k_api = kubeclient.CoreV1Api()
+            self.oapi_client = ociclient.ApiClient(config=config)
+            self.kapi_client = kubeclient.ApiClient(config=config)
+            self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
+            self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
 
     def list_route(self):
         """Returns list of routes"""
@@ -304,7 +302,7 @@ class Openshift(Kubernetes):
             )
 
         self.logger.info("granting required rights to project's service accounts")
-        security_api = self.ociclient.SecurityOpenshiftIoV1Api()
+        security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
         for mapping in scc_user_mapping:
             old_scc = security_api.read_security_context_constraints(name=mapping['scc'])
             got_users = old_scc.users if old_scc.users else []
@@ -320,7 +318,7 @@ class Openshift(Kubernetes):
         if version >= '5.9' and version < '5.9.2.2':
             # grant roles to orchestrator
             self.logger.info("assigning additional roles to cfme-orchestrator")
-            auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+            auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
             orchestrator_sa = self.kclient.V1ObjectReference(name='cfme-orchestrator',
                                                              kind='ServiceAccount',
                                                              namespace=proj_name)
@@ -558,8 +556,8 @@ class Openshift(Kubernetes):
         st = self.kclient.V1beta1StatefulSet(**kwargs)
         st_name = st.to_dict()['metadata']['name']
         self.logger.info("creating stateful set %s", st_name)
-        output = self.kclient.AppsV1beta1Api().create_namespaced_stateful_set(namespace=namespace,
-                                                                              body=st)
+        api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
+        output = api.create_namespaced_stateful_set(namespace=namespace, body=st)
         self.wait_stateful_set_exist(namespace=namespace, name=st_name)
         return output
 
@@ -617,7 +615,7 @@ class Openshift(Kubernetes):
         Return: data if entity was created w/o errors
         """
         ObjectRef = self.kclient.V1ObjectReference  # noqa
-        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
         # there is some version mismatch in api. so, it would be better to remove version
         kwargs.pop('api_version', None)
         role_binding_name = kwargs['metadata']['name']
@@ -747,7 +745,8 @@ class Openshift(Kubernetes):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        read_st = self.kclient.AppsV1beta1Api().read_namespaced_stateful_set
+        api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
+        read_st = api.read_namespaced_stateful_set
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': read_st,
                                      'name': name,
@@ -818,7 +817,7 @@ class Openshift(Kubernetes):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': auth_api.read_namespaced_role_binding,
                                      'name': name,
@@ -897,7 +896,7 @@ class Openshift(Kubernetes):
         Return: None
         """
         # adding builder role binding
-        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api()
+        auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
         builder_role = self.kclient.V1ObjectReference(name='system:image-builder')
         builder_sa = self.kclient.V1ObjectReference(name='builder',
                                                     kind='ServiceAccount',
@@ -972,7 +971,7 @@ class Openshift(Kubernetes):
         Return: None
         """
         # only dc and statefulsets can be scaled
-        st_api = self.kclient.AppsV1beta1Api()
+        st_api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
 
         scale_val = self.kclient.V1Scale(spec=self.kclient.V1ScaleSpec(replicas=replicas))
         if self.is_deployment_config(name=name, namespace=namespace):
@@ -1053,7 +1052,7 @@ class Openshift(Kubernetes):
             namespace: project(namespace) name
         Return: (list) stateful set names
         """
-        st_api = self.kclient.AppsV1beta1Api()
+        st_api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
         sts = st_api.list_namespaced_stateful_set(namespace=namespace)
         return [st.metadata.name for st in sts.items]
 
