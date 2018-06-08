@@ -15,13 +15,7 @@ from kubernetes.client.rest import ApiException
 from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
-from wrapanapi.containers.providers.rhkubernetes import Kubernetes
-from wrapanapi.rest_client import ContainerClient
-from wrapanapi.containers.route import Route
-from wrapanapi.containers.image_registry import ImageRegistry
-from wrapanapi.containers.project import Project
-from wrapanapi.containers.image import Image
-from wrapanapi.containers.deployment_config import DeploymentConfig
+from wrapanapi.base import WrapanapiAPIBase
 
 
 # stolen from sprout
@@ -107,13 +101,21 @@ def unauthenticated_error_handler(method):
 
 
 @reconnect(unauthenticated_error_handler)
-class Openshift(Kubernetes):
+class Openshift(WrapanapiAPIBase):
 
-    _stats_available = Kubernetes._stats_available.copy()
-    _stats_available.update({
+    _stats_available = {
+        'num_container': lambda self: len(self.list_container()),
+        'num_pod': lambda self: len(self.list_pods()),
+        'num_service': lambda self: len(self.list_service()),
+        'num_replication_controller':
+            lambda self: len(self.list_replication_controller()),
+        'num_image': lambda self: len(self.list_image_id()),
+        'num_node': lambda self: len(self.list_node()),
+        'num_image_registry': lambda self: len(self.list_image_registry()),
+        'num_project': lambda self: len(self.list_project()),
         'num_route': lambda self: len(self.list_route()),
         'num_template': lambda self: len(self.list_template())
-    })
+    }
 
     stream2template_tags_mapping = {
         'cfme-openshift-httpd': 'HTTPD_IMG_TAG',
@@ -136,10 +138,9 @@ class Openshift(Kubernetes):
     required_project_pods58 = ('memcached', 'postgresql', 'cloudforms')
     not_required_project_pods = ('cloudforms-backend', 'ansible')
 
-    def __init__(self, hostname, protocol="https", port=8443, k_entry="api/v1", o_entry="oapi/v1",
-                 debug=False, verify_ssl=False, **kwargs):
+    def __init__(self, hostname, protocol="https", port=8443, debug=False,
+                 verify_ssl=False, **kwargs):
         super(Openshift, self).__init__(kwargs)
-        self.new_client = kwargs.get('new_client', False)
         self.hostname = hostname
         self.protocol = protocol
         self.port = port
@@ -150,92 +151,136 @@ class Openshift(Kubernetes):
         self.auth = self.token if self.token else (self.username, self.password)
         self.debug = debug
         self.verify_ssl = verify_ssl
-        self.list_image_openshift = self.list_docker_image  # For backward compatibility
-        self.old_k_api = self.k_api = ContainerClient(hostname, self.auth, protocol, port, k_entry)
-        self.old_o_api = self.o_api = ContainerClient(hostname, self.auth, protocol, port, o_entry)
-        self.api = self.k_api  # default api is the kubernetes one for Kubernetes-class requests
 
         self._connect()
 
     def _connect(self):
-        if self.new_client:
-            url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
-                                                   port=self.port)
+        url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
+                                               port=self.port)
 
-            token = 'Bearer {token}'.format(token=self.token)
-            config = ociclient.Configuration()
-            config.host = url
-            config.verify_ssl = self.verify_ssl
-            config.debug = self.debug
-            config.api_key['authorization'] = token
+        token = 'Bearer {token}'.format(token=self.token)
+        config = ociclient.Configuration()
+        config.host = url
+        config.verify_ssl = self.verify_ssl
+        config.debug = self.debug
+        config.api_key['authorization'] = token
 
-            self.ociclient = ociclient
-            self.kclient = kubeclient
-            self.oapi_client = ociclient.ApiClient(config=config)
-            self.kapi_client = kubeclient.ApiClient(config=config)
-            self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
-            self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
+        self.ociclient = ociclient
+        self.kclient = kubeclient
+        self.oapi_client = ociclient.ApiClient(config=config)
+        self.kapi_client = kubeclient.ApiClient(config=config)
+        self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
+        self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
 
-    def list_route(self):
+    def list_route(self, namespace=None):
         """Returns list of routes"""
-        entities = []
-        entities_j = self.o_api.get('route')[1]['items']
-        for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Route(self, meta['name'], meta['namespace'])
-            entities.append(entity)
-        return entities
+        if namespace:
+            routes = self.o_api.list_namespaced_route(namespace=namespace).items
+        else:
+            routes = self.o_api.list_route_for_all_namespaces().items
+        return routes
 
-    def list_docker_registry(self):
-        """Returns list of docker registries"""
-        entities = []
-        entities_j = self.o_api.get('imagestream')[1]['items']
-        for entity_j in entities_j:
-            if 'dockerImageRepository' not in entity_j['status']:
-                continue
-            meta = entity_j['metadata']
-            entity = ImageRegistry(self, meta['name'],
-                                   entity_j['status']['dockerImageRepository'],
-                                   meta['namespace'])
-            if entity not in entities:
-                entities.append(entity)
-        return entities
+    def list_image_streams(self, namespace=None):
+        """Returns list of image streams"""
+        if namespace:
+            image_streams = self.o_api.list_namespaced_image_stream(namespace=namespace).items
+        else:
+            image_streams = self.o_api.list_image_stream_for_all_namespaces().items
+        return image_streams
 
     def list_project(self):
         """Returns list of projects"""
-        entities = []
-        entities_j = self.o_api.get('project')[1]['items']
-        for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = Project(self, meta['name'])
-            entities.append(entity)
-        return entities
+        return self.o_api.list_project().items
 
     def list_template(self, namespace=None):
         """Returns list of templates"""
-        namespace = namespace if namespace else self.default_namespace
-        return [t.metadata.name for t in self.o_api.list_namespaced_template(namespace).items]
+        if namespace:
+            return [t.metadata.name for t in self.o_api.list_namespaced_template(namespace).items]
+        else:
+            return [t.metadata.name for t in self.o_api.list_template_for_all_namespaces().items]
 
-    def list_docker_image(self):
+    def list_image_stream_images(self):
         """Returns list of images (Docker registry only)"""
-        entities = []
-        entities_j = self.o_api.get('image')[1]['items']
-        for entity_j in entities_j:
-            if 'dockerImageReference' not in entity_j:
-                continue
-            _, name, image_id, _ = Image.parse_docker_image_info(entity_j['dockerImageReference'])
-            entities.append(Image(self, name, image_id))
-        return entities
+        return [item for item in self.o_api.list_image().items
+                if item.docker_image_reference is not None]
 
-    def list_deployment_config(self):
+    def list_deployment_config(self, namespace=None):
         """Returns list of deployment configs"""
-        entities = []
-        entities_j = self.o_api.get('deploymentconfig')[1]['items']
-        for entity_j in entities_j:
-            meta = entity_j['metadata']
-            entity = DeploymentConfig(self, meta['name'], meta['namespace'])
-            entities.append(entity)
-        return entities
+        if namespace:
+            dc = self.o_api.list_namespaced_deployment_config(namespace=namespace).items
+        else:
+            dc = self.o_api.list_deployment_config_for_all_namespaces().items
+        return dc
+
+    def list_service(self, namespace=None):
+        """Returns list of services."""
+        if namespace:
+            svc = self.k_api.list_namespaced_service(namespace=namespace).items
+        else:
+            svc = self.k_api.list_service_for_all_namespaces().items
+        return svc
+
+    def list_replication_controller(self, namespace=None):
+        """Returns list of replication controllers"""
+        if namespace:
+            rc = self.k_api.list_namespaced_replication_controller(namespace=namespace).items
+        else:
+            rc = self.k_api.list_replication_controller_for_all_namespaces().items
+        return rc
+
+    def list_node(self):
+        """Returns list of nodes"""
+        nodes = self.k_api.list_node().items
+        return nodes
+
+    def cluster_info(self):
+        """Returns information about the cluster - number of CPUs and memory in GB"""
+        aggregate_cpu, aggregate_mem = 0, 0
+        for node in self.list_node():
+            aggregate_cpu += int(node.status.capacity['cpu'])
+            # converting KiB to GB. 1KiB = 1.024E-6 GB
+            aggregate_mem += int(round(int(node.status.capacity['memory'][:-2]) * 0.00000102400))
+
+        return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
+
+    def list_persistent_volume(self):
+        """Returns list of persistent volumes"""
+        pv = self.k_api.list_persistent_volume().items
+        return pv
+
+    def list_pods(self, namespace=None):
+        """Returns list of container groups (pods).
+        If project_name is passed, only the pods under the selected project will be returned"""
+        if namespace:
+            pods = self.k_api.list_namespaced_pod(namespace=namespace).items
+        else:
+            pods = self.k_api.list_pod_for_all_namespaces().items
+        return pods
+
+    def list_container(self, namespace=None):
+        """Returns list of containers (derived from pods)
+        If project_name is passed, only the containers under the selected project will be returned
+        """
+        pods = self.list_pods(namespace=namespace)
+        return [pod.spec.containers for pod in pods]
+
+    def list_image_id(self, namespace=None):
+        """Returns list of image ids (derived from pods)"""
+        pods = self.list_pods(namespace=namespace)
+        statuses = []
+        for pod in pods:
+            for status in pod.status.container_statuses:
+                statuses.append(status)
+        return [status.image_id for status in statuses]
+
+    def list_image_registry(self, namespace=None):
+        """Returns list of image registries (derived from pods)"""
+        pods = self.list_pods(namespace=namespace)
+        statuses = []
+        for pod in pods:
+            for status in pod.status.container_statuses:
+                statuses.append(status)
+        return [status.image for status in statuses]
 
     def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
         """Deploy a VM from a template
@@ -1001,7 +1046,7 @@ class Openshift(Kubernetes):
 
     def get_project_by_name(self, project_name):
         """Returns only the selected Project object"""
-        return Project(self, project_name)
+        return next(proj for proj in self.list_project() if proj.metadata.name == project_name)
 
     def is_vm_running(self, vm_name):
         """Emulates check is vm(appliance) up and running
@@ -1154,7 +1199,7 @@ class Openshift(Kubernetes):
     def can_rename(self):
         return hasattr(self, "rename_vm")
 
-    def list_project_(self):
+    def list_project_names(self):
         """Obtains project names
 
         Returns: list of project names
@@ -1162,7 +1207,7 @@ class Openshift(Kubernetes):
         projects = self.o_api.list_project().items
         return [proj.metadata.name for proj in projects]
 
-    list_vm = list_project_
+    list_vm = list_project_names
 
     def get_appliance_version(self, vm_name):
         """Returns appliance version if it is possible
@@ -1285,3 +1330,6 @@ class Openshift(Kubernetes):
         except TimedOutError:
             ip_address = None
         return ip_address
+
+    def disconnect(self):
+        pass
