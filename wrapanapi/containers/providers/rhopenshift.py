@@ -238,6 +238,7 @@ class Openshift(WrapanapiAPIBase):
         aggregate_cpu, aggregate_mem = 0, 0
         for node in self.list_node():
             aggregate_cpu += int(node.status.capacity['cpu'])
+            # converting KiB to GB. 1KiB = 1.024E-6 GB
             aggregate_mem += int(round(int(node.status.capacity['memory'][:-2]) * 0.00000102400))
 
         return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
@@ -261,9 +262,7 @@ class Openshift(WrapanapiAPIBase):
         If project_name is passed, only the containers under the selected project will be returned
         """
         pods = self.list_pods(namespace=namespace)
-        containers = []
-        containers.extend([pod.spec.containers for pod in pods])
-        return containers
+        return [pod.spec.containers for pod in pods]
 
     def list_image_id(self, namespace=None):
         """Returns list of image ids (derived from pods)"""
