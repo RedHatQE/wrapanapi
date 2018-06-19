@@ -756,7 +756,7 @@ class Openshift(WrapanapiAPIBase):
         self.wait_project_exist(name=name)
         return output
 
-    def wait_project_exist(self, name, wait=5):
+    def wait_project_exist(self, name, wait=60):
         """Checks whether Project exists within some time.
 
         Args:
@@ -767,7 +767,7 @@ class Openshift(WrapanapiAPIBase):
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': self.o_api.read_project, 'name': name})[0]
 
-    def wait_config_map_exist(self, namespace, name, wait=30):
+    def wait_config_map_exist(self, namespace, name, wait=60):
         """Checks whether Config Map exists within some time.
 
         Args:
@@ -781,7 +781,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_stateful_set_exist(self, namespace, name, wait=600):
+    def wait_stateful_set_exist(self, namespace, name, wait=900):
         """Checks whether StatefulSet exists within some time.
 
         Args:
@@ -797,7 +797,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_service_exist(self, namespace, name, wait=30):
+    def wait_service_exist(self, namespace, name, wait=60):
         """Checks whether Service exists within some time.
 
         Args:
@@ -811,7 +811,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_route_exist(self, namespace, name, wait=30):
+    def wait_route_exist(self, namespace, name, wait=60):
         """Checks whether Route exists within some time.
 
         Args:
@@ -825,7 +825,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_service_account_exist(self, namespace, name, wait=30):
+    def wait_service_account_exist(self, namespace, name, wait=60):
         """Checks whether Service Account exists within some time.
 
         Args:
@@ -839,7 +839,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_image_stream_exist(self, namespace, name, wait=10):
+    def wait_image_stream_exist(self, namespace, name, wait=60):
         """Checks whether Image Stream exists within some time.
 
         Args:
@@ -853,7 +853,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_role_binding_exist(self, namespace, name, wait=10):
+    def wait_role_binding_exist(self, namespace, name, wait=60):
         """Checks whether RoleBinding exists within some time.
 
         Args:
@@ -868,7 +868,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_secret_exist(self, namespace, name, wait=30):
+    def wait_secret_exist(self, namespace, name, wait=90):
         """Checks whether Secret exists within some time.
 
         Args:
@@ -882,7 +882,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_persistent_volume_claim_exist(self, namespace, name, wait=30):
+    def wait_persistent_volume_claim_exist(self, namespace, name, wait=60):
         """Checks whether Persistent Volume Claim exists within some time.
 
         Args:
@@ -911,7 +911,7 @@ class Openshift(WrapanapiAPIBase):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    def wait_template_exist(self, namespace, name, wait=5):
+    def wait_template_exist(self, namespace, name, wait=60):
         """Checks whether Template exists within some time.
 
         Args:
@@ -1140,7 +1140,7 @@ class Openshift(WrapanapiAPIBase):
         """
         return not self.is_vm_running(vm_name)
 
-    def wait_vm_running(self, vm_name, num_sec=360):
+    def wait_vm_running(self, vm_name, num_sec=900):
         """Checks whether all project pods are in ready state.
 
         Args:
@@ -1151,7 +1151,7 @@ class Openshift(WrapanapiAPIBase):
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
         return True
 
-    def wait_vm_stopped(self, vm_name, num_sec=360):
+    def wait_vm_stopped(self, vm_name, num_sec=600):
         """Checks whether all project pods are stopped.
 
         Args:
