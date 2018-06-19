@@ -15,7 +15,7 @@ from kubernetes.client.rest import ApiException
 from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
-from miq_version import Version
+from miq_version import TemplateName, Version
 from wrapanapi.base import WrapanapiAPIBase
 
 
@@ -301,7 +301,7 @@ class Openshift(WrapanapiAPIBase):
         self.create_project(name=proj_name, description=template)
         progress_callback("Created Project `{}`".format(proj_name))
 
-        version = Version(template)
+        version = Version(TemplateName.parse_template(template).version)
 
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
@@ -1191,14 +1191,12 @@ class Openshift(WrapanapiAPIBase):
         try:
             proj = self.o_api.read_project(vm_name)
             description = proj.metadata.annotations['openshift.io/description']
-        except (ApiException, KeyError):
-            description = None
-
-        if description:
-            version = Version(description)
-            if version:
-                return version
-        return Version(vm_name)
+            return Version(TemplateName.parse_template(description).version)
+        except (ApiException, KeyError, ValueError):
+            try:
+                return Version(TemplateName.parse_template(vm_name).version)
+            except ValueError:
+                return None
 
     def delete_template(self, template_name, namespace='openshift'):
         """Deletes template
