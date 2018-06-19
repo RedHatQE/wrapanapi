@@ -4,7 +4,7 @@ python:
   - '3.6'
 install:
   - pip install -U pip setuptools
-  - pip install -Ur requirements-test.txt
+  - pip install -Ur requirements-test.txt --upgrade-strategy eager
 script: py.test tests/ -v --cov wrapanapi
 after_success:
   - coveralls
