@@ -1,50 +1,22 @@
 from __future__ import absolute_import
-from functools import partial, wraps
-from random import choice
+
 import copy
+import inflection
 import json
-import re
 import six
 import string
 
+from functools import partial, wraps
+from random import choice
 
-import inflection
 from collections import Iterable
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
 from openshift import client as ociclient
 from wait_for import wait_for, TimedOutError
 
+from miq_version import TemplateName, Version
 from wrapanapi.base import WrapanapiAPIBase
-
-
-# stolen from sprout
-VERSION_REGEXPS = [
-    r"^cfme-(\d)(\d)(\d)(\d)(\d{2})",  # 1.2.3.4.11
-    # newer format
-    r"cfme-(\d)(\d)(\d)[.](\d{2})-",         # cfme-524.02-    -> 5.2.4.2
-    r"cfme-(\d)(\d)(\d)[.](\d{2})[.](\d)-",  # cfme-524.02.1-    -> 5.2.4.2.1
-    # 4 digits
-    r"cfme-(?:nightly-)?(\d)(\d)(\d)(\d)-",      # cfme-5242-    -> 5.2.4.2
-    r"cfme-(\d)(\d)(\d)-(\d)-",     # cfme-520-1-   -> 5.2.0.1
-    # 5 digits  (not very intelligent but no better solution so far)
-    r"cfme-(?:nightly-)?(\d)(\d)(\d)(\d{2})-",   # cfme-53111-   -> 5.3.1.11, cfme-53101 -> 5.3.1.1
-    r"s-\w+-downstream-(\d)(\d)z-",  # s-tpl-downstream-57z-161116-2yunexwu
-]
-VERSION_REGEXPS = [re.compile(regex) for regex in VERSION_REGEXPS]
-VERSION_REGEXP_UPSTREAM = re.compile(r'^miq-stable-([^-]+)-')
-
-
-def retrieve_cfme_appliance_version(template_name):
-    """If possible, retrieve the appliance's version from template's name."""
-    for regexp in VERSION_REGEXPS:
-        match = regexp.search(template_name)
-        if match is not None:
-            return ".".join(map(str, map(int, match.groups())))
-    else:
-        match = VERSION_REGEXP_UPSTREAM.search(template_name)
-        if match is not None:
-            return match.groups()[0]
 
 
 # this service allows to access db outside of openshift
@@ -329,7 +301,7 @@ class Openshift(WrapanapiAPIBase):
         self.create_project(name=proj_name, description=template)
         progress_callback("Created Project `{}`".format(proj_name))
 
-        version = retrieve_cfme_appliance_version(template)
+        version = Version(TemplateName.parse_template(template).version)
 
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
@@ -1219,14 +1191,12 @@ class Openshift(WrapanapiAPIBase):
         try:
             proj = self.o_api.read_project(vm_name)
             description = proj.metadata.annotations['openshift.io/description']
-        except (ApiException, KeyError):
-            description = None
-
-        if description:
-            version = retrieve_cfme_appliance_version(description)
-            if version:
-                return version
-        return retrieve_cfme_appliance_version(vm_name)
+            return Version(TemplateName.parse_template(description).version)
+        except (ApiException, KeyError, ValueError):
+            try:
+                return Version(TemplateName.parse_template(vm_name).version)
+            except ValueError:
+                return None
 
     def delete_template(self, template_name, namespace='openshift'):
         """Deletes template
