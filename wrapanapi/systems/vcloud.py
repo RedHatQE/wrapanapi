@@ -5,20 +5,25 @@ from pyvcloud.vcd.org import Org
 from pyvcloud.vcd.vdc import VDC
 from pyvcloud.vcd.vapp import VApp
 
-from .base import WrapanapiAPIBase
+from wrapanapi.systems.base import System
 
 
-class VmwareCloudSystem(WrapanapiAPIBase):
+class VmwareCloudSystem(System):
     """Client to VMware vCloud API"""
 
-    def __init__(self, hostname, username, organization, password, api_port, api_version, **kwargs):
-        super(VmwareCloudSystem, self).__init__(kwargs)
+    def __init__(self, hostname, username, organization, password, api_port,
+                 api_version, **kwargs):
+        super(VmwareCloudSystem, self).__init__(**kwargs)
         self.endpoint = 'https://{}:{}'.format(hostname, api_port)
         self.username = username
         self.organization = organization
         self.password = password
         self.api_version = api_version
         self._client = None
+
+    def info(self):
+        return 'VmwareCloudSystem endpoint={}, api_version={}'.format(
+            self.endpoint, self.api_version)
 
     @property
     def client(self):

@@ -8,10 +8,10 @@ import json
 import requests
 from requests.exceptions import Timeout
 
-from .base import WrapanapiAPIBase
+from wrapanapi.systems.base import System
 
 
-class LenovoSystem(WrapanapiAPIBase):
+class LenovoSystem(System):
     """Client to Lenovo API
     Args:
         hostname: The hostname of the system.
@@ -21,7 +21,7 @@ class LenovoSystem(WrapanapiAPIBase):
     _api = None
 
     _stats_available = {
-        'num_server': lambda self, requester: len(self.list_servers(requester)),
+        'num_server': lambda self, _: len(self.list_servers()),
         'cores_capacity': lambda self, requester: self.get_server_cores(requester.name),
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
         'num_firmwares': lambda self, requester: len(self.get_server_firmwares(requester.name)),
@@ -54,12 +54,19 @@ class LenovoSystem(WrapanapiAPIBase):
     HEALTH_CRITICAL = ("critical", "minor-failure", "major-failure", "non-recoverable", "fatal")
 
     def __init__(self, hostname, username, password, protocol="https", port=None, **kwargs):
-        super(LenovoSystem, self).__init__(kwargs)
+        super(LenovoSystem, self).__init__(**kwargs)
         self.port = port or kwargs.get('api_port', 443)
         self.auth = (username, password)
         self.url = '{}://{}:{}/'.format(protocol, hostname, self.port)
         self._servers_list = None
         self.kwargs = kwargs
+
+    @property
+    def _identifying_attrs(self):
+        return {'url': self.url}
+
+    def info(self):
+        return 'LenovoSystem url={}'.format(self.url)
 
     def __del__(self):
         """Disconnect from the API when the object is deleted"""
@@ -145,19 +152,16 @@ class LenovoSystem(WrapanapiAPIBase):
 
         return str(server['hostname'])
 
-    def get_server_ipv4_address(self, server_name, timeout=600):
+    def get_server_ipv4_address(self, server_name):
         server = self.get_server(server_name)
-
         return server['ipv4Addresses']
 
-    def get_server_ipv6_address(self, server_name, timeout=600):
+    def get_server_ipv6_address(self, server_name):
         server = self.get_server(server_name)
-
         return server['ipv6Addresses']
 
-    def get_server_mac_address(self, server_name, timeout=600):
+    def get_server_mac_address(self, server_name):
         server = self.get_server(server_name)
-
         return server['macAddress']
 
     def get_server_power_status(self, server_name):
