@@ -1090,3 +1090,53 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 routers_names.append(route['RouteTableId'])
 
         return routers_names
+
+    def _get_item_for_tag_assigment(self, item_id, item_type):
+        """Get ec2 item for tagging
+        Args:
+            item_id(str): instance/template name
+            item_type(str): pass ec2 item type, for now available only for instance and template
+        """
+        if item_type == 'instances':
+            taggable_item = self.get_vm(item_id)
+        elif item_type == 'images':
+            taggable_item = self.get_template(item_id)
+        else:
+            raise NotImplementedError("Get {} item method doesn't added".format(item_type))
+        return taggable_item
+
+    def set_tag(self, item_id, tag_label, tag_value, item_type='instances'):
+        """Set tag
+        Args:
+            item_id(str): instance/template name
+            tag_label(str): tag label
+            tag_value(str): tag value
+            item_type(str): pass ec2 item type, for now available only for instance and template
+        """
+        self.logger.info("Setting tag of EC2 %s %s to %s" % (item_type, item_id, tag_label))
+        taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
+        taggable_item.add_tag(tag_label, tag_value)
+
+    def get_tag_value(self, item_id, tag_label, item_type='instances'):
+        """Get tag value by its label
+        Args:
+            item_id(str): instance/template name
+            tag_label(str): tag label
+            item_type(str): pass ec2 item type, for now available only for instance and template
+        Returns:
+            str, tag value for given label
+        """
+        taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
+        return taggable_item.tags.get(tag_label, item_id)
+
+    def unset_tag(self, item_id, tag_label, tag_value, item_type='instances'):
+        """Remove tag
+        Args:
+            item_id(str): instance/template name
+            tag_label(str): tag label
+            tag_value(str): tag value
+            item_type(str): pass ec2 item type, for now available only for instance and template
+        """
+        self.logger.info("Unsetting tag of EC2 %s %s to %s" % (item_type, item_id, tag_label))
+        taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
+        taggable_item.remove_tag(tag_label, tag_value)
