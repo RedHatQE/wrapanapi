@@ -479,7 +479,7 @@ class VmMixin(EntityMixin):
         If multiple VMs with the same name exist, this still returns 'True'
         """
         try:
-            return bool(self.get_template(name))
+            return bool(self.get_vm(name))
         except MultipleItemsError:
             return True
         except NotFoundError:
