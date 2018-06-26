@@ -248,13 +248,13 @@ class Openshift(System):
         return [pod.spec.containers for pod in pods]
 
     def list_image_id(self, namespace=None):
-        """Returns list of image ids (derived from pods)"""
+        """Returns list of unique image ids (derived from pods)"""
         pods = self.list_pods(namespace=namespace)
         statuses = []
         for pod in pods:
             for status in pod.status.container_statuses:
                 statuses.append(status)
-        return [status.image_id for status in statuses]
+        return sorted(set([status.image_id for status in statuses]))
 
     def list_image_registry(self, namespace=None):
         """Returns list of image registries (derived from pods)"""
