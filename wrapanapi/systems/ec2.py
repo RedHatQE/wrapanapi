@@ -1115,7 +1115,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         """
         self.logger.info("Setting tag of EC2 %s %s to %s" % (item_type, item_id, tag_label))
         taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
-        taggable_item.add_tag(tag_label, tag_value)
+        taggable_item.raw.add_tag(tag_label, tag_value)
 
     def get_tag_value(self, item_id, tag_label, item_type='instances'):
         """Get tag value by its label
@@ -1127,7 +1127,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             str, tag value for given label
         """
         taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
-        return taggable_item.tags.get(tag_label, item_id)
+        return taggable_item.raw.tags.get(tag_label, item_id)
 
     def unset_tag(self, item_id, tag_label, tag_value, item_type='instances'):
         """Remove tag
@@ -1139,4 +1139,4 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         """
         self.logger.info("Unsetting tag of EC2 %s %s to %s" % (item_type, item_id, tag_label))
         taggable_item = self._get_item_for_tag_assigment(item_id, item_type)
-        taggable_item.remove_tag(tag_label, tag_value)
+        taggable_item.raw.remove_tag(tag_label, tag_value)
