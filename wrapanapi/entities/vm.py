@@ -83,7 +83,9 @@ class Vm(Entity):
         """Extend 'exists' method to also check in VM state is deleted."""
         exists = super(Vm, self).exists
         if exists:
-            if self.state == VmState.DELETED:
+            state = self.state
+            self.logger.debug("in 'exists' for vm %s, current state: %s", self._log_id, state)
+            if state == VmState.DELETED:
                 return False
         return exists
 

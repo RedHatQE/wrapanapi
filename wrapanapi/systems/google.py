@@ -122,7 +122,7 @@ class GoogleCloudInstance(Instance):
         creation_time = iso8601.parse_date(self.raw['creationTimestamp'])
         return creation_time.astimezone(pytz.UTC)
 
-    def delete(self, timeout=250):
+    def delete(self, timeout=360):
         self.logger.info("Deleting Google Cloud instance '%s'", self.name)
         operation = self._api.delete(
             project=self._project, zone=self.zone, instance=self.name).execute()
