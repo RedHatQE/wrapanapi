@@ -80,11 +80,18 @@ class Vm(Entity):
 
     @property
     def exists(self):
-        """Extend 'exists' method to also check in VM state is deleted."""
-        exists = super(Vm, self).exists
+        """Override entity 'exists' method to check if VM state is deleted."""
+        try:
+            state = self._get_state()
+            exists = True
+        except NotFoundError:
+            exists = False
+
         if exists:
-            if self.state == VmState.DELETED:
-                return False
+            # Even if the VM is retrievable, it does not exist if its state is 'DELETED'
+            if state == VmState.DELETED:
+                exists = False
+
         return exists
 
     @abstractmethod
@@ -92,7 +99,7 @@ class Vm(Entity):
         """
         Returns VMState object representing the VM's current state
 
-        Should call self.refresh() if necessary to get the latest status from the API
+        Should call self.refresh() first to get the latest status from the API
         """
 
     @cached_property_with_ttl(ttl=CACHED_PROPERTY_TTL)
