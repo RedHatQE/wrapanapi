@@ -16,6 +16,17 @@ class System(LoggerMixin):
     # This should be defined by implementors of System
     _stats_available = {}
 
+    def __init__(self, *args, **kwargs):
+        """
+        Constructor for base System.
+
+        System constructor is not doing much right now, but since System child classes
+        may call __super__ in their __init__, we'll store any args that have bubbled up
+        through these super calls
+        """
+        self._base_system_args = args
+        self._base_system_kwargs = kwargs
+
     @abstractproperty
     def _identifying_attrs(self):
         """
