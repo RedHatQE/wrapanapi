@@ -419,7 +419,6 @@ class VmMixin(EntityMixin):
                     "property '{}' must be implemented in class '{}'"
                     .format(prop, self.__class__.__name__)
                 )
-        super(VmMixin, self).__init__(*args, **kwargs)
 
     @abstractproperty
     def can_suspend(self):
