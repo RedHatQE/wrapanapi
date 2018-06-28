@@ -13,8 +13,8 @@ class System(LoggerMixin):
     """Represents any system that wrapanapi interacts with."""
     __metaclass__ = ABCMeta
 
-    def __init__(self, *args, **kwargs):
-        self._stats_available = {}
+    # This should be defined by implementors of System
+    _stats_available = {}
 
     @abstractproperty
     def _identifying_attrs(self):
