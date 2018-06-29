@@ -737,6 +737,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
 
         Args:
              obj (pyVmomi.ManagedObject): The managed object to update, will be a specific subclass
+
         """
         # Set up the filter specs
         property_spec = vmodl.query.PropertyCollector.PropertySpec(type=type(obj), all=True)
@@ -746,7 +747,12 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         filter_spec.objectSet = [object_spec]
         # Get updates based on the filter
         property_collector = self.content.propertyCollector
-        filter_ = property_collector.CreateFilter(filter_spec, True)
+        try:
+            filter_ = property_collector.CreateFilter(filter_spec, True)
+        except vmodl.fault.ManagedObjectNotFound:
+            self.logger.warning('ManagedObjectNotFound when creating filter from spec {}'
+                                .format(filter_spec))
+            return
         update = property_collector.WaitForUpdates(None)
         if not update or not update.filterSet or not update.filterSet[0]:
             self.logger.warning('No object found when updating %s', str(obj))
@@ -976,7 +982,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = ['name', 'config.template']
-        property_spec.type = 'VirtualMachine'
+        property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
         object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
         for vm in object_contents:
