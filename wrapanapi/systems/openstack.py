@@ -977,9 +977,19 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             delay=1, timeout='1m')
         return True
 
-    def get_first_floating_ip(self):
+    def get_first_floating_ip(self, pool=None):
+        """Get first floating ip in pool (if specified) or all pools
+
+        If a new one cannot be created, then we search all existing
+        floating IPs for an un-used one and return that.
+
+        Args:
+            pool (str) -- pool to try to get IP from (optional)
+        """
         pools = self.api.floating_ip_pools.list()
         for pool in pools:
+            if pool and pool.name != pool:
+                continue
             try:
                 fip = self.api.floating_ips.create(pool.name)
                 break
@@ -989,7 +999,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if not fip:
             self.logger.error(
                 "Unable to create new floating IP in pools %s,"
-                " trying to find an existing one that is free", pools
+                " trying to find an existing one that is free"
+                " in any pool", pools
             )
         try:
             fip = (ip for ip in self.api.floating_ips.list()
