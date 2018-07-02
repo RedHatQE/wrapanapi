@@ -200,19 +200,26 @@ class Vm(Entity):
         """
         def _transition():
             if in_desired_state():
-                return True
+                # Hacking around some race conditions -- double check that desired state is steady
+                time.sleep(CACHED_PROPERTY_TTL + 0.1)
+                if in_desired_state():
+                    return True
+                else:
+                    return False
             elif in_state_requiring_prep():
                 self.logger.info(
                     "VM %s in state requiring prep. current state: %s, ensuring state: %s)",
                     self._log_id, self.state, state
                 )
                 do_prep()
+                return False
             elif in_actionable_state():
                 self.logger.info(
                     "VM %s in actionable state. current state: %s, ensuring state: %s)",
                     self._log_id, self.state, state
                 )
                 do_action()
+                return False
 
         return wait_for(
             _transition, timeout=timeout, delay=delay,
