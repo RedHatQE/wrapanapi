@@ -4,6 +4,7 @@ wrapanapi.entities.vm
 Methods/classes pertaining to performing actions on a VM/instance
 """
 from abc import ABCMeta, abstractmethod, abstractproperty
+import time
 
 from cached_property import cached_property_with_ttl
 from wait_for import wait_for, TimedOutError
