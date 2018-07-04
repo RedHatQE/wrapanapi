@@ -20,7 +20,7 @@ class LenovoSystem(System):
     """
     _api = None
 
-    _stats_available = {
+    _server_stats_available = {
         'num_server': lambda self, _: len(self.list_servers()),
         'cores_capacity': lambda self, requester: self.get_server_cores(requester.name),
         'memory_capacity': lambda self, requester: self.get_server_memory(requester.name),
@@ -30,7 +30,7 @@ class LenovoSystem(System):
         'num_storage_devices': lambda self,
         requester: len(self.get_storage_devices(requester.name)),
     }
-    _inventory_available = {
+    _server_inventory_available = {
         'hostname': lambda self, requester: self.get_server_hostname(requester.name),
         'ipv4_address': lambda self, requester: self.get_server_ipv4_address(requester.name),
         'ipv6_address': lambda self, requester: self.get_server_ipv6_address(requester.name),
@@ -348,21 +348,27 @@ class LenovoSystem(System):
 
         return "LED state action has been sent, status:" + str(response.status_code)
 
-    def stats(self, *requested_stats, **kwargs):
+    def server_stats(self, *requested_stats, **kwargs):
         # Get the requester which represents the class of this method's caller
         requester = kwargs.get('requester')
 
         # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
-        return {stat: self._stats_available[stat](self, requester) for stat in requested_stats}
+        stats = {stat: self._server_stats_available[stat](self, requester)
+                for stat in requested_stats}
 
-    def inventory(self, *requested_items, **kwargs):
+        return stats
+
+    def server_inventory(self, *requested_items, **kwargs):
         # Get the requester which represents the class of this method's caller
         requester = kwargs.get('requester')
 
         # Retrieve and return the inventory
-        requested_items = requested_items or self._inventory_available
-        return {item: self._inventory_available[item](self, requester) for item in requested_items}
+        requested_items = requested_items or self._server_inventory_available
+        inventory = {item: self._server_inventory_available[item](self, requester)
+                    for item in requested_items}
+
+        return inventory
 
     def get_network_devices(self, server_name):
         addin_cards = self.get_addin_cards(server_name) or []
