@@ -354,10 +354,9 @@ class LenovoSystem(System):
 
         # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
-        stats = {stat: self._server_stats_available[stat](self, requester)
-                for stat in requested_stats}
 
-        return stats
+        return {stat: self._server_stats_available[stat](self, requester)
+                for stat in requested_stats}
 
     def server_inventory(self, *requested_items, **kwargs):
         # Get the requester which represents the class of this method's caller
@@ -365,10 +364,8 @@ class LenovoSystem(System):
 
         # Retrieve and return the inventory
         requested_items = requested_items or self._server_inventory_available
-        inventory = {item: self._server_inventory_available[item](self, requester)
-                    for item in requested_items}
-
-        return inventory
+        return {item: self._server_inventory_available[item](self, requester)
+                for item in requested_items}
 
     def get_network_devices(self, server_name):
         addin_cards = self.get_addin_cards(server_name) or []
