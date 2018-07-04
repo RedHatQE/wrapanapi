@@ -332,13 +332,15 @@ class Openshift(System):
         self.logger.info("granting required rights to project's service accounts")
         security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
         for mapping in scc_user_mapping:
-            old_scc = security_api.read_security_context_constraints(name=mapping['scc'])
-            got_users = old_scc.users if old_scc.users else []
-            got_users.append('system:serviceaccount:{proj}:{usr}'.format(proj=proj_name,
-                                                                         usr=mapping['user']))
-            self.logger.debug("adding users %r to scc %r", got_users, mapping['scc'])
+            user = 'system:serviceaccount:{proj}:{usr}'.format(proj=proj_name,
+                                                               usr=mapping['user'])
+            update_scc_cmd = [
+                {"op": "add",
+                 "path": "/users/-",
+                 "value": user}]
+            self.logger.debug("adding user %r to scc %r", user, mapping['scc'])
             security_api.patch_security_context_constraints(name=mapping['scc'],
-                                                            body={'users': got_users})
+                                                            body=update_scc_cmd)
         progress_callback("Added service accounts to appropriate scc")
 
         # appliances prior 5.9 don't need such rights
@@ -908,12 +910,12 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
-    @staticmethod
-    def _does_exist(func, **kwargs):
+    def _does_exist(self, func, **kwargs):
         try:
             func(**kwargs)
             return True
-        except ApiException:
+        except ApiException as e:
+            self.logger.info("ApiException occurred %s, it looks like obj doesn't exist", e)
             return False
 
     def _restore_missing_project_role_bindings(self, namespace):
