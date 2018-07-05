@@ -190,7 +190,7 @@ class VMWareVMOrTemplate(Entity):
                 return False
             time.sleep(0.5)
         # The newly renamed VM/template is found
-            return True
+        return True
 
     def get_hardware_configuration(self):
         self.refresh()
@@ -775,6 +775,8 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         Returns:
             VMWareVirtualMachine object, VMWareTemplate object, or None
         """
+        if not name:
+            raise ValueError('Invalid name: {}'.format(name))
         if name not in self._vm_obj_cache or force:
             self.logger.debug(
                 "Searching all vm folders for vm/template '%s'", name)
