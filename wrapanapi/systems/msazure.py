@@ -242,7 +242,9 @@ class AzureInstance(Instance):
                                                  destination_container_name=container,
                                                  overwrite_vhds=overwrite_vhds)
         self.stop()
-        self.raw.generalize()
+        self.logger.info("Generalizing VM '%s'", self.name)
+        operation = self._api.generalize(resource_group_name=self._resource_group, vm_name=self.name)
+        self._wait_on_operation(operation)
         self.logger.info("Capturing VM '%s'", self.name)
         operation = self._api.capture(
             resource_group_name=self._resource_group, vm_name=self.name, parameters=params)
