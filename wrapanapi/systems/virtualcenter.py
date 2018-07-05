@@ -786,7 +786,18 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         else:
             vm_obj = self.get_updated_obj(self._vm_obj_cache[name])
 
-        if not vm_obj:
+        # If vm_obj is not found, return None.
+        # Check if vm_obj.config is None as well, and also return None if that's the case.
+        # Reason:
+        #
+        # https://github.com/vmware/pyvmomi/blob/master/docs/vim/VirtualMachine.rst
+        # The virtual machine configuration is not guaranteed to be available
+        # For example, the configuration information would be unavailable if the
+        # server is unable to access the virtual machine files on disk, and is
+        # often also unavailable during the initial phases of virtual machine creation.
+        #
+        # In such cases, from a wrapanapi POV, we'll treat the VM as if it doesn't exist
+        if not vm_obj or not vm_obj.config:
             return None
         elif vm_obj.config.template:
             entity_cls = VMWareTemplate
