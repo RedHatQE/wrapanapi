@@ -665,30 +665,32 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             raise MultipleItemsError("Multiple stacks with name {} found".format(name))
         return stacks[0]
 
-    def list_templates(self, executable_by_me=True, owned_only_by_me=False, public=False):
+    def list_templates(self, executable_by_me=True, owned_by_me=True, public=False):
         """
         List images on ec2 of image-type 'machine'
 
         Args:
             executable_by_me: search images executable by me (default True)
-            owned_only_by_me: search images owned only by me (default False)
+            owned_by_me: search images owned only by me (default True)
             public: search public images (default False)
         """
         img_filter = {'image-type': 'machine'}
 
-        if public:
-            images = self.api.get_all_images(filters=img_filter)
-        elif executable_by_me:
-            images = self.api.get_all_images(executable_by=['self'], filters=img_filter)
-        elif owned_only_by_me:
-            images = self.api.get_all_images(owners=['self'], filters=img_filter)
-        else:
+        if not any([public, executable_by_me, owned_by_me]):
             raise ValueError(
                 "One of the following must be 'True': owned_by_me, executable_by_me, public")
 
-        return [EC2Image(system=self, raw=image) for image in images]
+        images = []
+        if public:
+            images.extend(self.api.get_all_images(filters=img_filter))
+        if executable_by_me:
+            images.extend(self.api.get_all_images(executable_by=['self'], filters=img_filter))
+        if owned_by_me:
+            images.extend(self.api.get_all_images(owners=['self'], filters=img_filter))
 
-    def find_templates(self, name=None, id=None, executable_by_me=True, owned_only_by_me=False,
+        return [EC2Image(system=self, raw=image) for image in set(images)]
+
+    def find_templates(self, name=None, id=None, executable_by_me=True, owned_by_me=True,
                        public=False, filters=None):
         """
         Find image on ec2 system
@@ -700,10 +702,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         Args:
             name (str): name of image
             id (str): id of image
+            filters (dict): filters to pass along to system.api.get_all_images()
             executable_by_me: search images executable by me (default True)
-            owned_only_by_me: search images owned only by me (default False)
+            owned_by_me: search images owned only by me (default True)
             public: search public images (default False)
-            filters (dict): optional filters to pass along to system.api.get_all_images()
 
         Returns:
             List of EC2Image objects that match
@@ -726,17 +728,19 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             else:
                 kwargs = {'filters': {'name': name}}
 
-        if public:
-            images = self.api.get_all_images(**kwargs)
-        elif executable_by_me:
-            images = self.api.get_all_images(executable_by=['self'], **kwargs)
-        elif owned_only_by_me:
-            images = self.api.get_all_images(owners=['self'], **kwargs)
-        else:
+        if not any([public, executable_by_me, owned_by_me]):
             raise ValueError(
                 "One of the following must be 'True': owned_by_me, executable_by_me, public")
 
-        return [EC2Image(system=self, raw=image) for image in images]
+        images = []
+        if public:
+            images.extend(self.api.get_all_images(**kwargs))
+        if executable_by_me:
+            images.extend(self.api.get_all_images(executable_by=['self'], **kwargs))
+        if owned_by_me:
+            images.extend(self.api.get_all_images(owners=['self'], **kwargs))
+
+        return [EC2Image(system=self, raw=image) for image in set(images)]
 
     def get_template(self, name_or_id):
         matches = self.find_templates(name=name_or_id)
