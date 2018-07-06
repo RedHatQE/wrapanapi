@@ -987,6 +987,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             pool (str) -- pool to try to get IP from (optional)
         """
         pools = self.api.floating_ip_pools.list()
+
+        fip = None
         for pool in pools:
             if pool and pool.name != pool:
                 continue
