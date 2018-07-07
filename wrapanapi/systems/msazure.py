@@ -65,8 +65,12 @@ class AzureInstance(Instance):
 
     @staticmethod
     def _wait_on_operation(operation):
-        operation.wait()
-        return True if operation.status().lower() == "succeeded" else False
+        if operation:
+            operation.wait()
+            return True if operation.status().lower() == "succeeded" else False
+        self.logger.warning(
+            "wait_on_operation got operation=None, expected an OperationStatusResponse")
+        return True
 
     @property
     def name(self):
@@ -384,11 +388,18 @@ class AzureBlobImage(Template):
                 }
             }]
         }
-        nic = self.system.network_client.network_interfaces.create_or_update(
-            resource_group_name=resource_group,
-            network_interface_name=vm_name,
-            parameters=nic_params
-        ).result()
+        def _create_or_update_nic():
+            return self.system.network_client.network_interfaces.create_or_update(
+                resource_group_name=resource_group,
+                network_interface_name=vm_name,
+                parameters=nic_params
+            ).result()
+
+        try:
+            nic = _create_or_update_nic()
+        except CloudError:
+            # Try one more time if we hit an error
+            _create_or_update_nic()
 
         # preparing os disk
         # todo: replace with copy disk operation
