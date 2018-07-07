@@ -63,8 +63,7 @@ class AzureInstance(Instance):
     def _identifying_attrs(self):
         return {'name': self._name, 'resource_group': self._resource_group}
 
-    @staticmethod
-    def _wait_on_operation(operation):
+    def _wait_on_operation(self, operation):
         if operation:
             operation.wait()
             return True if operation.status().lower() == "succeeded" else False
@@ -388,6 +387,7 @@ class AzureBlobImage(Template):
                 }
             }]
         }
+
         def _create_or_update_nic():
             return self.system.network_client.network_interfaces.create_or_update(
                 resource_group_name=resource_group,
