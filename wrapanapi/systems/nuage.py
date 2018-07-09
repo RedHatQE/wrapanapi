@@ -62,7 +62,9 @@ class NuageSystem(System):
         return self._request_list('/enterprises', 'get')
 
     def list_cloud_subnets(self):
-        return self._request_list('/subnets', 'get', exclude_name='BackHaulSubnet')
+        subnets = self._request_list('/subnets', 'get', exclude_name='BackHaulSubnet')
+        l2domains = self._request_list('/l2domains', 'get')
+        return subnets + l2domains
 
     def list_security_groups(self):
         return self._request_list('/policygroups', 'get')
