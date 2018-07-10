@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import six
 from textwrap import dedent
+import time
 
 import pytz
 import tzlocal
@@ -324,10 +325,33 @@ class SCVMTemplate(Template, _LogStrMixin):
         )
         self._run_script(script)
 
-        vm = self.system.get_vm(vm_name)
-        vm.enable_virtual_services()
-        vm.ensure_state(VmState.RUNNING, timeout=timeout)
-        vm.refresh()
+        vm = None
+
+        def _setup_vm():
+            vm = self.system.get_vm(vm_name)
+            vm.enable_virtual_services()
+            vm.ensure_state(VmState.RUNNING, timeout=timeout)
+            vm.refresh()
+
+        num_tries = 10
+        sleep_time = 60
+        for attempt in range(1, num_tries + 1):
+            try:
+                _setup_vm()
+                break
+            except SCVMMSystem.PowerShellScriptError as exc:
+                if attempt == num_tries:
+                    self.logger.error("Retried {} times, giving up".format(num_tries))
+                    raise
+                elif 'Error ID: 1600' in str(exc):
+                    self.logger.warning(
+                        "Hit scvmm error 1600 after deploying VM, waiting {} sec... ({}/{})"
+                        .format(sleep_time, attempt, num_tries)
+                    )
+                    time.sleep(sleep_time)
+                else:
+                    raise
+
         return vm
 
     def delete(self):
@@ -441,7 +465,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         Returns a list of SCVirtualMachine objects matching this name.
         """
         script = (
-            'Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server | Read-SCVirtualMachine')
+            'Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server')
         data = self.get_json(script.format(name))
         # Check if the data returned to us was a list or 1 dict. Always return a list
         if not data:
