@@ -208,7 +208,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
             $creds = New-Object System.Management.Automation.PSCredential("{dom}\\{user}", $pwd)
             Invoke-Command -ComputerName $vm.HostName -Credential $creds -ScriptBlock {{
-                Enable-VMIntegrationService -Name 'Guest Service Interface' -id \"{id}\" }}
+                Enable-VMIntegrationService -VMName $vm.Name -Name 'Guest Service Interface' }}
             Read-SCVirtualMachine -VM $vm
         """.format(
             dom=self.system.domain, user=self.system.user,
