@@ -399,7 +399,7 @@ class AzureBlobImage(Template):
             nic = _create_or_update_nic()
         except CloudError:
             # Try one more time if we hit an error
-            _create_or_update_nic()
+            nic = _create_or_update_nic()
 
         # preparing os disk
         # todo: replace with copy disk operation
