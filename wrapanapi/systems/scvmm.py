@@ -325,32 +325,10 @@ class SCVMTemplate(Template, _LogStrMixin):
         )
         self._run_script(script)
 
-        vm = None
-
-        def _setup_vm():
-            vm = self.system.get_vm(vm_name)
-            vm.enable_virtual_services()
-            vm.ensure_state(VmState.RUNNING, timeout=timeout)
-            vm.refresh()
-
-        num_tries = 10
-        sleep_time = 60
-        for attempt in range(1, num_tries + 1):
-            try:
-                _setup_vm()
-                break
-            except SCVMMSystem.PowerShellScriptError as exc:
-                if attempt == num_tries:
-                    self.logger.error("Retried {} times, giving up".format(num_tries))
-                    raise
-                elif 'Error ID: 1600' in str(exc):
-                    self.logger.warning(
-                        "Hit scvmm error 1600 after deploying VM, waiting {} sec... ({}/{})"
-                        .format(sleep_time, attempt, num_tries)
-                    )
-                    time.sleep(sleep_time)
-                else:
-                    raise
+        vm = self.system.get_vm(vm_name)
+        vm.enable_virtual_services()
+        vm.ensure_state(VmState.RUNNING, timeout=timeout)
+        vm.refresh()
 
         return vm
 
@@ -429,12 +407,33 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
         self.logger.debug(' Running PowerShell script:\n%s\n', script)
-        result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
-        if result.status_code != 0:
+
+        def _raise_for_result(result):
             raise self.PowerShellScriptError(
                 "Script returned {}!: {}"
                 .format(result.status_code, result.std_err)
             )
+
+        # Add retries for error id 1600
+        num_tries = 10
+        sleep_time = 30
+        for attempt in range(1, num_tries + 1):
+            result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
+            if result.status_code == 0:
+                break
+            elif hasattr(result, 'std_err') and 'Error ID: 1600' in result.std_err:
+                if attempt == num_tries:
+                    self.logger.error("Retried %d times, giving up", num_tries)
+                    _raise_for_result(result)
+
+                self.logger.warning(
+                    "Hit scvmm error 1600 after deploying VM, waiting {} sec... ({}/{})"
+                    .format(sleep_time, attempt, num_tries)
+                )
+                time.sleep(sleep_time)
+            else:
+                _raise_for_result(result)
+
         return result.std_out.strip()
 
     def get_json(self, script, depth=2):
