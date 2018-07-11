@@ -24,9 +24,10 @@ class NuageSystem(System):
     """
 
     _stats_available = {
-        'num_network_group': lambda self: len(self.list_network_groups()),
         'num_security_group': lambda self: len(self.list_security_groups()),
         'num_cloud_subnet': lambda self: len(self.list_cloud_subnets()),
+        'num_cloud_tenant': lambda self: len(self.list_enterprises()),
+        'num_network_router': lambda self: len(self.list_domains())
     }
 
     def __init__(self, hostname, username, password, api_port, api_version, security_protocol,
@@ -58,14 +59,17 @@ class NuageSystem(System):
             'X-Nuage-Organization': 'csp'
         }
 
-    def list_network_groups(self):
-        return self._request_list('/enterprises', 'get')
-
     def list_cloud_subnets(self):
         return self._request_list('/subnets', 'get', exclude_name='BackHaulSubnet')
 
     def list_security_groups(self):
         return self._request_list('/policygroups', 'get')
+
+    def list_enterprises(self):
+        return self._request_list('/enterprises', 'get')
+
+    def list_domains(self):
+        return self._request_list('/domains', 'get')
 
     def _request_list(self, *args, **kwargs):
         resp = self._request(*args, **kwargs)
