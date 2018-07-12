@@ -263,7 +263,8 @@ class Openshift(System):
         for pod in pods:
             for status in pod.status.container_statuses:
                 statuses.append(status)
-        return [status.image for status in statuses]
+        # returns only the image registry name, without the port number in case of local registry
+        return sorted(set([status.image.split('/')[0].split(':')[0] for status in statuses]))
 
     def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
         """Deploy a VM from a template
