@@ -204,15 +204,15 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def enable_virtual_services(self):
         hyperv_vm_id = self.raw['VMId']
         script = """
-            $vm = Get-SCVirtualMachine -ID "{vm}"
+            $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
             $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
             $creds = New-Object System.Management.Automation.PSCredential("{dom}\\{user}", $pwd)
             Invoke-Command -ComputerName $vm.HostName -Credential $creds -ScriptBlock {{
-                Enable-VMIntegrationService -VMName $vm.Name -Name 'Guest Service Interface' }}
+                Get-VM -Id {hyperv_vm_id} | Enable-VMIntegrationService -Name 'Guest Service Interface' }}
             Read-SCVirtualMachine -VM $vm
         """.format(
             dom=self.system.domain, user=self.system.user,
-            password=self.system.password, vm=self._id, id=hyperv_vm_id
+            password=self.system.password, scvmm_vm_id=self._id, hyperv_vm_id=hyperv_vm_id
         )
         self.system.run_script(script)
 
