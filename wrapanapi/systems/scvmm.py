@@ -83,17 +83,19 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def _identifying_attrs(self):
         return {'id': self._id}
 
-    def refresh(self):
+    def refresh(self, read_from_hyperv=True):
         """
         Get VM from SCVMM
 
-        Force reload from host to cover cases where VM was updated directly on host
+        Args:
+            read_from_hyperv (boolean) -- force reload vm data from host
 
         Returns:
             raw VM json
         """
-        script = (
-            'Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server | Read-SCVirtualMachine')
+        script = 'Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server'
+        if read_from_hyperv:
+            script = '{} | Read-SCVirtualMachine'.format(script)
         try:
             data = self._get_json(script.format(self._id))
         except SCVMMSystem.PowerShellScriptError as error:
@@ -112,7 +114,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         return self.raw['Name']
 
     def _get_state(self):
-        self.refresh()
+        self.refresh(read_from_hyperv=False)
         return self._api_state_to_vmstate(self.raw['StatusString'])
 
     @property
@@ -121,7 +123,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def ip(self):
-        self.refresh()
+        self.refresh(read_from_hyperv=True)
         data = self._run_script(
             "Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server |"
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
@@ -131,7 +133,6 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def creation_time(self):
-        self.refresh()
         creation_time = convert_powershell_date(self.raw['CreationTime'])
         return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
 
@@ -184,8 +185,8 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         self._do_vm("Set", "-Name {}".format(name))
         old_name = self.raw['Name']
         wait_for(
-            lambda: self.refresh() and self.name != old_name, delay=5, timeout="3m",
-            message="vm {} to change names".format(self._log_str)
+            lambda: self.refresh(read_from_hyperv=True) and self.name != old_name, delay=5,
+            timeout="3m", message="vm {} to change names".format(self._log_str)
         )
         return True
 
@@ -208,16 +209,16 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
             $creds = New-Object System.Management.Automation.PSCredential("{dom}\\{user}", $pwd)
             Invoke-Command -ComputerName $vm.HostName -Credential $creds -ScriptBlock {{
-                Get-VM -Id {hyperv_vm_id} | Enable-VMIntegrationService -Name 'Guest Service Interface' }}
+                Get-VM -Id {h_id} | Enable-VMIntegrationService -Name 'Guest Service Interface' }}
             Read-SCVirtualMachine -VM $vm
         """.format(
             dom=self.system.domain, user=self.system.user,
-            password=self.system.password, scvmm_vm_id=self._id, hyperv_vm_id=hyperv_vm_id
+            password=self.system.password, scvmm_vm_id=self._id, h_id=hyperv_vm_id
         )
         self.system.run_script(script)
 
     def get_hardware_configuration(self):
-        self.refresh()
+        self.refresh(read_from_hyperv=True)
         data = {'mem': self.raw['CPUCount'], 'cpu': self.raw['Memory']}
         return {
             key: str(val) if isinstance(val, six.string_types) else val
@@ -328,7 +329,6 @@ class SCVMTemplate(Template, _LogStrMixin):
         vm = self.system.get_vm(vm_name)
         vm.enable_virtual_services()
         vm.ensure_state(VmState.RUNNING, timeout=timeout)
-        vm.refresh()
 
         return vm
 
@@ -406,7 +406,6 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     def run_script(self, script):
         """Wrapper for running powershell scripts. Ensures the ``pre_script`` is loaded."""
         script = dedent(script)
-        self.logger.debug(' Running PowerShell script:\n%s\n', script)
 
         def _raise_for_result(result):
             raise self.PowerShellScriptError(
@@ -415,9 +414,10 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             )
 
         # Add retries for error id 1600
-        num_tries = 10
-        sleep_time = 30
+        num_tries = 6
+        sleep_time = 10
         for attempt in range(1, num_tries + 1):
+            self.logger.debug(' Running PowerShell script:\n%s\n', script)
             result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
             if result.status_code == 0:
                 break
@@ -427,8 +427,8 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
                     _raise_for_result(result)
 
                 self.logger.warning(
-                    "Hit scvmm error 1600 after deploying VM, waiting {} sec... ({}/{})"
-                    .format(sleep_time, attempt, num_tries)
+                    "Hit scvmm error 1600 running script, waiting %d sec... (%d/%d)",
+                    sleep_time, attempt, num_tries
                 )
                 time.sleep(sleep_time)
             else:
