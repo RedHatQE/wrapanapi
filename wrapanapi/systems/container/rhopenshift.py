@@ -149,6 +149,7 @@ class Openshift(System):
         self.kapi_client = kubeclient.ApiClient(config=config)
         self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
         self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
+        self.security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
 
     def info(self):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
@@ -331,17 +332,8 @@ class Openshift(System):
             )
 
         self.logger.info("granting required rights to project's service accounts")
-        security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
         for mapping in scc_user_mapping:
-            user = 'system:serviceaccount:{proj}:{usr}'.format(proj=proj_name,
-                                                               usr=mapping['user'])
-            update_scc_cmd = [
-                {"op": "add",
-                 "path": "/users/-",
-                 "value": user}]
-            self.logger.debug("adding user %r to scc %r", user, mapping['scc'])
-            security_api.patch_security_context_constraints(name=mapping['scc'],
-                                                            body=update_scc_cmd)
+            self.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name, sa=mapping['user'])
         progress_callback("Added service accounts to appropriate scc")
 
         # appliances prior 5.9 don't need such rights
@@ -1034,6 +1026,65 @@ class Openshift(System):
         """Returns only the selected Project object"""
         return next(proj for proj in self.list_project() if proj.metadata.name == project_name)
 
+    def get_scc(self, name):
+        """Returns Security Context Constraint by name
+
+        Args:
+          name: security context constraint name
+        Returns: security context constraint object
+        """
+        return self.security_api.read_security_context_constraints(name)
+
+    def append_sa_to_scc(self, scc_name, namespace, sa):
+        """Appends Service Account to respective Security Constraint
+
+        Args:
+          scc_name: security context constraint name
+          namespace: service account's namespace
+          sa: service account's name
+        Returns: updated security context constraint object
+        """
+        user = 'system:serviceaccount:{proj}:{usr}'.format(proj=namespace,
+                                                           usr=sa)
+        if self.get_scc(scc_name).users is None:
+            # ocp 3.6 has None for users if there is no sa in it
+            update_scc_cmd = [
+                {"op": "add",
+                 "path": "/users",
+                 "value": [user]}]
+        else:
+            update_scc_cmd = [
+                {"op": "add",
+                 "path": "/users/-",
+                 "value": user}]
+        self.logger.debug("adding user %r to scc %r", user, scc_name)
+        return self.security_api.patch_security_context_constraints(name=scc_name,
+                                                                    body=update_scc_cmd)
+
+    def remove_sa_from_scc(self, scc_name, namespace, sa):
+        """Removes Service Account from respective Security Constraint
+
+        Args:
+          scc_name: security context constraint name
+          namespace: service account's namespace
+          sa: service account's name
+        Returns: updated security context constraint object
+        """
+        user = 'system:serviceaccount:{proj}:{usr}'.format(proj=namespace,
+                                                           usr=sa)
+        # json patch's remove works only with indexes. so we have to figure out index
+        try:
+            index = next(val[0] for val in enumerate(self.get_scc(scc_name).users)
+                         if val[1] == user)
+        except StopIteration:
+            raise ValueError("No such sa {} in scc {}".format(user, scc_name))
+        update_scc_cmd = [
+            {"op": "remove",
+             "path": "/users/{}".format(index)}]
+        self.logger.debug("removing user %r from scc %s with index %s", user, scc_name, index)
+        return self.security_api.patch_security_context_constraints(name=scc_name,
+                                                                    body=update_scc_cmd)
+
     def is_vm_running(self, vm_name):
         """Emulates check is vm(appliance) up and running
 
@@ -1198,8 +1249,8 @@ class Openshift(System):
     def get_appliance_version(self, vm_name):
         """Returns appliance version if it is possible
 
-            Args:
-                vm_name: project name
+         Args:
+            vm_name: the openshift project name of the podified appliance
         Returns: version
         """
         try:
@@ -1215,9 +1266,9 @@ class Openshift(System):
     def delete_template(self, template_name, namespace='openshift'):
         """Deletes template
 
-            Args:
-                template_name: stored openshift template name
-                namespace: project name
+        Args:
+            template_name: stored openshift template name
+            namespace: project name
         Returns: result of delete operation
         """
         options = self.kclient.V1DeleteOptions()
@@ -1233,7 +1284,28 @@ class Openshift(System):
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
     def vm_status(self, vm_name):
-        raise NotImplementedError('vm_status not implemented.')
+        """Returns current vm/appliance state
+
+        Args:
+          vm_name: the openshift project name of the podified appliance
+        Returns: up/down or exception if vm doesn't exist
+        """
+        if not self.does_vm_exist(vm_name):
+            raise ValueError("Vm {} doesn't exist".format(vm_name))
+        return 'up' if self.is_vm_running(vm_name) else 'down'
+
+    def vm_creation_time(self, vm_name):
+        """Returns time when vm/appliance was created
+
+        Args:
+          vm_name:  the openshift project name of the podified appliance
+        Return: datetime obj
+        """
+        if not self.does_vm_exist(vm_name):
+            raise ValueError("Vm {} doesn't exist".format(vm_name))
+        projects = self.o_api.list_project().items
+        project = next(proj for proj in projects if proj.metadata.name == vm_name)
+        return project.metadata.creation_timestamp
 
     @staticmethod
     def _progress_log_callback(logger, source, destination, progress):
