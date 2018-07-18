@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import copy
 import json
 import string
+import yaml
 from collections import Iterable
 from functools import partial, wraps
 from random import choice
@@ -39,6 +40,18 @@ common_service = """
     }
   }
 }
+"""
+
+# since 5.10 CloudForms doesn't allow to override image repo url and tag in template
+# so, this information has to be stored during template deployment somewhere in project
+image_repo_cm_template = """
+api_version: v1
+kind: ConfigMap
+metadata:
+  name: "image-repo-data"
+data:
+  tags: |
+    {tags}
 """
 
 
@@ -88,20 +101,34 @@ class Openshift(System):
         'num_template': lambda self: len(self.list_template())
     }
 
-    stream2template_tags_mapping = {
-        'cfme-openshift-httpd': 'HTTPD_IMG_TAG',
-        'cfme-openshift-app': 'BACKEND_APPLICATION_IMG_TAG',
-        'cfme-openshift-app-ui': 'FRONTEND_APPLICATION_IMG_TAG',
-        'cfme-openshift-embedded-ansible': 'ANSIBLE_IMG_TAG',
-        'cfme-openshift-memcached': 'MEMCACHED_IMG_TAG',
-        'cfme-openshift-postgresql': 'POSTGRESQL_IMG_TAG',
-        'cfme58-openshift-app': 'APPLICATION_IMG_TAG',
-        'cfme58-openshift-memcached': 'MEMCACHED_IMG_TAG',
-        'cfme58-openshift-postgresql': 'POSTGRESQL_IMG_TAG',
+    stream2template_tags_mapping59 = {
+        'cfme-openshift-httpd': {'tag': 'HTTPD_IMG_TAG', 'url': 'HTTPD_IMG_NAME'},
+        'cfme-openshift-app': {'tag': 'BACKEND_APPLICATION_IMG_TAG',
+                               'url': 'BACKEND_APPLICATION_IMG_NAME'},
+        'cfme-openshift-app-ui': {'tag': 'FRONTEND_APPLICATION_IMG_TAG',
+                                  'url': 'FRONTEND_APPLICATION_IMG_NAME'},
+        'cfme-openshift-embedded-ansible': {'tag': 'ANSIBLE_IMG_TAG', 'url': 'ANSIBLE_IMG_NAME'},
+        'cfme-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG', 'url': 'MEMCACHED_IMG_NAME'},
+        'cfme-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG', 'url': 'POSTGRESQL_IMG_NAME'},
     }
 
-    template_tags = [tag for tag in stream2template_tags_mapping.values()]
-    stream_tags = [tag for tag in stream2template_tags_mapping.keys()]
+    stream2template_tags_mapping58 = {
+        'cfme58-openshift-app': {'tag': 'APPLICATION_IMG_TAG', 'url': 'APPLICATION_IMG_NAME'},
+        'cfme58-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG', 'url': 'MEMCACHED_IMG_NAME'},
+        'cfme58-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG', 'url': 'POSTGRESQL_IMG_NAME'},
+    }
+
+    scc_user_mapping59 = (
+        {'scc': 'anyuid', 'user': 'cfme-anyuid'},
+        {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
+        {'scc': 'anyuid', 'user': 'cfme-httpd'},
+        {'scc': 'privileged', 'user': 'cfme-privileged'},
+    )
+
+    scc_user_mapping58 = (
+        {'scc': 'anyuid', 'user': 'cfme-anyuid'},
+        {'scc': 'privileged', 'user': 'default'},
+    )
 
     default_namespace = 'openshift'
     required_project_pods = ('httpd', 'memcached', 'postgresql',
@@ -286,13 +313,21 @@ class Openshift(System):
         if not self.base_url:
             raise ValueError("base url isn't provided")
 
-        prepared_tags = {key: 'latest' for key in self.template_tags}
+        version = Version(TemplateName.parse_template(template).version)
+
+        if version >= '5.9':
+            tags_mapping = self.stream2template_tags_mapping59
+        else:
+            tags_mapping = self.stream2template_tags_mapping58
+
+        prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
         if tags:
-            not_found_tags = [tag for tag in tags.keys() if tag not in self.stream_tags]
+            not_found_tags = [t for t in tags.keys() if t not in tags_mapping.keys()]
             if not_found_tags:
                 raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
             for tag, value in tags.items():
-                prepared_tags[self.stream2template_tags_mapping[tag]] = value
+                prepared_tags[tags_mapping[tag]['url']] = value['url']
+                prepared_tags[tags_mapping[tag]['tag']] = value['tag']
 
         # create project
         # assuming this is cfme installation and generating project name
@@ -314,22 +349,9 @@ class Openshift(System):
         self.create_project(name=proj_name, description=template)
         progress_callback("Created Project `{}`".format(proj_name))
 
-        version = Version(TemplateName.parse_template(template).version)
-
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
-        if version >= '5.9':
-            scc_user_mapping = (
-                {'scc': 'anyuid', 'user': 'cfme-anyuid'},
-                {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
-                {'scc': 'anyuid', 'user': 'cfme-httpd'},
-                {'scc': 'privileged', 'user': 'cfme-privileged'},
-            )
-        else:
-            scc_user_mapping = (
-                {'scc': 'anyuid', 'user': 'cfme-anyuid'},
-                {'scc': 'privileged', 'user': 'default'},
-            )
+        scc_user_mapping = self.scc_user_mapping59 if version >= '5.9' else self.scc_user_mapping58
 
         self.logger.info("granting required rights to project's service accounts")
         for mapping in scc_user_mapping:
@@ -372,6 +394,10 @@ class Openshift(System):
         service_obj = self.kclient.V1Service(**json.loads(common_service))
         self.k_api.create_namespaced_service(namespace=proj_name, body=service_obj)
         progress_callback("Common Service has been added")
+
+        # adding config map with image stream urls and tags
+        image_repo_cm = image_repo_cm_template.format(tags=str(tags).replace("'", '"'))
+        self.create_config_map(namespace=proj_name, **yaml.safe_load(image_repo_cm))
 
         # creating pods and etc
         processing_params = {'DATABASE_PASSWORD': password,
@@ -1389,3 +1415,18 @@ class Openshift(System):
 
     def disconnect(self):
         pass
+
+    def get_appliance_tags(self, name):
+        """Returns appliance tags stored in appropriate config map if it exists.
+
+        Args:
+            name: appliance project name
+
+        Returns: dict with tags and urls
+        """
+        try:
+            read_data = self.k_api.read_namespaced_config_map(name='image-repo-data',
+                                                              namespace=name)
+            return json.loads(read_data.data['tags'])
+        except ApiException:
+            return {}
