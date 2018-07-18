@@ -526,8 +526,9 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
 
     def mark_as_template(self, **kwargs):
         self.raw.MarkAsTemplate()
-        self.refresh()
-        return VMWareTemplate(system=self.system, name=self.name, raw=self.raw)
+        template = VMWareTemplate(system=self.system, name=self.name, raw=self.raw)
+        template.refresh()
+        return template
 
     def clone(self, vm_name, **kwargs):
         kwargs['destination'] = vm_name
