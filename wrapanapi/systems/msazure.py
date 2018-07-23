@@ -127,6 +127,7 @@ class AzureInstance(Instance):
             ip addres (str) -- IPv4 Public IP of the primary ip_config of the primary nic
             None -- if no public IP found
         """
+        self.refresh()
         network_client = self.system.network_client
 
         # Getting id of the first network interface of the vm
@@ -178,6 +179,7 @@ class AzureInstance(Instance):
 
     @property
     def creation_time(self):
+        self.refresh()
         return self.raw.instance_view.statuses[0].time
 
     def delete(self):

@@ -133,6 +133,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def creation_time(self):
+        self.refresh()
         creation_time = convert_powershell_date(self.raw['CreationTime'])
         return creation_time.replace(tzinfo=tzlocal.get_localzone()).astimezone(pytz.UTC)
 
