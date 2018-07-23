@@ -189,6 +189,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         """
         Returns creation time of VM/instance
         """
+        self.refresh()
         return self.raw.creation_time.astimezone(pytz.UTC)
 
     def start(self):

@@ -119,6 +119,7 @@ class GoogleCloudInstance(Instance):
 
     @property
     def creation_time(self):
+        self.refresh()
         creation_time = iso8601.parse_date(self.raw['creationTimestamp'])
         return creation_time.astimezone(pytz.UTC)
 

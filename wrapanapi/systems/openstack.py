@@ -151,6 +151,7 @@ class OpenstackInstance(Instance):
     @property
     def creation_time(self):
         # Example vm.creation_time: 2014-08-14T23:29:30Z
+        self.refresh()
         creation_time = datetime.strptime(self.raw.created, '%Y-%m-%dT%H:%M:%SZ')
         # create time is UTC, localize it, strip tzinfo
         return creation_time.replace(tzinfo=pytz.UTC)
