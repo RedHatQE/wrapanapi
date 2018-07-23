@@ -90,8 +90,8 @@ class EC2Instance(Instance):
 
     @property
     def creation_time(self):
-        # Example instance.launch_time: 2014-08-13T22:09:40.000Z
         self.refresh()
+        # Example instance.launch_time: 2014-08-13T22:09:40.000Z
         launch_time = datetime.strptime(self.raw.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
         # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
         return launch_time.replace(tzinfo=pytz.UTC)
@@ -296,7 +296,7 @@ class EC2Image(Template):
 
     @property
     def name(self):
-        return self.raw.tags.get('Name', self.raw.id)
+        return self.raw.name or self.raw.tags.get('Name', self.raw.id)
 
     @property
     def uuid(self):
