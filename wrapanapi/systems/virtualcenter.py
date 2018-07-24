@@ -255,7 +255,7 @@ class VMWareVMOrTemplate(Entity):
             vm = self.system.get_vm(destination)
         except VMInstanceNotFound:
             vm = None
-        if vm:
+        if vm and not relocate:
             raise Exception("VM/template of the name {} already present!".format(destination))
 
         if progress_callback is None:
@@ -524,10 +524,13 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
         self.ensure_state(VmState.STOPPED)
         return super(VMWareVirtualMachine, self).delete()
 
-    def mark_as_template(self, **kwargs):
+    def mark_as_template(self, template_name=None, **kwargs):
+        self.ensure_state(VmState.STOPPED)
         self.raw.MarkAsTemplate()
         template = VMWareTemplate(system=self.system, name=self.name, raw=self.raw)
         template.refresh()
+        if template_name and template_name != template.name:
+            template.rename(template_name)
         return template
 
     def clone(self, vm_name, **kwargs):
