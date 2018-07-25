@@ -17,7 +17,7 @@ from azure.mgmt.compute.models import (DiskCreateOptionTypes, VirtualHardDisk,
                                        VirtualMachineCaptureParameters,
                                        VirtualMachineSizeTypes)
 from azure.mgmt.network import NetworkManagementClient
-from azure.mgmt.network.models import NetworkSecurityGroup
+from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
@@ -672,6 +672,14 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                 sec_groups_in_location.append(sec_gp.name)
         return sec_groups_in_location
 
+    def list_security_group_ports(self, sec_group_name, resource_group=None):
+        resource_group = resource_group or self.resource_group
+        self.logger.info('Attempting to List ports from Azure security group "%s"'
+                         'in resource group "%s"', sec_group_name, resource_group)
+        sg_rules = self.network_client.security_rules.list(resource_group, sec_group_name)
+        sg_ports = [sgr.destination_port_range for sgr in sg_rules]
+        return sg_ports
+
     def list_router(self):
         self.logger.info("Attempting to List Azure routes table")
         all_routers = self.network_client.route_tables.list_all()
@@ -759,6 +767,23 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                                            network_security_group_name=group_name)
         operation.wait()
         self.logger.info("Network Security Group '%s' is removed", group_name)
+        return operation.status()
+
+    def create_netsec_group_port_allow(self, secgroup_name, protocol,
+            source_address_prefix, destination_address_prefix, access, direction,
+            resource_group=None, **kwargs):
+        resource_group = resource_group or self.resource_group
+        self.logger.info("Attempting to Create New Azure Security Group "
+                         "Rule '%s'.", secgroup_name)
+
+        parameters = NetworkSecurityGroup(location=self.region)
+        parameters.security_rules = [
+            SecurityRule(protocol, source_address_prefix, destination_address_prefix,
+                access, direction, **kwargs)]
+        nsg = self.network_client.network_security_groups
+        operation = nsg.create_or_update(resource_group, secgroup_name, parameters)
+        operation.wait()
+        self.logger.info("Network Security Group Rule is created.")
         return operation.status()
 
     def list_load_balancer(self):
