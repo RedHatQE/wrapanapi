@@ -166,14 +166,13 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
     @property
     def ip(self):
         """
-        Returns IP address of the VM/instance
+        Returns IPv4 or global IPv6 address of the VM/instance
         """
-        rep_dev_service = self.api.reported_devices_service()
-        try:
-            first = rep_dev_service.list()[0]
-            return first.ips[0].address
-        except IndexError:
-            return None
+        link_local_prefix = 'fe80::'
+        for ip in self.all_ips:
+            if link_local_prefix not in ip[:len(link_local_prefix)]:
+                return ip
+        return None
 
     @property
     def all_ips(self):
