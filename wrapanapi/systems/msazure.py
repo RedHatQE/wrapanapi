@@ -17,7 +17,7 @@ from azure.mgmt.compute.models import (DiskCreateOptionTypes, VirtualHardDisk,
                                        VirtualMachineCaptureParameters,
                                        VirtualMachineSizeTypes)
 from azure.mgmt.network import NetworkManagementClient
-from azure.mgmt.network.models import NetworkSecurityGroup
+from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
@@ -672,6 +672,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                 sec_groups_in_location.append(sec_gp.name)
         return sec_groups_in_location
 
+    def list_security_group_ports(self, resource_group, sec_group_name):
+        self.logger.info('Attempting to List ports from Azure security group "%s" in resource group '
+                         '"%s"', sec_group_name, resource_group)
+        sg_rules = self.network_client.security_rules.list(resource_group, sec_group_name)
+        sg_ports = [sgr.destination_port_range for sgr in sg_rules]
+        return sg_ports
+
     def list_router(self):
         self.logger.info("Attempting to List Azure routes table")
         all_routers = self.network_client.route_tables.list_all()
@@ -759,6 +766,26 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                                            network_security_group_name=group_name)
         operation.wait()
         self.logger.info("Network Security Group '%s' is removed", group_name)
+        return operation.status()
+
+    def create_netsec_group_port_allow(self, group_name, port, resource_group=None):
+        security_groups = self.network_client.network_security_groups
+        secgroup_name = 'port_{:d}'.format(port)
+
+        self.logger.info("Attempting to Create New Azure Security Group '%s' "
+                         "Rule '%s'.", secgroup_name, group_name)
+
+        parameters = NetworkSecurityGroup(location=self.region)
+        parameters.security_rules = [
+            SecurityRule(
+                'Tcp', '*', '*', 'Allow', 'Inbound', description='Allow port {:d}'.format(port),
+                source_port_range='*', destination_port_range=str(port), priority=100,
+                name=secgroup_name)]
+        operation = self.network_client.network_security_groups.create_or_update(resource_group, group_name, parameters)
+
+
+        operation.wait()
+        self.logger.info("Network Security Group Rule is created.", group_name)
         return operation.status()
 
     def list_load_balancer(self):
