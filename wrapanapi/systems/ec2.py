@@ -65,7 +65,7 @@ class EC2Instance(Instance):
 
     @property
     def name(self):
-        return self.raw.tags.get('Name', self.raw.id)
+        return self.raw.name or self.raw.tags.get('Name', self.raw.id)
 
     @property
     def uuid(self):

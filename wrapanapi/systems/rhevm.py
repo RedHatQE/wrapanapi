@@ -12,9 +12,9 @@ from ovirtsdk4 import Connection, Error, types
 from wait_for import TimedOutError, wait_for
 
 from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
-from wrapanapi.exceptions import (ItemNotFound, MultipleItemsError,
-                                  NotFoundError, VMInstanceNotFound,
-                                  VMInstanceNotSuspended, VMNotFoundViaIP)
+from wrapanapi.exceptions import (
+    ItemNotFound, MultipleItemsError, NotFoundError, VMInstanceNotFound, VMInstanceNotSuspended,
+    VMNotFoundViaIP, ResourceAlreadyExistsException)
 from wrapanapi.systems.base import System
 
 
@@ -56,6 +56,8 @@ class _SharedMethodsMixin(object):
         for nic in self.api.nics_service().list():
             if nic.name == nic_name:
                 return self.api.nics_service().nic_service(nic.id)
+        else:
+            raise NotFoundError('Unable to find NicService for nic {} on {}'.format(nic_name, self))
 
     def _get_network(self, network_name):
         """retreive a network object by name"""
@@ -64,23 +66,82 @@ class _SharedMethodsMixin(object):
         try:
             return networks[0]
         except IndexError:
-            raise ItemNotFound('No match for network by "name={}"'.format(network_name))
+            raise NotFoundError('No match for network by "name={}"'.format(network_name))
 
-    def update_nic(self, network_name, nic_name='nic1', interface='VIRTIO'):
-        nic_service = self._get_nic_service(nic_name)
-        nic = nic_service.get()
+    def get_nics(self):
+        return self.api.nics_service().list()
+
+    def _nic_action(self, nic, network_name, interface='VIRTIO', on_boot=True,
+                   vnic_profile=None, nic_service=None, action='add'):
+        """Call an action on nic_service, could be a vmnic or vmnics service
+        example, action 'add' on vmnicsservice, or 'update' on VmNicService
+        currently written for nic actions on the service, though other actions are available
+
+        Args:
+            nic: the Nic object itself, could be existing on the vm or not
+            network_name: string name of the network, also default for vnic_profile name if empty
+            interface: string interface type for ovirt, interfaces are resolved to a specific type
+            on_boot: boolean, kwarg for nic options
+            vnic_profile: string name of the vnic_profile, network_name is used if empty
+            nic_service: the VmNicsService or VmNicService, defaults to VmNicsService
+            action: string action method to call on the service, defaults to add (VmNicsService)
+        """
+        # TODO take kwargs and match them to types.Nic attributes so callers can set any property
+        service = nic_service or self.api.nics_service()
         nic.network = self._get_network(network_name)
+        vnic_name = vnic_profile or network_name
+        vnic_list = self.system.api.system_service().vnic_profiles_service().list()
         try:
-            nic.vnic_profile = [
-                v
-                for v in self.system.api.system_service().vnic_profiles_service().list()
-                if v.name == network_name
-            ][0]
+            nic.vnic_profile = [v_nic for v_nic in vnic_list if v_nic.name == vnic_name][0]
         except IndexError:
-            raise ItemNotFound('Unable to find vnic_profile matching network {}'
-                               .format(network_name))
+            raise NotFoundError('Unable to find vnic_profile matching name {}'.format(vnic_name))
         nic.interface = getattr(types.NicInterface, interface)
-        nic_service.update(nic)
+        nic.on_boot = on_boot
+        # service attribute should be method we can call and pass the nic to
+        getattr(service, action)(nic)
+
+    def add_nic(self, network_name, nic_name='nic1', interface='VIRTIO', on_boot=True,
+                vnic_profile=None):
+        """Add a nic to VM/Template
+
+        Args:
+            network_name: string name of the network, also default for vnic_profile name if empty
+            nic_name: string name of the nic to add
+            interface: string interface type for ovirt, interfaces are resolved to a specific type
+            on_boot: boolean, kwarg for nic options
+            vnic_profile: string name of the vnic_profile, network_name is used if empty
+
+        Raises:
+            ResourceAlreadyExistsException: method checks if the nic already exists
+        """
+        try:
+            self._get_nic_service(nic_name)
+        except NotFoundError:
+            pass
+        else:
+            raise ResourceAlreadyExistsException('Nic with name {} already exists on {}'
+                                                 .format(nic_name, self.name))
+        nics_service = self.api.nics_service()
+        nic = types.Nic(name=nic_name)
+        self._nic_action(nic, network_name, interface, on_boot, vnic_profile,
+                         nics_service, action='add')
+
+    def update_nic(self, network_name, nic_name='nic1', interface='VIRTIO', on_boot=True,
+                   vnic_profile=None):
+        """Update a nic on VM/Template
+        Args:
+            network_name: string name of the network, also default for vnic_profile name if empty
+            nic_name: string name of the nic to add
+            interface: string interface type for ovirt, interfaces are resolved to a specific type
+            on_boot: boolean, kwarg for nic options
+            vnic_profile: string name of the vnic_profile, network_name is used if empty
+
+        Raises:
+            NotFoundError: from _get_nic_service call if the name doesn't exist
+        """
+        nic_service = self._get_nic_service(nic_name)
+        self._nic_action(nic_service.get(), network_name, interface, on_boot, vnic_profile,
+                         nic_service, action='update')
 
 
 class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
@@ -252,29 +313,24 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             self.wait_for_state(VmState.SUSPENDED)
             return True
 
-    def mark_as_template(self, delete=True, temporary_name=None,
-                         cluster=None, delete_on_error=True):
+    def mark_as_template(self, template_name=None, cluster=None, delete=True, delete_on_error=True,
+                         **kwargs):
         """Turns the VM off, creates template from it and deletes the original VM.
 
         Mimics VMware behaviour here.
-
+        Delete also controls renaming
+        If delete is false and no template_name provided, auto-generated mrk_tmpl_<hash>
+         becomes the final template name, as we can't use the vm name
+        In other words, can only rename when template_name != vm_name, or when delete is true
         Args:
             delete: Whether to delete the VM (default: True)
-            temporary_name: If you want, you can specific an exact temporary name for renaming.
+            template_name: If you want, you can specific an exact template name
             delete_on_error: delete on timeout as well.
 
         Returns:
         wrapanapi.systems.rhevm.RHEVMTemplate object
         """
-        def _delete_vm_and_rename_template(template):
-            # We can only rename template to the vm name if VM is deleted first
-            if self.exists:
-                self.delete()
-            template.rename(self.name)
-
-        temp_template_name = temporary_name or "templatize_{}".format(
-            fauxfactory.gen_alphanumeric(8))
-
+        temp_template_name = template_name or "mrk_tmpl_{}".format(fauxfactory.gen_alphanumeric(8))
         try:
             # Check if this template already exists and ensure it is in an OK state...
             create_new_template = True
@@ -286,9 +342,6 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                     pass  # It got deleted.
                 else:
                     create_new_template = False
-                    if delete:
-                        # Delete the original VM
-                        _delete_vm_and_rename_template(template)
 
             # Template does not exist, so create a new one...
             if create_new_template:
@@ -296,9 +349,13 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                 # Create template based on this VM
                 template = self.system.create_template(
                     template_name=temp_template_name, vm_name=self.name, cluster_name=cluster)
-                if delete:
-                    # Delete the original VM
-                    _delete_vm_and_rename_template(template)
+            if delete and self.exists:
+                # Delete the original VM
+                self.delete()
+            # if template_name was passed, it was used in creating the template, no rename needed
+            # rename back to the VM name only if no template_name passed and delete
+            if not template_name and delete:
+                template.rename(self.name)
         except TimedOutError:
             self.logger.error("Hit TimedOutError marking VM as template")
             if delete_on_error:
@@ -334,12 +391,12 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         return len(self.api.disk_attachments_service().list())
 
     def _is_disk_ok(self, disk_id):
-        disks_service = self.api.system_service().disks_service()
-        disk_service = disks_service.disk_service(disk_id)
-        disk = disk_service.get()
-        return disk.status == types.DiskStatus.OK
+        disk = [self.system.api.follow_link(disk_attach.disk)
+                for disk_attach in self.api.disk_attachments_service().list()
+                if self.system.api.follow_link(disk_attach.disk).id == disk_id].pop()
+        return getattr(disk, 'status', None) == types.DiskStatus.OK
 
-    def add_disk(self, storage_domain=None, size=None, interface=None, format=None,
+    def add_disk(self, storage_domain=None, size=None, interface='VIRTIO', format=None,
                  active=True):
         """
         Add disk to VM
@@ -358,21 +415,14 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             http://ovirt.github.io/ovirt-engine-sdk/4.1/types.m.html#ovirtsdk4.types.DiskFormat
         """
         disk_attachments_service = self.api.disk_attachments_service()
-        disk_attachment = disk_attachments_service.add(
-            types.DiskAttachment(
-                disk=types.Disk(
-                    format=types.DiskFormat(format),
-                    provisioned_size=size,
-                    storage_domains=[
-                        types.StorageDomain(
-                            name=storage_domain,
-                        )
-                    ]
-                ),
-                interface=types.DiskInterface(getattr(types.DiskInterface, interface or 'VIRTIO')),
-                active=active
-            )
+        disk_attach = types.DiskAttachment(
+            disk=types.Disk(format=types.DiskFormat(format),
+                            provisioned_size=size,
+                            storage_domains=[types.StorageDomain(name=storage_domain)]),
+            interface=getattr(types.DiskInterface, interface),
+            active=active
         )
+        disk_attachment = disk_attachments_service.add(disk_attach)
         wait_for(self._is_disk_ok, func_args=[disk_attachment.disk.id], delay=5, num_sec=900,
                  message="check if disk is attached")
 
@@ -556,7 +606,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
                 )
             )
         if 'ram' in kwargs:
-            vm_kwargs['memory'] = int(kwargs['ram'])
+            vm_kwargs['memory'] = int(kwargs['ram'])  # in Bytes
         vms_service = self.system.api.system_service().vms_service()
         vms_service.add(types.Vm(**vm_kwargs))
         vm = self.system.get_vm(vm_name)
@@ -845,8 +895,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         else:
             cluster = vm.cluster
 
-        new_template = types.Template(
-            name=template_name, vm=vm.id, cluster=cluster.id)
+        new_template = types.Template(name=template_name, vm=vm.raw, cluster=cluster)
         self.api.system_service().templates_service().add(new_template)
 
         # First it has to appear
@@ -948,24 +997,25 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         return self._get_storage_domain_service(name).get()
 
     def _get_images_service(self, storage_domain_name):
-        return self._get_storage_domain(storage_domain_name).images_service()
+        return self._get_storage_domain_service(storage_domain_name).images_service()
 
     def _get_image_service(self, storage_domain_name, image_name):
         for image in self._get_images_service(storage_domain_name).list():
             if image.name == image_name:
                 return self._get_images_service(storage_domain_name).image_service(image.id)
 
-    def import_glance_image(self, storage_domain_name, cluster_name, temp_template_name,
-                            template_name, async=True, import_as_template=True):
-        image_service = self._get_image_service(storage_domain_name, template_name)
+    def import_glance_image(self, source_storage_domain_name, source_template_name,
+                            target_storage_domain_name, target_cluster_name, target_template_name,
+                            async=True, import_as_template=True):
+        image_service = self._get_image_service(source_storage_domain_name, source_template_name)
         image_service.import_(
             async=async,
             import_as_template=import_as_template,
-            template=types.Template(name=temp_template_name),
-            cluster=types.Cluster(name=cluster_name),
-            storage_domain=types.StorageDomain(name=storage_domain_name)
+            template=types.Template(name=target_template_name),
+            cluster=types.Cluster(name=target_cluster_name),
+            storage_domain=types.StorageDomain(name=target_storage_domain_name)
         )
-        wait_for(self.does_template_exist, func_args=[temp_template_name], delay=5, num_sec=240)
+        wait_for(self.does_template_exist, func_args=[target_template_name], delay=5, num_sec=240)
 
     def _get_disk_service(self, disk_name):
         disks_service = self.api.system_service().disks_service()

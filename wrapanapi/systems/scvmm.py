@@ -243,9 +243,9 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             )
         return number_dvds_disconnected
 
-    def mark_as_template(self, library_server, library_share, **kwargs):
+    def mark_as_template(self, library_server, library_share, template_name=None, **kwargs):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
-        name = self.raw['Name']
+        name = template_name or self.raw['Name']
         script = """
             $VM = Get-SCVirtualMachine -ID \"{id}\" -VMMServer $scvmm_server
             New-SCVMTemplate -Name \"{name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"

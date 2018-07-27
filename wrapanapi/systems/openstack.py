@@ -15,6 +15,7 @@ import pytz
 import six
 from cinderclient import exceptions as cinder_exceptions
 from cinderclient.v2 import client as cinderclient
+from glanceclient import Client as gClient
 from heatclient import client as heat_client
 from keystoneauth1.identity import Password
 from keystoneauth1.session import Session
@@ -26,13 +27,11 @@ from novaclient.v2.floating_ips import FloatingIP
 from requests.exceptions import Timeout
 from wait_for import wait_for
 
-from wrapanapi.entities import (Instance, Template, TemplateMixin, VmMixin,
-                                VmState)
-from wrapanapi.exceptions import (ActionTimedOutError, ImageNotFoundError,
-                                  KeystoneVersionNotSupported,
-                                  MultipleImagesError, MultipleInstancesError,
-                                  NetworkNameNotFound, NoMoreFloatingIPs,
-                                  VMInstanceNotFound)
+from wrapanapi.entities import (
+    Instance, Template, TemplateMixin, VmMixin, VmState)
+from wrapanapi.exceptions import (
+    ActionTimedOutError, ImageNotFoundError, KeystoneVersionNotSupported, MultipleImagesError,
+    MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs, VMInstanceNotFound)
 from wrapanapi.systems.base import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -319,20 +318,23 @@ class OpenstackInstance(Instance):
     def is_shelved_offloaded(self):
         return self.state == VmState.SHELVED_OFFLOADED
 
-    def mark_as_template(self, **kwargs):
+    def mark_as_template(self, template_name=None, **kwargs):
         """OpenStack marking as template is a little bit more complex than vSphere.
 
         We have to rename the instance, create a snapshot of the original name and then delete the
         instance."""
-        self.logger.info('Marking %s as OpenStack template', self.name)
+        image_name = template_name or '{}_copy'.format(self.name)
+        self.logger.info('Marking %s as OpenStack template with name: %s', self.name, image_name)
         original_name = self.name
-        copy_name = original_name + "_copytemplate"
-        self.rename(copy_name)
+        # no new name passed, rename VM so template can take its name
+        if not template_name:
+            self.rename(image_name)
         try:
             self.wait_for_steady_state()
             if not self.is_stopped:
                 self.stop()
-            uuid = self.raw.create_image(original_name)
+            # set image name only if template_name passed, else take original VM name
+            uuid = self.raw.create_image(image_name if template_name else original_name)
             wait_for(lambda: self._api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
             self.delete()
             wait_for(lambda: not self.exists, num_sec=180, delay=5)
@@ -343,7 +345,7 @@ class OpenstackInstance(Instance):
                 self.rename(original_name)  # Clean up after ourselves
             except Exception as e:
                 self.logger.exception(
-                    'Failed to rename %s back to original name (%s)', copy_name, original_name)
+                    'Failed to rename %s back to original name (%s)', image_name, original_name)
             raise
         return OpenstackImage(system=self.system, uuid=uuid)
 
@@ -548,17 +550,18 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     can_pause = True
 
     def __init__(self, **kwargs):
+        self.keystone_version = kwargs.get('keystone_version', 2)
+        if int(self.keystone_version) not in (2, 3):
+            raise KeystoneVersionNotSupported(self.keystone_version)
         super(OpenstackSystem, self).__init__(**kwargs)
         self.tenant = kwargs['tenant']
         self.username = kwargs['username']
         self.password = kwargs['password']
         self.auth_url = kwargs['auth_url']
-        self.keystone_version = kwargs.get('keystone_version', 2)
-        if int(self.keystone_version) not in (2, 3):
-            raise KeystoneVersionNotSupported(self.keystone_version)
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
+        self._gapi = None
         self._kapi = None
         self._capi = None
         self._tenant_api = None
@@ -604,9 +607,16 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return self._api
 
     @property
+    def gapi(self):
+        """separate endpoint for glance API, novaclient.v2.images Deprecated in Nova 15.0"""
+        if not self._gapi:
+            self._gapi = gClient('2', session=self.session)
+        return self._gapi
+
+    @property
     def kapi(self):
         if not self._kapi:
-            self._kapi = keystone_client.Client(session=self.session)
+            self._kapi = keystone_client.Client(self.keystone_version, session=self.session)
         return self._kapi
 
     @property
@@ -922,7 +932,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         elif n > 1 and len(configurations) == 1:
             configurations = n * configurations
         elif n != len(configurations):
-            raise "n does not equal the length of configurations"
+            raise ValueError("n does not equal the length of configurations")
         # now n == len(configurations)
         volumes = []
         try:
@@ -998,7 +1008,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 break
             except os_exceptions.NotFound:
                 continue
-
         if not fip:
             self.logger.error(
                 "Unable to create new floating IP in pools %s,"
