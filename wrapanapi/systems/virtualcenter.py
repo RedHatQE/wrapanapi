@@ -642,7 +642,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         """
         try:
             # Disable SSL cert verification
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+            context = ssl._create_unverified_context()
             context.verify_mode = ssl.CERT_NONE
             si = SmartConnect(
                 host=self.hostname,
