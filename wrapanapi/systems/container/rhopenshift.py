@@ -210,6 +210,9 @@ class Openshift(System):
         else:
             return [t.metadata.name for t in self.o_api.list_template_for_all_namespaces().items]
 
+    # fixme: get rid of this mapping
+    list_templates = list_template
+
     def list_image_stream_images(self):
         """Returns list of images (Docker registry only)"""
         return [item for item in self.o_api.list_image().items
@@ -1270,7 +1273,7 @@ class Openshift(System):
         projects = self.o_api.list_project().items
         return [proj.metadata.name for proj in projects]
 
-    list_vm = list_project_names
+    list_vms = list_vm = list_project_names
 
     def get_appliance_version(self, vm_name):
         """Returns appliance version if it is possible
