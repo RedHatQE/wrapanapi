@@ -262,7 +262,7 @@ class GoogleCloudImage(Template):
         if self._project in IMAGE_PROJECTS:
             raise ValueError('Public images cannot be deleted')
 
-        operation = self._api.delete(project=self._project, name=self.name).execute()
+        operation = self._api.delete(project=self._project, image=self.name).execute()
         wait_for(
             lambda: self.system.is_global_operation_done(operation['name']), delay=0.5,
             num_sec=timeout, message=" Deleting image {}".format(self.name)
