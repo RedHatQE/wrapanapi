@@ -58,6 +58,10 @@ class OpenstackInfraSystem(System):
         self._iapi = None
 
     @property
+    def _identifying_attrs(self):
+        return {'auth_url': self.auth_url, 'tenant': self.tenant}
+
+    @property
     def api(self):
         if not self._api:
             self._api = osclient.Client('2',
