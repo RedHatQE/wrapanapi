@@ -33,13 +33,14 @@ def _regions(regionmodule, regionname):
 
 class _TagMixin(object):
     def set_tag(self, key, value):
-        self.raw.create_tags(Tags=[{'Key': key, 'Value': value}])
-    
+        self.system.api.create_tags([self.uuid], tags={key: value})
+
     def get_tag_value(self, key):
-        return self.raw.tags.get(label)
+        self.refresh()
+        return self.raw.tags.get(key)
 
     def unset_tag(self, key, value):
-        self.raw.delete_tags(Tags=[{'Key': key, 'Value': value}])
+        self.system.api.delete_tags([self.uuid], tags={key: value})
 
 
 class EC2Instance(Instance, _TagMixin):
