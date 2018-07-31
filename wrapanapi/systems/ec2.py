@@ -31,7 +31,18 @@ def _regions(regionmodule, regionname):
     return None
 
 
-class EC2Instance(Instance):
+class _TagMixin(object):
+    def set_tag(self, key, value):
+        self.raw.create_tags(Tags=[{'Key': key, 'Value': value}])
+    
+    def get_tag_value(self, key):
+        return self.raw.tags.get(label)
+
+    def unset_tag(self, key, value):
+        self.raw.delete_tags(Tags=[{'Key': key, 'Value': value}])
+
+
+class EC2Instance(Instance, _TagMixin):
     state_map = {
         'pending': VmState.STARTING,
         'stopping': VmState.STOPPING,
@@ -272,7 +283,7 @@ class CloudFormationStack(Stack):
         return self.delete()
 
 
-class EC2Image(Template):
+class EC2Image(Template, _TagMixin):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an EC2Image tied to a specific system.
