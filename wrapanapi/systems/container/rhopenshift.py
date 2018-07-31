@@ -399,7 +399,8 @@ class Openshift(System):
         progress_callback("Common Service has been added")
 
         # adding config map with image stream urls and tags
-        image_repo_cm = image_repo_cm_template.format(tags=str(tags).replace("'", '"'))
+        image_repo_cm = image_repo_cm_template.format(tags=str(tags).replace("u'", '"')
+                                                      .replace("'", '"'))
         self.create_config_map(namespace=proj_name, **yaml.safe_load(image_repo_cm))
 
         # creating pods and etc
