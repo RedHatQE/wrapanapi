@@ -111,14 +111,14 @@ def test_sanity(provider_crud, test_template, test_vm):
         log.info("Testing ec2 instance tags")
         vm.set_tag('key1', 'somedata')
         assert vm.get_tag_value('key1') == 'somedata'
-        vm.unset_tag('key1')
+        vm.unset_tag('key1', 'somedata')
         assert vm.get_tag_value('key1') is None
 
     if isinstance(template, EC2Image):
         log.info("Testing ec2 image tags")
         template.set_tag('key1', 'somedata')
         assert template.get_tag_value('key1') == 'somedata'
-        template.unset_tag('key1')
+        template.unset_tag('key1', 'somedata')
         assert template.get_tag_value('key1') is None
 
     log.info("Listing VMs")
