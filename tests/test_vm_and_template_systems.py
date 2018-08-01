@@ -17,7 +17,7 @@ from wait_for import wait_for
 import wrapanapi
 from wrapanapi import VmState
 from wrapanapi.entities import StackMixin
-from wrapanapi.systems.ec2 import StackStates
+from wrapanapi.systems.ec2 import EC2Image, EC2Instance, StackStates
 from wrapanapi.exceptions import MultipleItemsError
 
 
@@ -25,9 +25,9 @@ log = logging.getLogger('wrapanapi.tests.test_vm_and_template_systems')
 
 logging.basicConfig(level=logging.INFO)
 
-PROVIDER_KEYS_LIST = [
-    'rhos11', 'vsphere65-nested', 'scvmm', 'azure', 'gce_central', 'ec2west', 'rhv41'
-]
+PROVIDER_KEYS_LIST = ['ec2west']
+#    'rhos11', 'vsphere65-nested', 'scvmm', 'azure', 'gce_central', 'ec2west', 'rhv41'
+# TODO test against all provider keys
 
 
 @pytest.fixture(params=PROVIDER_KEYS_LIST)
@@ -106,6 +106,20 @@ def test_sanity(provider_crud, test_template, test_vm):
         assert mgmt.get_stack(name=stack.name) == stack
         assert mgmt.does_stack_exist(stack.name)
         assert not mgmt.does_stack_exist("some_fake_name")
+
+    if isinstance(vm, EC2Instance):
+        log.info("Testing ec2 instance tags")
+        vm.set_tag('key1', 'somedata')
+        assert vm.get_tag_value('key1') == 'somedata'
+        vm.unset_tag('key1', 'somedata')
+        assert vm.get_tag_value('key1') is None
+
+    if isinstance(template, EC2Image):
+        log.info("Testing ec2 image tags")
+        template.set_tag('key1', 'somedata')
+        assert template.get_tag_value('key1') == 'somedata'
+        template.unset_tag('key1', 'somedata')
+        assert template.get_tag_value('key1') is None
 
     log.info("Listing VMs")
     vms = mgmt.list_vms()
