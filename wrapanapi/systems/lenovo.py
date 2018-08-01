@@ -419,7 +419,7 @@ class LenovoSystem(System):
 
         # We expect that supported network devices will have a class of "network controller" or
         # "nic" or "ethernet" contained in the device name.
-        return (device.get("class").lower() == "network controller" or
+        return (device.get("class", "").lower() == "network controller" or
                 "nic" in device_name or
                 "ethernet" in device_name)
 
@@ -431,7 +431,7 @@ class LenovoSystem(System):
 
         # We expect that supported storage devices will have a class of "mass storage controller"
         # or "serveraid" or "sd media raid" contained in the device name.
-        return (device.get("class").lower() == "mass storage controller" or
+        return (device.get("class", "").lower() == "mass storage controller" or
                 "serveraid" in device_name or
                 "sd media raid" in device_name)
 
