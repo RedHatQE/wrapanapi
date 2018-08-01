@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 
 PROVIDER_KEYS_LIST = ['ec2west']
 #    'rhos11', 'vsphere65-nested', 'scvmm', 'azure', 'gce_central', 'ec2west', 'rhv41'
-#]
+# TODO test against all provider keys
 
 
 @pytest.fixture(params=PROVIDER_KEYS_LIST)
