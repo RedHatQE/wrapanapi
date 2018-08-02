@@ -181,6 +181,9 @@ class OpenstackInstance(Instance):
         # so this will loop until it really get the address. A small timeout is added to ensure
         # the instance really got that address and other process did not steal it.
         # TODO: Introduce neutron client and its create+assign?
+        allowed_exceptions = (os_exceptions.ClientException,
+                              os_exceptions.OverLimit,
+                              os_exceptions.NotFound)
         while self.ip is None:
             free_ips = self.system.free_fips(floating_ip_pool)
             # We maintain 1 floating IP as a protection against race condition
@@ -194,7 +197,7 @@ class OpenstackInstance(Instance):
                 # There is one or none, so create one.
                 try:
                     ip = self._api.floating_ips.create(floating_ip_pool)
-                except (os_exceptions.ClientException, os_exceptions.OverLimit) as e:
+                except allowed_exceptions as e:
                     self.logger.error('Probably no more FIP slots available: %s', str(e))
                     free_ips = self.system.free_fips(floating_ip_pool)
                     # So, try picking one from the list (there still might be one)
@@ -997,27 +1000,24 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Args:
             pool (str) -- pool to try to get IP from (optional)
         """
-        pools = self.api.floating_ip_pools.list()
-
+        pool_name = getattr(pool, 'name', pool)  # obj attr, or passed thing (string) otherwise
         fip = None
-        for pool in pools:
-            if pool and pool.name != pool:
-                continue
-            try:
-                fip = self.api.floating_ips.create(pool.name)
-                break
-            except os_exceptions.NotFound:
-                continue
-        if not fip:
-            self.logger.error(
-                "Unable to create new floating IP in pools %s,"
-                " trying to find an existing one that is free"
-                " in any pool", pools
-            )
+        try:
+            fip = self.api.floating_ips.create(pool_name)
+        except os_exceptions.NotFound:
+            self.logger.exception('Exception while creating FIP for pool: %s', pool_name)
+        else:
+            if not fip:
+                self.logger.error(
+                    "Unable to create new floating IP in pool %s,"
+                    " trying to find an existing one that is free"
+                    " in any pool", pool_name
+                )
         try:
             fip = (ip for ip in self.api.floating_ips.list()
                    if ip.instance_id is None).next()
         except StopIteration:
+            self.logger.error('No more Floating IPs available')
             return None
         return fip.ip
 
