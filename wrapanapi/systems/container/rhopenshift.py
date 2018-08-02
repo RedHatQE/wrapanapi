@@ -1434,3 +1434,17 @@ class Openshift(System):
             return json.loads(read_data.data['tags'])
         except ApiException:
             return {}
+
+    def get_appliance_url(self, name):
+        """Returns appliance url assigned by Openshift
+
+        Args:
+            name: appliance project name
+
+        Returns: url or None
+        """
+        try:
+            route = self.o_api.list_namespaced_route(name)
+            return route.items[0].spec.host
+        except (ApiException, IndexError):
+            return None
