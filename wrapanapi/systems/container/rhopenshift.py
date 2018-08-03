@@ -297,6 +297,29 @@ class Openshift(System):
         # returns only the image registry name, without the port number in case of local registry
         return sorted(set([status.image.split('/')[0].split(':')[0] for status in statuses]))
 
+    def expose_db_ip(self, namespace):
+        """Creates special service in appliance project (namespace) which makes internal appliance
+           db be available outside.
+
+        Args:
+            namespace: (str) openshift namespace
+        Returns: ip
+        """
+        # creating common service with external ip and extracting assigned ip
+        service_obj = self.kclient.V1Service(**json.loads(common_service))
+        self.k_api.create_namespaced_service(namespace=namespace, body=service_obj)
+        # external ip isn't assigned immediately, so, we have to wait until it is assigned
+
+        def is_ip_assigned(namespace):
+            try:
+                common_svc = self.k_api.read_namespaced_service(name='common-service',
+                                                                namespace=namespace)
+                return common_svc.spec.external_i_ps[0]
+            except IndexError:
+                return None
+
+        return wait_for(is_ip_assigned, num_sec=60, func_kwargs={'namespace': namespace})[0]
+
     def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
         """Deploy a VM from a template
 
@@ -394,8 +417,7 @@ class Openshift(System):
         progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
 
         # creating common service with external ip
-        service_obj = self.kclient.V1Service(**json.loads(common_service))
-        self.k_api.create_namespaced_service(namespace=proj_name, body=service_obj)
+        ext_ip = self.expose_db_ip(proj_name)
         progress_callback("Common Service has been added")
 
         # adding config map with image stream urls and tags
@@ -426,10 +448,6 @@ class Openshift(System):
                 self.logger.error("some entity %s isn't present in entity creation list", entity)
 
         progress_callback("All template entities have been created")
-        # creating and obtaining db ip
-        common_svc = self.k_api.read_namespaced_service(name='common-service',
-                                                        namespace=proj_name)
-        ext_ip = common_svc.spec.external_i_ps[0]
 
         self.logger.info("verifying that all created entities are up and running")
         progress_callback("Waiting for all pods to be ready and running")
@@ -944,6 +962,7 @@ class Openshift(System):
     def _restore_missing_project_role_bindings(self, namespace):
         """Fixes one of issues in Openshift REST API
           create project doesn't add necessary roles to default sa, probably bug, this is workaround
+
         Args:
             namespace: openshift namespace where roles are absent
         Return: None
@@ -1201,6 +1220,7 @@ class Openshift(System):
         """Check whether vm isn't running.
         There is no such state stopped for vm in openshift therefore
         it just checks that vm isn't running
+
         Args:
             vm_name: project name
         Return: True/False
@@ -1344,8 +1364,9 @@ class Openshift(System):
 
     def vm_hardware_configuration(self, vm_name):
         """Collects project's cpu and ram usage
-            Args:
-                vm_name: openshift's data
+
+        Args:
+            vm_name: openshift's data
         Returns: collected data
         """
         hw_config = {'ram': 0,
@@ -1389,8 +1410,9 @@ class Openshift(System):
 
     def get_required_pods(self, vm_name):
         """Provides list of pods which should be present in appliance
-            Args:
-                vm_name: openshift project name
+
+        Args:
+            vm_name: openshift project name
         Returns: list
         """
         version = self.get_appliance_version(vm_name)
@@ -1425,7 +1447,6 @@ class Openshift(System):
 
         Args:
             name: appliance project name
-
         Returns: dict with tags and urls
         """
         try:
@@ -1434,3 +1455,16 @@ class Openshift(System):
             return json.loads(read_data.data['tags'])
         except ApiException:
             return {}
+
+    def get_appliance_url(self, name):
+        """Returns appliance url assigned by Openshift
+
+        Args:
+            name: appliance project name
+        Returns: url or None
+        """
+        try:
+            route = self.o_api.list_namespaced_route(name)
+            return route.items[0].spec.host
+        except (ApiException, IndexError):
+            return None
