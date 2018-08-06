@@ -9,6 +9,7 @@ from .systems.msazure import AzureSystem
 from .systems.nuage import NuageSystem
 from .systems.openstack import OpenstackSystem
 from .systems.openstack_infra import OpenstackInfraSystem
+from .systems.redfish import RedfishSystem
 from .systems.rhevm import RHEVMSystem
 from .systems.scvmm import SCVMMSystem
 from .systems.vcloud import VmwareCloudSystem
@@ -20,6 +21,6 @@ from .entities.vm import VmState
 __all__ = [
     'EC2System', 'GoogleCloudSystem', 'HawkularSystem',
     'LenovoSystem', 'AzureSystem', 'NuageSystem', 'OpenstackSystem',
-    'OpenstackInfraSystem', 'RHEVMSystem', 'SCVMMSystem', 'VmwareCloudSystem',
-    'VMWareSystem', 'Openshift', 'VmState'
+    'OpenstackInfraSystem', 'RedfishSystem', 'RHEVMSystem', 'SCVMMSystem',
+    'VmwareCloudSystem', 'VMWareSystem', 'Openshift', 'VmState'
 ]
