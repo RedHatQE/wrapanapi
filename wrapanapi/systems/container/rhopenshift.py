@@ -310,15 +310,7 @@ class Openshift(System):
         self.k_api.create_namespaced_service(namespace=namespace, body=service_obj)
         # external ip isn't assigned immediately, so, we have to wait until it is assigned
 
-        def is_ip_assigned(namespace):
-            try:
-                common_svc = self.k_api.read_namespaced_service(name='common-service',
-                                                                namespace=namespace)
-                return common_svc.spec.external_i_ps[0]
-            except IndexError:
-                return None
-
-        return wait_for(is_ip_assigned, num_sec=60, func_kwargs={'namespace': namespace})[0]
+        return self.get_ip_address(namespace)
 
     def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
         """Deploy a VM from a template
