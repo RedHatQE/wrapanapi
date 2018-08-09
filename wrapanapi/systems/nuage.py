@@ -38,6 +38,10 @@ class NuageSystem(System):
         self.url = '{}://{}:{}/nuage/api/{}'.format(protocol, hostname, api_port, api_version)
         self._auth = None
 
+    @property
+    def _identifying_attrs(self):
+        return {'url': self.url}
+
     def info(self):
         return 'NuageSystem: url={}'.format(self.url)
 
