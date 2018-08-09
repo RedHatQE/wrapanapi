@@ -26,6 +26,7 @@ pywinrm
 requests
 six
 tzlocal
+vspk==5.3.2
 wait_for
 websocket_client
 
