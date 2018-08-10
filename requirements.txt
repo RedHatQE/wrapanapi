@@ -24,6 +24,7 @@ python-novaclient==7.1.2
 python-heatclient
 pyvcloud==19.1.2
 pywinrm
+redfish-client==0.1.0
 requests
 six
 tzlocal

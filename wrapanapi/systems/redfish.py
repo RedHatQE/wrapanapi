@@ -4,6 +4,9 @@ Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
 
+import redfish_client
+import json
+
 from wrapanapi.systems.base import System
 
 
@@ -13,18 +16,20 @@ class RedfishSystem(System):
         hostname: The hostname of the system.
         username: The username to connect with.
         password: The password to connect with.
+        security_protocol: The security protocol to be used for connecting with
+            the API. Expected values: 'Non-SSL', 'SSL', 'SSL without validation'
     """
 
     _stats_available = {
-        'num_server': lambda self: 1,
+        'num_server': lambda self: self.num_servers(),
     }
 
-    def __init__(self, hostname, username, password, protocol="https", api_port=443, **kwargs):
-        super(RedfishSystem, self).__init__(kwargs)
-        self.api_port = api_port
-        self.auth = (username, password)
-        self.url = '{}://{}:{}/'.format(protocol, hostname, self.api_port)
+    def __init__(self, hostname, username, password, security_protocol, api_port=443, **kwargs):
+        super(RedfishSystem, self).__init__(**kwargs)
+        protocol = 'http' if security_protocol == 'Non-SSL' else 'https'
+        self.url = '{}://{}:{}/'.format(protocol, hostname, api_port)
         self.kwargs = kwargs
+        self.api_client = redfish_client.connect(self.url, username, password)
 
     @property
     def _identifying_attrs(self):
@@ -35,3 +40,6 @@ class RedfishSystem(System):
 
     def __del__(self):
         """Disconnect from the API when the object is deleted"""
+
+    def num_servers(self):
+        return len(self.api_client.Systems.Members)
