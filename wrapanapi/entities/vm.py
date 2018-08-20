@@ -276,7 +276,9 @@ class Vm(Entity):
         elif state == VmState.STOPPED:
             return self._handle_transition(
                 in_desired_state=lambda: self.is_stopped,
-                in_state_requiring_prep=lambda: self.is_suspended or self.is_paused,
+                in_state_requiring_prep=lambda: (self.is_suspended or
+                                                 self.is_paused or
+                                                 self.is_starting),
                 in_actionable_state=lambda: self.is_running,
                 do_prep=self.start,
                 do_action=self.stop,
