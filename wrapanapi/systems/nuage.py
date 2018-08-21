@@ -5,6 +5,7 @@ Used to communicate with providers without using CFME facilities
 from __future__ import absolute_import
 
 from wrapanapi.systems.base import System
+from wrapanapi.utils.random import random_name
 
 
 class NuageSystem(System):
@@ -84,3 +85,18 @@ class NuageSystem(System):
         vports = [d.vports.get() and d.vports for d in self.api.domains.get()]
         vports.extend([d.vports.get() and d.vports for d in self.api.l2_domains.get()])
         return [vport for sublist in vports for vport in sublist]
+
+    def create_enterprise(self, name=None):
+        enterprise, _ = self.api.create_child(self.vspk.NUEnterprise(name=name or random_name()))
+        return enterprise
+
+    def delete_enterprise(self, enterprise):
+        enterprise.domains.get()
+        enterprise.l2_domains.get()
+
+        objects = enterprise.domains
+        objects.extend(enterprise.l2_domains)
+        objects.append(enterprise)
+
+        for obj in objects:
+            obj.delete()
