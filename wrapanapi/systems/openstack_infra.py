@@ -2,12 +2,15 @@
 from __future__ import absolute_import
 from collections import namedtuple
 from ironicclient import client as iclient
+from keystoneauth1.identity import Password
+from keystoneauth1.session import Session
 from keystoneclient.v2_0 import client as oskclient
 from novaclient import client as osclient
 from novaclient.client import SessionClient
 from requests.exceptions import Timeout
 
 from wrapanapi.systems.base import System
+from wrapanapi.exceptions import KeystoneVersionNotSupported
 
 
 Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
@@ -47,11 +50,16 @@ class OpenstackInfraSystem(System):
     }
 
     def __init__(self, **kwargs):
+        self.keystone_version = kwargs.get('keystone_version', 2)
+        if int(self.keystone_version) not in (2, 3):
+            raise KeystoneVersionNotSupported(self.keystone_version)
         super(OpenstackInfraSystem, self).__init__(**kwargs)
         self.tenant = kwargs['tenant']
         self.username = kwargs['username']
         self.password = kwargs['password']
         self.auth_url = kwargs['auth_url']
+        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self._session = None
         self._api = None
         self._kapi = None
         self._capi = None
@@ -62,13 +70,22 @@ class OpenstackInfraSystem(System):
         return {'auth_url': self.auth_url, 'tenant': self.tenant}
 
     @property
+    def session(self):
+        if not self._session:
+            auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
+                               password=self.password, project_name=self.tenant)
+            if self.keystone_version == 3:
+                auth_kwargs.update(dict(user_domain_id=self.domain_id,
+                                        project_domain_name=self.domain_id))
+            pass_auth = Password(**auth_kwargs)
+            self._session = Session(auth=pass_auth, verify=False)
+        return self._session
+
+    @property
     def api(self):
         if not self._api:
             self._api = osclient.Client('2',
-                                        self.username,
-                                        self.password,
-                                        self.tenant,
-                                        self.auth_url,
+                                        session=self.session,
                                         service_type="compute",
                                         insecure=True,
                                         timeout=30)
@@ -87,23 +104,13 @@ class OpenstackInfraSystem(System):
     @property
     def kapi(self):
         if not self._kapi:
-            self._kapi = oskclient.Client(username=self.username,
-                                          password=self.password,
-                                          tenant_name=self.tenant,
-                                          auth_url=self.auth_url,
-                                          insecure=True)
+            self._kapi = oskclient.Client(session=self.session, insecure=True)
         return self._kapi
 
     @property
     def iapi(self):
         if not self._iapi:
-            self._iapi = iclient.get_client(
-                1,
-                os_auth_url=self.auth_url,
-                os_username=self.username,
-                os_password=self.password,
-                os_project_name=self.tenant,
-                insecure=True)
+            self._iapi = iclient.get_client(1, session=self.session, insecure=True)
         return self._iapi
 
     @property
