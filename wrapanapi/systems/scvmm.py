@@ -529,10 +529,11 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """
         Return names for an arbitrary item type
         """
-        return [
-            item['Name'] for item in
-            self.get_json('Get-{} -VMMServer $scvmm_server').format(item_type)
-        ]
+        data = self.get_json('Get-{} -VMMServer $scvmm_server'.format(item_type))
+        if data:
+            return [item['Name'] for item in data] if isinstance(data, list) else [data["Name"]]
+        else:
+            return None
 
     def list_clusters(self, **kwargs):
         """List all clusters' names."""
