@@ -38,8 +38,54 @@ class RedfishSystem(System):
     def info(self):
         return 'RedfishSystem url={}'.format(self.url)
 
-    def __del__(self):
-        """Disconnect from the API when the object is deleted"""
+    def server_stats(self, physical_server, requested_stats, **kwargs):
+        """
+        Evaluate the requested server stats at the API server.
 
+        Returns a dictionary of stats and their respective evaluated values.
+
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_stats: the statistics to be obtained
+        """
+        # Retrieve and return the stats
+        requested_stats = requested_stats or self._stats_available
+
+        # Get an instance of the requested Redfish server
+        redfish_server = self.get_server(physical_server.ems_ref)
+
+        return {stat: self._server_stats_available[stat](redfish_server)
+                for stat in requested_stats}
+
+    def server_inventory(self, physical_server, requested_items, **kwargs):
+        """
+        Evaluate the requested inventory item statuses at the API server.
+
+        Returns a dictionary of items and their respective evaluated values.
+
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_items: the inventory items to be obtained for the server
+        """
+        # Retrieve and return the inventory
+        requested_items = requested_items or self._server_inventory_available
+
+        # Get an instance of the requested Redfish server
+        redfish_server = self.get_server(physical_server.ems_ref)
+
+        return {item: self._server_inventory_available[item](redfish_server)
+                for item in requested_items}
+
+    def get_server(self, resource_id):
+        """
+        Fetch a RedfishServer instance of the physical server representing resource_id.
+
+        Args:
+          resource_id: the Redfish @odata.id of the resource representing the
+             server to be retrieved
+        """
+        return RedfishServer(self, raw=self.api_client.find(resource_id))
+
+    @property
     def num_servers(self):
         return len(self.api_client.Systems.Members)
