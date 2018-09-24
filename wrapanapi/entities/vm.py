@@ -3,8 +3,9 @@ wrapanapi.entities.vm
 
 Methods/classes pertaining to performing actions on a VM/instance
 """
-from abc import ABCMeta, abstractmethod, abstractproperty
 import time
+from abc import ABCMeta, abstractmethod, abstractproperty
+from six import string_types
 
 from cached_property import cached_property_with_ttl
 from wait_for import wait_for, TimedOutError
@@ -36,7 +37,7 @@ class VmState(object):
     def valid_states(cls):
         return [
             var_val for _, var_val in vars(cls).items()
-            if isinstance(var_val, basestring) and var_val.startswith('VmState.')
+            if isinstance(var_val, string_types) and var_val.startswith('VmState.')
         ]
 
 
