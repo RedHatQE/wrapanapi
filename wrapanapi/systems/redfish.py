@@ -104,6 +104,8 @@ class RedfishSystem(System):
     # statistics for the provider
     _stats_available = {
         'num_server': lambda self: self.num_servers,
+        'num_chassis': lambda self: self.num_chassis,
+        'num_racks': lambda self: self.num_racks,
     }
 
     # statistics for an individual server
@@ -182,3 +184,15 @@ class RedfishSystem(System):
     def num_servers(self):
         """Return the number of servers discovered by the provider."""
         return len(self.api_client.Systems.Members)
+
+    @property
+    def num_chassis(self):
+        """Return the count of Physical Chassis discovered by the provider."""
+        return len([chassis for chassis in self.api_client.Chassis.Members
+            if chassis.ChassisType != "Rack"])
+
+    @property
+    def num_racks(self):
+        """Return the number of Physical Racks discovered by the provider."""
+        return len([rack for rack in self.api_client.Chassis.Members
+            if rack.ChassisType == "Rack"])
