@@ -348,23 +348,31 @@ class LenovoSystem(System):
 
         return "LED state action has been sent, status:" + str(response.status_code)
 
-    def server_stats(self, *requested_stats, **kwargs):
-        # Get the requester which represents the class of this method's caller
-        requester = kwargs.get('requester')
+    def server_stats(self, physical_server, requested_stats, **kwargs):
+        """
+        Obtain the means to compute the requested physical server statistics.
 
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_stats: the statistics to be obtained
+        """
         # Retrieve and return the stats
         requested_stats = requested_stats or self._stats_available
 
-        return {stat: self._server_stats_available[stat](self, requester)
+        return {stat: self._server_stats_available[stat](self, physical_server)
                 for stat in requested_stats}
 
-    def server_inventory(self, *requested_items, **kwargs):
-        # Get the requester which represents the class of this method's caller
-        requester = kwargs.get('requester')
+    def server_inventory(self, physical_server, requested_items, **kwargs):
+        """
+        Obtain the means to compute the requested physical server inventory.
 
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_items: the inventory items to be obtained for the server
+        """
         # Retrieve and return the inventory
         requested_items = requested_items or self._server_inventory_available
-        return {item: self._server_inventory_available[item](self, requester)
+        return {item: self._server_inventory_available[item](self, physical_server)
                 for item in requested_items}
 
     def get_network_devices(self, server_name):
