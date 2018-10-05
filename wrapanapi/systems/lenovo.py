@@ -4,12 +4,11 @@ Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
 import json
-
 import requests
 from requests.exceptions import Timeout
-
 from wrapanapi.systems.base import System
-
+from wrapanapi.entities.base import Entity
+from wrapanapi.exceptions import ItemNotFound
 
 class LenovoSystem(System):
     """Client to Lenovo API
@@ -46,6 +45,7 @@ class LenovoSystem(System):
         'uuid': lambda self, requester: self.get_server_uuid(requester.name),
         'field_replaceable_unit': lambda self, requester: self.get_server_fru(requester.name),
     }
+
     POWERED_ON = 8
     POWERED_OFF = 5
     STANDBY = 18
@@ -90,6 +90,15 @@ class LenovoSystem(System):
         except Timeout:
             return None
 
+    def _service_post(self, path, request):
+        """Makes POST request and returns the response"""
+        try:
+            response = requests.post('{}/{}'.format(self.url, path), data=json.dumps(request),
+                                auth=self.auth, verify=False)
+            return response
+        except Timeout:
+            return None
+
     @property
     def version(self):
         """The product version"""
@@ -111,6 +120,25 @@ class LenovoSystem(System):
 
         self._servers_list = inventory
         return inventory
+
+    def list_switches(self):
+        raw_switches = self._service_instance(LenovoSwitch.API_PATH).get('switchList', [])
+        return [LenovoSwitch(data, system=self) for data in raw_switches]
+
+    def get_switch(self, uuid):
+        switch_data = self._service_instance("{}/{}".format(LenovoSwitch.API_PATH, uuid.lower()))
+        if not switch_data:
+            raise ItemNotFound("switch", uuid)
+        switch = LenovoSwitch(switch_data, system=self)
+        return switch
+
+    def delete_switch(self, uuid):
+        switch = self.get_switch(uuid)
+        switch.delete()
+
+    def cleanup_switch(self, uuid):
+        switch = self.get_switch(uuid)
+        switch.cleanup()
 
     def change_node_power_status(self, server, request):
         url = "nodes/" + str(server['uuid'])
@@ -149,7 +177,6 @@ class LenovoSystem(System):
 
     def get_server_hostname(self, server_name):
         server = self.get_server(server_name)
-
         return str(server['hostname'])
 
     def get_server_ipv4_address(self, server_name):
@@ -186,11 +213,10 @@ class LenovoSystem(System):
         elif str(server['cmmHealthState'].lower()) in self.HEALTH_CRITICAL:
             return "Critical"
         else:
-            return "Unknow"
+            return "Unknown"
 
     def is_server_running(self, server_name):
         server = self.get_server(server_name)
-
         return server['powerStatus'] == self.POWERED_ON
 
     def is_server_stopped(self, server_name):
@@ -464,3 +490,118 @@ class LenovoSystem(System):
 
     def disconnect(self):
         self.logger.info("LenovoSystem disconnected")
+
+
+class LenovoSwitch(Entity):
+    """ Encapsulates all Lenovo Switches behavior """
+    API_PATH = "switches"
+
+    def __init__(self, switch_data, **kwargs):
+        super(LenovoSwitch, self).__init__(raw=switch_data, **kwargs)
+
+    @property
+    def product_name(self):
+        return self.raw.get("productName", None)
+
+    @property
+    def manufacturer(self):
+        return self.raw.get("manufacturer", None)
+
+    @property
+    def serial_number(self):
+        return self.raw.get("serialNumber", None)
+
+    @property
+    def part_number(self):
+        return self.raw.get("partNumber", None)
+
+    @property
+    def description(self):
+        return self.raw.get("description", None)
+
+    @property
+    def firmwares(self):
+        return self.raw.get('firmware', None)
+
+    @property
+    def power_status(self):
+        return self.raw.get('powerState', None).lower()
+
+    @property
+    def type(self):
+        return self.raw.get('type', None)
+
+    @property
+    def health_state(self):
+        return self.raw.get('overallHealthState', None)
+
+    @property
+    def ipv4_addresses(self):
+        return self.raw.get('ipv4Addresses', None)
+
+    @property
+    def ipv6_addresses(self):
+        return self.raw.get('ipv6Addresses', None)
+
+    @property
+    def _identifying_attrs(self):
+        return {"name": self.name, "uuid": self.uuid}
+
+    def refresh(self):
+        uri = "{}/{}".format(LenovoSwitch.API_PATH, self.name.lower())
+        switch_data = self.system._service_instance(uri)
+        self.raw = switch_data
+        return self.raw
+
+    @property
+    def name(self):
+        return self.raw.get("name", None)
+
+    @property
+    def uuid(self):
+        return self.raw.get("uuid", None)
+
+    @property
+    def ipv4_assignments(self):
+        ip_interfaces = self.raw.get('ipInterfaces', None)
+        ipv4_assignments = []
+        if ip_interfaces:
+            for interface in ip_interfaces:
+                if "IPv4assignments" in interface:
+                    ipv4_assignments.append(interface['IPv4assignments'])
+        return ipv4_assignments
+
+    @property
+    def ipv6_assignments(self):
+        ip_interfaces = self.raw.get('ipInterfaces', None)
+        ipv6_assignments = []
+        if ip_interfaces:
+            for interface in ip_interfaces:
+                if "IPv6assignments" in interface:
+                    ipv6_assignments.append(interface['IPv6assignments'])
+        return ipv6_assignments
+
+    @property
+    def ports(self):
+        ''' Filters ports data that are also filtered by the provider's parser '''
+        raw_ports = self.raw.get('ports', None)
+        ports = []
+        if raw_ports:
+            for port in raw_ports:
+                port_to_append = {'portName': port.get('portName', None),
+                                'portType': port.get('port', None),
+                                'vlanEnabled': 'PVID' in port,
+                                'peerMacAddress': port.get('peerMacAddress', None)}
+                ports.append(port_to_append)
+        return ports
+
+    def delete(self):
+        data = {"endpoints": [{
+                "ipAdresses": self.ipv4_addresses,
+                "type": self.type,
+                "uuid": self.uuid}],
+            "forceUnmanage": True}
+        self.system._service_post(path="unmanageRequest", request=data)
+
+    def cleanup(self):
+        self.delete()
