@@ -7,20 +7,16 @@ from __future__ import absolute_import
 import redfish_client
 
 from wrapanapi.entities import Server, ServerState
+from wrapanapi.entities.base import Entity
 from wrapanapi.systems.base import System
 
 
-class RedfishServer(Server):
-    state_map = {
-        'On': ServerState.ON,
-        'Off': ServerState.OFF,
-        'PoweringOn': ServerState.POWERING_ON,
-        'PoweringOff': ServerState.POWERING_OFF,
-    }
+class RedfishResource(Entity):
+    """Class representing a generic Redfish resource such as Server or Chassis. """
 
     def __init__(self, system, raw=None, **kwargs):
         """
-        Constructor for RedfishServer.
+        Constructor for RedfishResource.
 
         Args:
             system: RedfishSystem instance
@@ -31,31 +27,7 @@ class RedfishServer(Server):
         if not self._odata_id:
             raise ValueError("missing required kwargs: 'odata_id'")
 
-        super(RedfishServer, self).__init__(system, raw, **kwargs)
-
-    @property
-    def server_cores(self):
-        """Return the number of cores on this server."""
-        return sum([int(p.TotalCores) for p in self.raw.Processors.Members])
-
-    @property
-    def server_memory(self):
-        """Return the amount of memory on the server, in MiB."""
-        return self.raw.MemorySummary.TotalSystemMemoryGiB * 1024
-
-    @property
-    def state(self):
-        """Retrieve the current power status of the physical server."""
-        return self.raw.PowerState
-
-    def _get_state(self):
-        """
-        Return ServerState object representing the server's current state.
-
-        The caller should call self.refresh() first to get the latest status
-        from the API.
-        """
-        return self._api_state_to_serverstate(self.state)
+        super(RedfishResource, self).__init__(system, raw, **kwargs)
 
     def _identifying_attrs(self):
         """
@@ -88,6 +60,39 @@ class RedfishServer(Server):
     def uuid(self):
         """Return uuid from most recent raw data."""
         return self._ems_ref
+
+
+class RedfishServer(Server, RedfishResource):
+    state_map = {
+        'On': ServerState.ON,
+        'Off': ServerState.OFF,
+        'PoweringOn': ServerState.POWERING_ON,
+        'PoweringOff': ServerState.POWERING_OFF,
+    }
+
+    @property
+    def server_cores(self):
+        """Return the number of cores on this server."""
+        return sum([int(p.TotalCores) for p in self.raw.Processors.Members])
+
+    @property
+    def server_memory(self):
+        """Return the amount of memory on the server, in MiB."""
+        return self.raw.MemorySummary.TotalSystemMemoryGiB * 1024
+
+    @property
+    def state(self):
+        """Retrieve the current power status of the physical server."""
+        return self.raw.PowerState
+
+    def _get_state(self):
+        """
+        Return ServerState object representing the server's current state.
+
+        The caller should call self.refresh() first to get the latest status
+        from the API.
+        """
+        return self._api_state_to_serverstate(self.state)
 
 
 class RedfishSystem(System):
