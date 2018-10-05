@@ -5,15 +5,18 @@ import os
 import re
 from datetime import datetime
 
-import boto
-from boto import sqs
+import pytz
+from boto import sqs, UserAgent
+from boto.sqs import connection as _sqs_connection  # can't reference connection from sqs module
 from boto.ec2 import EC2Connection, elb, get_region
 from boto.ec2.elb import ELBConnection
-from boto.sqs import connection
-import boto3
+from boto.exception import BotoServerError
 from botocore.config import Config
 from botocore.exceptions import ClientError
-import pytz
+from boto3 import (
+    resource as boto3resource,
+    client as boto3client
+)
 
 from wrapanapi.entities import (Instance, Stack, StackMixin, Template,
                                 TemplateMixin, VmMixin, VmState)
@@ -253,7 +256,7 @@ class CloudFormationStack(Stack):
         """
         try:
             self.raw = self._api.describe_stacks(StackName=self._uuid)['Stacks'][0]
-        except boto.exception.BotoServerError as error:
+        except BotoServerError as error:
             if error.status == 404:
                 raise NotFoundError('stack {}'.format(self._uuid))
             else:
@@ -385,7 +388,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         self._region = get_region(self._region_name)
         self.api = EC2Connection(self._username, self._password, region=self._region)
 
-        self.sqs_connection = connection.SQSConnection(
+        self.sqs_connection = _sqs_connection.SQSConnection(
             self._username, self._password, region=_regions(
                 regionmodule=sqs, regionname=self._region_name)
         )
@@ -395,23 +398,23 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 regionmodule=elb, regionname=self._region_name)
         )
 
-        self.s3_connection = boto3.resource(
+        self.s3_connection = boto3resource(
             's3', aws_access_key_id=self._username, aws_secret_access_key=self._password,
             region_name=self._region_name, config=connection_config
         )
 
-        self.ec2_connection = boto3.client(
+        self.ec2_connection = boto3client(
             'ec2', aws_access_key_id=self._username, aws_secret_access_key=self._password,
             region_name=self._region_name, config=connection_config
         )
 
-        self.cloudformation_connection = boto3.client(
+        self.cloudformation_connection = boto3client(
             'cloudformation', aws_access_key_id=self._username,
             aws_secret_access_key=self._password, region_name=self._region_name,
             config=connection_config
         )
 
-        self.sns_connection = boto3.client('sns', region_name=self._region_name)
+        self.sns_connection = boto3client('sns', region_name=self._region_name)
 
         self.kwargs = kwargs
 
@@ -438,7 +441,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def info(self):
         """Returns the current versions of boto and the EC2 API being used"""
-        return '%s %s' % (boto.UserAgent, self.api.APIVersion)
+        return '%s %s' % (UserAgent, self.api.APIVersion)
 
     def _get_instances(self, **kwargs):
         """
