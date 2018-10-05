@@ -7,15 +7,13 @@ blocks, sleds, chassis or enclosures that contain other physical entities such
 as physical servers.
 """
 from abc import ABCMeta
+import six
 
 from wrapanapi.entities.base import Entity
 
 
-class PhysicalContainer(Entity):
-    """
-    Represents a single physical container.
-    """
-    __metaclass__ = ABCMeta
+class PhysicalContainer(six.with_metaclass(ABCMeta, Entity)):
+    """Represents a single physical container."""
 
     def delete(self):
         """Remove the entity on the provider. Not supported on physical containers."""
