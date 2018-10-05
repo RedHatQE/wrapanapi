@@ -4,27 +4,124 @@ Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
 
+import redfish_client
+
+from wrapanapi.entities import Server, ServerState
 from wrapanapi.systems.base import System
 
 
+class RedfishServer(Server):
+    state_map = {
+        'On': ServerState.ON,
+        'Off': ServerState.OFF,
+        'PoweringOn': ServerState.POWERING_ON,
+        'PoweringOff': ServerState.POWERING_OFF,
+    }
+
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Constructor for RedfishServer.
+
+        Args:
+            system: RedfishSystem instance
+            raw: the root resource in the Redfish API
+            odata_id: (optional) the @odata.id reference of this instance
+        """
+        self._odata_id = raw['@odata.id'] if raw else kwargs.get('odata_id')
+        if not self._odata_id:
+            raise ValueError("missing required kwargs: 'odata_id'")
+
+        super(RedfishServer, self).__init__(system, raw, **kwargs)
+
+    @property
+    def server_cores(self):
+        """Return the number of cores on this server."""
+        return sum([int(p.TotalCores) for p in self.raw.Processors.Members])
+
+    @property
+    def server_memory(self):
+        """Return the amount of memory on the server, in MiB."""
+        return self.raw.MemorySummary.TotalSystemMemoryGiB * 1024
+
+    @property
+    def state(self):
+        """Retrieve the current power status of the physical server."""
+        return self.raw.PowerState
+
+    def _get_state(self):
+        """
+        Return ServerState object representing the server's current state.
+
+        The caller should call self.refresh() first to get the latest status
+        from the API.
+        """
+        return self._api_state_to_serverstate(self.state)
+
+    def _identifying_attrs(self):
+        """
+        Return the list of attributes that make this instance uniquely identifiable.
+
+        These attributes identify the instance without needing to query the API
+        for updated data.
+        """
+        return {'ems_ref': self._ems_ref}
+
+    def refresh(self):
+        """
+        Re-pull data for this entity using the system's API and update this instance's attributes.
+
+        This method should be called any time the most up-to-date info needs to be
+        returned
+
+        This method should re-set self.raw with fresh data for this entity
+
+        Returns:
+            New value of self.raw
+        """
+        self.raw._cache = {}
+
+    @property
+    def name(self):
+        """Return name from most recent raw data."""
+        return self._ems_ref
+
+    def uuid(self):
+        """Return uuid from most recent raw data."""
+        return self._ems_ref
+
+
 class RedfishSystem(System):
-    """Client to Redfish API
+    """Client to Redfish API.
+
     Args:
         hostname: The hostname of the system.
         username: The username to connect with.
         password: The password to connect with.
+        security_protocol: The security protocol to be used for connecting with
+            the API. Expected values: 'Non-SSL', 'SSL', 'SSL without validation'
     """
 
+    # statistics for the provider
     _stats_available = {
-        'num_server': lambda self: 1,
+        'num_server': lambda self: self.num_servers,
     }
 
-    def __init__(self, hostname, username, password, protocol="https", api_port=443, **kwargs):
-        super(RedfishSystem, self).__init__(kwargs)
-        self.api_port = api_port
-        self.auth = (username, password)
-        self.url = '{}://{}:{}/'.format(protocol, hostname, self.api_port)
+    # statistics for an individual server
+    _server_stats_available = {
+        'cores_capacity': lambda server: server.server_cores,
+        'memory_capacity': lambda server: server.server_memory,
+    }
+
+    _server_inventory_available = {
+        'power_state': lambda server: server.state.lower(),
+    }
+
+    def __init__(self, hostname, username, password, security_protocol, api_port=443, **kwargs):
+        super(RedfishSystem, self).__init__(**kwargs)
+        protocol = 'http' if security_protocol == 'Non-SSL' else 'https'
+        self.url = '{}://{}:{}/'.format(protocol, hostname, api_port)
         self.kwargs = kwargs
+        self.api_client = redfish_client.connect(self.url, username, password)
 
     @property
     def _identifying_attrs(self):
@@ -33,5 +130,55 @@ class RedfishSystem(System):
     def info(self):
         return 'RedfishSystem url={}'.format(self.url)
 
-    def __del__(self):
-        """Disconnect from the API when the object is deleted"""
+    def server_stats(self, physical_server, requested_stats, **kwargs):
+        """
+        Evaluate the requested server stats at the API server.
+
+        Returns a dictionary of stats and their respective evaluated values.
+
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_stats: the statistics to be obtained
+        """
+        # Retrieve and return the stats
+        requested_stats = requested_stats or self._stats_available
+
+        # Get an instance of the requested Redfish server
+        redfish_server = self.get_server(physical_server.ems_ref)
+
+        return {stat: self._server_stats_available[stat](redfish_server)
+                for stat in requested_stats}
+
+    def server_inventory(self, physical_server, requested_items, **kwargs):
+        """
+        Evaluate the requested inventory item statuses at the API server.
+
+        Returns a dictionary of items and their respective evaluated values.
+
+        Args:
+          physical_server: representation for the class of this method's caller
+          requested_items: the inventory items to be obtained for the server
+        """
+        # Retrieve and return the inventory
+        requested_items = requested_items or self._server_inventory_available
+
+        # Get an instance of the requested Redfish server
+        redfish_server = self.get_server(physical_server.ems_ref)
+
+        return {item: self._server_inventory_available[item](redfish_server)
+                for item in requested_items}
+
+    def get_server(self, resource_id):
+        """
+        Fetch a RedfishServer instance of the physical server representing resource_id.
+
+        Args:
+          resource_id: the Redfish @odata.id of the resource representing the
+             server to be retrieved
+        """
+        return RedfishServer(self, raw=self.api_client.find(resource_id))
+
+    @property
+    def num_servers(self):
+        """Return the number of servers discovered by the provider."""
+        return len(self.api_client.Systems.Members)
