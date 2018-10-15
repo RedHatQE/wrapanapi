@@ -946,6 +946,13 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def list_resource_pools(self):
         return [str(h.name) for h in self.get_obj_list(vim.ResourcePool)]
 
+    def list_networks(self):
+        """Fetch the list of network names
+
+        Returns: A list of Network names
+        """
+        return [str(h.name) for h in self.get_obj_list(vim.Network)]
+
     def info(self):
         # NOTE: Can't find these two methods in either psphere or suds
         # return '{} {}'.format(self.api.get_server_type(), self.api.get_api_version())
@@ -1027,3 +1034,15 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             'cpu_total': installed_cpu,
             'cpu_limit': None,
         }
+
+    def get_network(self, network_name):
+        """Fetch the network object from specified network name
+
+        Args:
+            network_name: The name of the network from Vmware
+        Returns: A object of vim.Network object
+        """
+        network = self.get_obj(vimtype=vim.Network, name=network_name)
+        if not network:
+            raise NotFoundError
+        return network
