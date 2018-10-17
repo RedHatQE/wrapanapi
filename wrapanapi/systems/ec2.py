@@ -311,7 +311,7 @@ class EC2Image(Template, _TagMixin):
 
     @property
     def name(self):
-        return self.raw.name or self.raw.tags.get('Name', self.raw.id)
+        return self.raw.tags.get('Name') or self.raw.name or self.raw.id
 
     @property
     def uuid(self):
