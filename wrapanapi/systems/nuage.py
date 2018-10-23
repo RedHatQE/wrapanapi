@@ -23,7 +23,9 @@ class NuageSystem(System):
         # We're returning 3rd element of .count() tuple which is formed as
         # entities.count() == (fetcher, served object, count of fetched objects)
         'num_security_group': lambda self: self.api.policy_groups.count()[2],
-        'num_cloud_subnet': lambda self: self.api.subnets.count()[2],
+        # Filter out 'BackHaulSubnet' and combine it with l2_domains the same way CloudForms does
+        'num_cloud_subnet': lambda self: self.api.subnets.count(
+            filter="name != 'BackHaulSubnet'")[2] + self.api.l2_domains.count()[2],
         'num_cloud_tenant': lambda self: self.api.enterprises.count()[2],
         'num_network_router': lambda self: self.api.domains.count()[2],
         'num_cloud_network': lambda self: len(self.list_floating_network_resources()),
