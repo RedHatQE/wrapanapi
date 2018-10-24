@@ -102,6 +102,9 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             if "Error ID: 801" in str(error):
                 # Error ID 801 is a "not found" error
                 data = None
+            elif 'Error ID: 1730' in str(error):
+                self.logger.warning('Refresh called on a VM in a state not valid for refresh')
+                return None
             else:
                 raise
         if not data:
@@ -170,7 +173,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def delete(self):
         self.logger.info("Deleting SCVMM VM %s", self._log_str)
         self.ensure_state(VmState.STOPPED)
-        self._do_vm("Remove")
+        self._do_vm("Remove", params='-Force')
         wait_for(
             lambda: not self.exists, delay=5, timeout="3m",
             message="vm {} to not exist".format(self._log_str)
