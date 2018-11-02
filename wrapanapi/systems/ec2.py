@@ -1127,3 +1127,15 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 routers_names.append(route['RouteTableId'])
 
         return routers_names
+
+    def list_own_snapshots(self):
+        self.logger.info("Attempting to List Own Snapshots")
+        return self.ec2_connection.describe_snapshots(OwnerIds=["self"]).get("Snapshots")
+
+    def delete_snapshot(self, snapshot_id):
+        # Deletes snapshot, impossible when as AMI root snapshot or as Volume root snapshot
+        try:
+            self.ec2_connection.delete_snapshot(SnapshotId=snapshot_id)
+            return True
+        except Exception:
+            return False
