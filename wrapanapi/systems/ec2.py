@@ -6,8 +6,7 @@ import re
 from datetime import datetime
 
 import pytz
-from boto import sqs, UserAgent
-from boto.sqs import connection as _sqs_connection  # can't reference connection from sqs module
+from boto import UserAgent
 from boto.ec2 import EC2Connection, elb, get_region
 from boto.ec2.elb import ELBConnection
 from boto.exception import BotoServerError
@@ -388,9 +387,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         self._region = get_region(self._region_name)
         self.api = EC2Connection(self._username, self._password, region=self._region)
 
-        self.sqs_connection = _sqs_connection.SQSConnection(
-            self._username, self._password, region=_regions(
-                regionmodule=sqs, regionname=self._region_name)
+        self.sqs_connection = boto3client(
+            'sqs', aws_access_key_id=self._username, aws_secret_access_key=self._password,
+            region_name=self._region_name, config=connection_config
         )
 
         self.elb_connection = ELBConnection(
@@ -859,16 +858,11 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         return [volume for volume in self.api.get_all_volumes() if not
                 volume.attach_data.status]
 
-    def delete_sqs_queue(self, queue_name):
-        self.logger.info(" Deleting SQS queue '%s'", queue_name)
+    def delete_sqs_queue(self, queue_url):
+        self.logger.info(" Deleting SQS queue '%s'", queue_url)
         try:
-            queue = self.sqs_connection.get_queue(queue_name=queue_name)
-            if queue:
-                self.sqs_connection.delete_queue(queue=queue)
-                return True
-            else:
-                return False
-
+            self.sqs_connection.delete_queue(QueueUrl=queue_url)
+            return True
         except ActionTimedOutError:
             return False
 
@@ -1139,3 +1133,18 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             return True
         except Exception:
             return False
+
+    def list_queues_with_creation_timestamps(self):
+        # Returns dict with queue_urls as keys and creation timestamps as values
+        # Max 1000 queues listed with list_queues()
+        queue_list = self.sqs_connection.list_queues().get("QueueUrls")
+        queue_dict = {}
+        if queue_list:
+            for queue_url in queue_list:
+                try:
+                    response = self.sqs_connection.get_queue_attributes(
+                        QueueUrl=queue_url, AttributeNames=['CreatedTimestamp'])
+                    queue_dict[queue_url] = response.get("Attributes").get("CreatedTimestamp")
+                except Exception:
+                    pass
+        return queue_dict
