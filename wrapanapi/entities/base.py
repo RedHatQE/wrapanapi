@@ -6,13 +6,14 @@ Provides method/class definitions for handling any entity on a provider
 from __future__ import absolute_import
 
 from abc import ABCMeta, abstractmethod, abstractproperty
+import six
 from six.moves import reprlib
 
 from wrapanapi.utils import LoggerMixin
 from wrapanapi.exceptions import NotFoundError
 
 
-class Entity(LoggerMixin):
+class Entity(six.with_metaclass(ABCMeta, LoggerMixin)):
     """
     Base class to represent any object on a provider system as well
     as methods for manipulating that entity (deleting, renaming, etc.)
@@ -20,8 +21,6 @@ class Entity(LoggerMixin):
     Provides properties/methods that should be applicable
     across all entities on all systems.
     """
-    __metaclass__ = ABCMeta
-
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an entity

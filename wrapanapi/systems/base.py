@@ -4,15 +4,14 @@
 Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
+import six
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 from wrapanapi.utils import LoggerMixin
 
 
-class System(LoggerMixin):
+class System(six.with_metaclass(ABCMeta, LoggerMixin)):
     """Represents any system that wrapanapi interacts with."""
-    __metaclass__ = ABCMeta
-
     # This should be defined by implementors of System
     _stats_available = {}
 
