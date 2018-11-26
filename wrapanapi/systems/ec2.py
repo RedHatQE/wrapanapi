@@ -784,6 +784,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             self.logger.exception("Error: Bucket was not successfully created.")
             return False
 
+    def list_s3_bucket(self):
+        return [bucket.name for bucket in self.s3_connection.buckets.all()]
+
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
         bucket = self.s3_connection.Bucket(bucket_name)
         self.logger.info("uploading file '%s' to bucket: '%s'", file_path, bucket_name)
@@ -809,6 +812,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         bucket = self.s3_connection.Bucket(bucket_name)
         self.logger.info("Trying to delete bucket '%s'", bucket_name)
         try:
+            for key in bucket.objects.all():
+                response = key.delete()
+                self.logger.info("Success: key '%s' associated with bucket '%s' was deleted",
+                                 response, bucket)
             bucket.delete()
             self.logger.info("Success: bucket '%s' was deleted.", bucket_name)
             return True
