@@ -807,21 +807,27 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         objects = [o for o in bucket.objects.all() if o.key == object_key]
         return any(objects)
 
-    def delete_s3_bucket(self, bucket_name):
-        """TODO: Force delete - delete all objects and then bucket"""
-        bucket = self.s3_connection.Bucket(bucket_name)
-        self.logger.info("Trying to delete bucket '%s'", bucket_name)
-        try:
-            for key in bucket.objects.all():
-                response = key.delete()
-                self.logger.info("Success: key '%s' associated with bucket '%s' was deleted",
-                                 response, bucket)
-            bucket.delete()
-            self.logger.info("Success: bucket '%s' was deleted.", bucket_name)
-            return True
-        except Exception:
-            self.logger.exception("Bucket '%s' deletion failed", bucket_name)
-            return False
+    def delete_s3_buckets(self, bucket_names, delete_all_objects=False):
+        """ Deletes specified bucket(s) with keys """
+        if not isinstance(bucket_names, list):
+            raise ValueError("bucket_names argument must be a list of key strings")
+        buckets = [self.s3_connection.Bucket(obj_name) for obj_name in bucket_names]
+        for bucket in buckets:
+            self.logger.info("Trying to delete bucket '%s'", bucket)
+            if delete_all_objects:
+                try:
+                    keys = [obj.key for obj in bucket.objects.all()]
+                    if keys:
+                        self.delete_objects_from_s3_bucket(bucket.name, keys)
+                except Exception:
+                    pass
+            try:
+                bucket.delete()
+                self.logger.info("Success: bucket '%s' was deleted.", bucket)
+                return True
+            except Exception:
+                self.logger.exception("Bucket '%s' deletion failed", bucket)
+                return False
 
     def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
         """Delete each of the given object_keys from the given bucket"""
