@@ -807,26 +807,25 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         objects = [o for o in bucket.objects.all() if o.key == object_key]
         return any(objects)
 
-    def delete_s3_buckets(self, bucket_names, delete_all_objects=False):
+    def delete_s3_buckets(self, bucket_names):
         """ Deletes specified bucket(s) with keys """
-        if not isinstance(bucket_names, list):
-            raise ValueError("bucket_names argument must be a list of key strings")
+        try:
+            iter(bucket_names)
+            print("Given object is iterable")
+        except TypeError:
+            print("Object is not iterable.")
         buckets = [self.s3_connection.Bucket(obj_name) for obj_name in bucket_names]
         for bucket in buckets:
             self.logger.info("Trying to delete bucket '%s'", bucket)
-            if delete_all_objects:
-                try:
-                    keys = [obj.key for obj in bucket.objects.all()]
-                    if keys:
-                        self.delete_objects_from_s3_bucket(bucket.name, keys)
-                except Exception:
-                    pass
+            keys = [obj.key for obj in bucket.objects.all()]
+            if keys:
+                self.delete_objects_from_s3_bucket(bucket.name, keys)
             try:
                 bucket.delete()
                 self.logger.info("Success: bucket '%s' was deleted.", bucket)
                 return True
-            except Exception:
-                self.logger.exception("Bucket '%s' deletion failed", bucket)
+            except Exception as e:
+                self.logger.exception("Bucket '%s' deletion failed due to %s", bucket, e.message)
                 return False
 
     def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
