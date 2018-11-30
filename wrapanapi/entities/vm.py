@@ -5,7 +5,7 @@ Methods/classes pertaining to performing actions on a VM/instance
 """
 import time
 from abc import ABCMeta, abstractmethod, abstractproperty
-from six import string_types
+from six import string_types, with_metaclass
 
 from cached_property import cached_property_with_ttl
 from wait_for import wait_for, TimedOutError
@@ -41,12 +41,10 @@ class VmState(object):
         ]
 
 
-class Vm(Entity):
+class Vm(with_metaclass(ABCMeta, Entity)):
     """
     Represents a single VM/instance on a management system.
     """
-    __metaclass__ = ABCMeta
-
     # Implementations must define a dict which maps API states returned by the
     # system to a VmState. Example:
     #    {'running': VmState.RUNNING, 'shutdown': VmState.STOPPED}
@@ -410,12 +408,10 @@ class Vm(Entity):
         )
 
 
-class VmMixin(EntityMixin):
+class VmMixin(with_metaclass(ABCMeta, EntityMixin)):
     """
     Defines methods or properties a wrapanapi.systems.System that manages Vm's should have
     """
-    __metaclass__ = ABCMeta
-
     # Implementations must define whether this system can suspend (True/False)
     can_suspend = None
     # Implementations must define whether this system can pause (True/False)

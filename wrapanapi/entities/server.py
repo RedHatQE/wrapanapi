@@ -29,11 +29,10 @@ class ServerState(object):
         ]
 
 
-class Server(Entity):
+class Server(six.with_metaclass(ABCMeta, Entity)):
     """
     Represents a single server on a management system.
     """
-    __metaclass__ = ABCMeta
     # Implementations must define a dict which maps API states returned by the
     # system to a ServerState. Example:
     #    {'On': ServerState.ON, 'Off': ServerState.OFF}
