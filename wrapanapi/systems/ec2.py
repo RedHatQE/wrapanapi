@@ -809,12 +809,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def delete_s3_buckets(self, bucket_names):
         """ Deletes specified bucket(s) with keys """
-        try:
-            iter(bucket_names)
-            print("Given object is iterable")
-        except TypeError:
-            print("Object is not iterable.")
-        buckets = [self.s3_connection.Bucket(obj_name) for obj_name in bucket_names]
+        if isinstance(bucket_names, (set, list, tuple)):
+            buckets = [self.s3_connection.Bucket(obj_name) for obj_name in bucket_names]
+        else:
+            raise TypeError("Object is not iterable.")
         for bucket in buckets:
             self.logger.info("Trying to delete bucket '%s'", bucket)
             keys = [obj.key for obj in bucket.objects.all()]
