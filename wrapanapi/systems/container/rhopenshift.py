@@ -177,6 +177,7 @@ class Openshift(System):
         self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
         self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
         self.security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
+        self.batch_api = self.kclient.BatchV1Api(api_client=self.kapi_client)  # for job api
 
     def info(self):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
@@ -777,6 +778,60 @@ class Openshift(System):
         output = self.o_api.create_project(body=proj)
         self.wait_project_exist(name=name)
         return output
+
+    def run_job(self, namespace, body):
+        """Creates job from passed template, runs it and waits for the job to be accomplished
+
+        Args:
+            namespace: openshift namespace name
+            body: yaml job template
+        Return: True/False
+        """
+        body = self.rename_structure(body)
+        job_name = body['metadata']['name']
+        self.batch_api.create_namespaced_job(namespace=namespace, body=body)
+
+        return self.wait_job_finished(namespace, job_name)
+
+    def wait_job_finished(self, namespace, name, wait='15m'):
+        """Waits for job to accomplish
+
+        Args:
+            namespace: openshift namespace name
+            name: job name
+            wait: stop waiting after "wait" time
+        Return: True/False
+        """
+        def job_wait_accomplished():
+            try:
+                job = self.batch_api.read_namespaced_job_status(name=name,
+                                                                namespace=namespace)
+                # todo: replace with checking final statuses
+                return bool(job.status.succeeded)
+            except KeyError:
+                return False
+        return wait_for(job_wait_accomplished, num_sec=wait)[0]
+
+    def wait_persistent_volume_claim_status(self, namespace, name, status, wait='1m'):
+        """Waits until pvc gets some particular status.
+           For example: Bound.
+
+        Args:
+            namespace: openshift namespace name
+            name: job name
+            status: pvc status
+            wait: stop waiting after "wait" time
+        Return: True/False
+        """
+        def pvc_wait_status():
+            try:
+                pvc = self.k_api.read_namespaced_persistent_volume_claim(name=name,
+                                                                         namespace=namespace)
+                return pvc.status.phase == status
+            except KeyError:
+                return False
+
+        return wait_for(pvc_wait_status, num_sec=wait)[0]
 
     def wait_project_exist(self, name, wait=60):
         """Checks whether Project exists within some time.
