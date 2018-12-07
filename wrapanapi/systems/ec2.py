@@ -784,7 +784,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             self.logger.exception("Error: Bucket was not successfully created.")
             return False
 
-    def list_s3_bucket(self):
+    def list_s3_bucket_names(self):
         return [bucket.name for bucket in self.s3_connection.buckets.all()]
 
     def upload_file_to_s3_bucket(self, bucket_name, file_path, file_name):
@@ -809,22 +809,23 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def delete_s3_buckets(self, bucket_names):
         """ Deletes specified bucket(s) with keys """
+        deleted_list = []
         if isinstance(bucket_names, (set, list, tuple)):
             buckets = [self.s3_connection.Bucket(obj_name) for obj_name in bucket_names]
         else:
-            raise TypeError("Object is not iterable.")
+            raise ValueError("Object is not iterable.")
         for bucket in buckets:
             self.logger.info("Trying to delete bucket '%s'", bucket)
             keys = [obj.key for obj in bucket.objects.all()]
-            if keys:
-                self.delete_objects_from_s3_bucket(bucket.name, keys)
             try:
+                if keys:
+                    self.delete_objects_from_s3_bucket(bucket.name, keys)
                 bucket.delete()
-                self.logger.info("Success: bucket '%s' was deleted.", bucket)
-                return True
+                deleted_list.append(bucket)
+                self.logger.info("Success: bucket '%s' was deleted.", bucket.name)
             except Exception as e:
                 self.logger.exception("Bucket '%s' deletion failed due to %s", bucket, e.message)
-                return False
+        return deleted_list
 
     def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
         """Delete each of the given object_keys from the given bucket"""
