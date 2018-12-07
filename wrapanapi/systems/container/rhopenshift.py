@@ -492,6 +492,11 @@ class Openshift(System):
         Returns: whether vm action has been initiated properly
         """
         self.logger.info("removing vm/project %s", vm_name)
+        # openshift 3.6 has an issue. if pvc/pv are removed earlier than pods,
+        # pods get hung and cannot be removed.
+        # so, we need to stop all pods in project before removal
+        self.stop_vm(vm_name)
+        self.wait_vm_stopped(vm_name)
         self.delete_project(name=vm_name)
         return True
 
@@ -1216,7 +1221,11 @@ class Openshift(System):
             vm_name: project name
         Return: True/False
         """
-        return not self.is_vm_running(vm_name)
+        pods = self.k_api.list_namespaced_pod(namespace=vm_name).items
+        if pods:
+            self.logger.info(("some pods are still "
+                              "running: {}").format([pod.metadata.name for pod in pods]))
+        return not bool(pods)
 
     def wait_vm_running(self, vm_name, num_sec=900):
         """Checks whether all project pods are in ready state.
