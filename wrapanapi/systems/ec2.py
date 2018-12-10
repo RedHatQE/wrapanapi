@@ -815,16 +815,17 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         else:
             raise ValueError("Object is not iterable.")
         for bucket in buckets:
-            self.logger.info("Trying to delete bucket '%s'", bucket)
+            self.logger.info("Trying to delete bucket '%s'", bucket.anem)
             keys = [obj.key for obj in bucket.objects.all()]
             try:
                 if keys:
                     self.delete_objects_from_s3_bucket(bucket.name, keys)
                 bucket.delete()
-                deleted_list.append(bucket)
+                deleted_list.append(bucket.name)
                 self.logger.info("Success: bucket '%s' was deleted.", bucket.name)
             except Exception as e:
-                self.logger.exception("Bucket '%s' deletion failed due to %s", bucket, e.message)
+                self.logger.exception("Bucket '%s' deletion failed due to %s", bucket.name,
+                                      e.message)
         return deleted_list
 
     def delete_objects_from_s3_bucket(self, bucket_name, object_keys):
