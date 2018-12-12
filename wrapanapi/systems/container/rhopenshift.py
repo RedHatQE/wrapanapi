@@ -496,8 +496,12 @@ class Openshift(System):
         # openshift 3.6 has an issue. if pvc/pv are removed earlier than pods,
         # pods get hung and cannot be removed.
         # so, we need to stop all pods in project before removal
-        self.stop_vm(vm_name)
-        self.wait_vm_stopped(vm_name)
+        try:
+            self.stop_vm(vm_name)
+            self.wait_vm_stopped(vm_name, num_sec=60)
+        except BaseException as e:
+            self.logger.exception("vm %s couldn't be stopped because of '%s'. calling remove vm",
+                                  vm_name, e.message)
         self.delete_project(name=vm_name)
         return True
 
