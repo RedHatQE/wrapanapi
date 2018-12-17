@@ -426,19 +426,8 @@ class Openshift(System):
         template_entities = self.process_template(name=template, namespace=self.default_namespace,
                                                   parameters=processing_params)
         self.logger.debug("template entities:\n %r", template_entities)
-        kinds = set([e['kind'] for e in template_entities])
-        entity_names = {e: inflection.underscore(e) for e in kinds}
-        proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
         progress_callback("Template has been processed")
-        for entity in template_entities:
-            if entity['kind'] in kinds:
-                procedure = getattr(self, proc_names[entity['kind']], None)
-                # todo: this code should be paralleled
-                obtained_entity = procedure(namespace=proj_name, **entity)
-                self.logger.debug(obtained_entity)
-            else:
-                self.logger.error("some entity %s isn't present in entity creation list", entity)
-
+        self.create_template_entities(namespace=proj_name, entities=template_entities)
         progress_callback("All template entities have been created")
 
         self.logger.info("verifying that all created entities are up and running")
@@ -456,6 +445,21 @@ class Openshift(System):
             self.logger.error("deployment failed. Please check failed pods details")
             # todo: return and print all failed pod details
             raise
+
+    def create_template_entities(self, namespace, entities):
+        # fixme: add docstring
+        self.logger.debug("passed template entities:\n %r", entities)
+        kinds = set([e['kind'] for e in entities])
+        entity_names = {e: inflection.underscore(e) for e in kinds}
+        proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
+
+        for entity in entities:
+            if entity['kind'] in kinds:
+                procedure = getattr(self, proc_names[entity['kind']], None)
+                obtained_entity = procedure(namespace=namespace, **entity)
+                self.logger.debug(obtained_entity)
+            else:
+                self.logger.error("some entity %s isn't present in entity creation list", entity)
 
     def start_vm(self, vm_name):
         """Starts a vm.
@@ -542,11 +546,7 @@ class Openshift(System):
         return template
 
     def process_template(self, name, namespace, parameters=None):
-        """Implements template processing mechanizm similar to `oc process`.
-        It does to functions
-          1. parametrized templates have to be processed in order to replace parameters with values.
-          2. templates consist of list of objects. Those objects have to be extracted
-          before creation accordingly.
+        """Implements template processing mechanism similar to `oc process`.
 
         Args:
             name: (str) template name
@@ -558,7 +558,23 @@ class Openshift(System):
         raw_response = self.o_api.read_namespaced_template(name=name, namespace=namespace,
                                                            _preload_content=False)
         raw_data = json.loads(raw_response.data)
-        updated_data = self.rename_structure(raw_data)
+
+        return self.process_raw_template(body=raw_data, namespace=namespace, parameters=parameters)
+
+    def process_raw_template(self, body, namespace, parameters=None):
+        """Implements template processing mechanism similar to `oc process`.
+        It does two functions
+          1. parametrized templates have to be processed in order to replace parameters with values.
+          2. templates consist of list of objects. Those objects have to be extracted
+          before creation accordingly.
+
+        Args:
+            body: (dict) template body
+            namespace: (str) openshift namespace
+            parameters: parameters and values to replace default ones
+        Return: list of objects stored in template
+        """
+        updated_data = self.rename_structure(body)
         read_template = self.ociclient.V1Template(**updated_data)
         if parameters:
             updated_template = self._update_template_parameters(template=read_template,
@@ -615,6 +631,22 @@ class Openshift(System):
         self.logger.info("creating config map %s", conf_map_name)
         output = self.k_api.create_namespaced_config_map(namespace=namespace, body=conf_map)
         self.wait_config_map_exist(namespace=namespace, name=conf_map_name)
+        return output
+
+    def replace_config_map(self, namespace, **kwargs):
+        """Replace ConfigMap entity using REST API.
+
+        Args:
+            namespace: openshift namespace where entity has to be created
+            kwargs: ConfigMap data
+        Return: data if entity was created w/o errors
+        """
+        conf_map = self.kclient.V1ConfigMap(**kwargs)
+        conf_map_name = conf_map.to_dict()['metadata']['name']
+        self.logger.info("replacing config map %s", conf_map_name)
+        output = self.k_api.replace_namespaced_config_map(namespace=namespace,
+                                                          name=conf_map_name,
+                                                          body=conf_map)
         return output
 
     def create_stateful_set(self, namespace, **kwargs):
@@ -1139,6 +1171,21 @@ class Openshift(System):
         """
         return self.security_api.read_security_context_constraints(name)
 
+    def create_scc(self, body):
+        """Creates Security Context Constraint from passed structure.
+        Main aim is to create scc from read and parsed yaml file.
+
+        Args:
+          body: security context constraint structure
+        Returns: security context constraint object
+        """
+        raw_scc = self.rename_structure(body)
+        if raw_scc.get('api_version') == 'v1':
+            # there is inconsistency between api and some scc files. v1 is not accepted by api now
+            raw_scc.pop('api_version')
+        scc = self.ociclient.V1SecurityContextConstraints(**raw_scc)
+        return self.security_api.create_security_context_constraints(body=scc)
+
     def append_sa_to_scc(self, scc_name, namespace, sa):
         """Appends Service Account to respective Security Constraint
 
@@ -1201,23 +1248,11 @@ class Openshift(System):
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
 
         for pod_name in self.get_required_pods(vm_name):
-            if self.is_deployment_config(name=pod_name, namespace=vm_name):
-                dc = self.o_api.read_namespaced_deployment_config(name=pod_name, namespace=vm_name)
-                status = dc.status.ready_replicas
-            elif self.is_stateful_set(name=pod_name, namespace=vm_name):
-                pods = self.k_api.list_namespaced_pod(namespace=vm_name,
-                                                      label_selector='name={n}'.format(n=pod_name))
-                pod_stats = [pod.status.container_statuses[-1].ready for pod in pods.items]
-                status = all(pod_stats)
-            else:
-                raise ValueError("No such pod name among StatefulSets or Stateless Pods")
-
-            if status and int(status) > 0:
-                self.logger.debug("pod %s looks up and running", pod_name)
+            if self.is_pod_running(namespace=vm_name, name=pod_name):
                 continue
             else:
-                self.logger.debug("pod %s isn't up yet", pod_name)
                 return False
+
         # todo: check url is available + db is accessable
         return True
 
@@ -1581,3 +1616,84 @@ class Openshift(System):
         """
         return self.k_api.delete_namespaced_pod(namespace=namespace, name=name,
                                                 body=options or self.kclient.V1DeleteOptions())
+
+    def is_pod_running(self, namespace, name):
+        """Checks whether pod is running
+
+        Args:
+            namespace: (str) project(namespace) name
+            name: (str) pod name
+        Return: True/False
+        """
+        self.logger.info("checking pod status %s", name)
+
+        if self.is_deployment_config(name=name, namespace=namespace):
+            dc = self.o_api.read_namespaced_deployment_config(name=name, namespace=namespace)
+            status = dc.status.ready_replicas
+        elif self.is_stateful_set(name=name, namespace=namespace):
+            pods = self.k_api.list_namespaced_pod(namespace=namespace,
+                                                  label_selector='name={n}'.format(n=name))
+            pod_stats = [pod.status.container_statuses[-1].ready for pod in pods.items]
+            status = all(pod_stats)
+        else:
+            raise ValueError("No such pod name among StatefulSets or Stateless Pods")
+
+        if status and int(status) > 0:
+            self.logger.debug("pod %s looks up and running", name)
+            return True
+        else:
+            self.logger.debug("pod %s isn't up yet", name)
+            return False
+
+    def wait_pod_running(self, namespace, name, num_sec=300):
+        """Waits for pod to switch to ready state
+
+        Args:
+            namespace: project name
+            name: pod name
+            num_sec: all pods should get ready for this time then - True, otherwise TimeoutError
+        Return: True/False
+        """
+        wait_for(self.is_pod_running, [namespace, name], fail_condition=False, num_sec=num_sec)
+        return True
+
+    def is_pod_stopped(self, namespace, name):
+        """Check whether pod isn't running.
+
+        Args:
+            namespace: (str) project(namespace) name
+            name: (str) pod name
+        Return: True/False
+        """
+        pods = self.k_api.list_namespaced_pod(namespace=namespace).items
+        return not bool([pod for pod in pods if name == pod.metadata.name])
+
+    def wait_pod_stopped(self, namespace, name, num_sec=300):
+        """Waits for pod to stop
+
+        Args:
+            namespace: project name
+            name: pod name
+            num_sec: all pods should disappear - True, otherwise TimeoutError
+        Return: True/False
+        """
+        wait_for(self.is_pod_stopped, [namespace, name], num_sec=num_sec)
+        return True
+
+    def run_command(self, namespace, name, cmd, **kwargs):
+        """Connects to pod and tries to run
+
+        Args:
+            namespace: (str) project name
+            name: (str) pod name
+            cmd: (list) command to run
+        Return: command output
+        """
+        # there are some limitations and this code isn't robust enough due to
+        # https://github.com/kubernetes-client/python/issues/58
+        return self.k_api.connect_post_namespaced_pod_exec(namespace=namespace,
+                                                           name=name,
+                                                           command=cmd,
+                                                           stdout=True,
+                                                           stderr=True,
+                                                           **kwargs)
