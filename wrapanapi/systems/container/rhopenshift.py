@@ -1527,3 +1527,21 @@ class Openshift(System):
             return route.items[0].spec.host
         except (ApiException, IndexError):
             return None
+
+    def get_appliance_uuid(self, name):
+        """Returns appliance uuid assigned by Openshift
+
+        Args:
+            name: appliance project name
+        Returns: uuid
+        """
+        return self.get_project_by_name(name).metadata.uid
+
+    def is_appliance(self, name):
+        """Checks whether passed vm/project is appliance
+
+        Args:
+            name: appliance project name
+        Returns: True/False
+        """
+        return bool(self.get_appliance_tags(name))
