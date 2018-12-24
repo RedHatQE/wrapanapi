@@ -223,7 +223,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     def get_hardware_configuration(self):
         self.refresh(read_from_hyperv=True)
-        data = {'mem': self.raw['CPUCount'], 'cpu': self.raw['Memory']}
+        data = {'mem': self.raw['Memory'], 'cpu': self.raw['CPUCount']}
         return {
             key: str(val) if isinstance(val, six.string_types) else val
             for key, val in data.items()

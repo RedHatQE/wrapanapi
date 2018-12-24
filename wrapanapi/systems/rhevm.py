@@ -368,7 +368,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
     def get_hardware_configuration(self):
         self.refresh()
         return {
-            'ram': self.raw.memory,
+            'ram': self.raw.memory / 1024 / 1024,
             'cpu': self.raw.cpu.topology.cores * self.raw.cpu.topology.sockets
         }
 
