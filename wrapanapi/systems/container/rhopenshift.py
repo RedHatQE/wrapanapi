@@ -1545,3 +1545,39 @@ class Openshift(System):
         Returns: True/False
         """
         return bool(self.get_appliance_tags(name))
+
+    def find_job_pods(self, namespace, name):
+        """Finds and returns all remaining job pods
+
+        Args:
+            namespace: project(namespace) name
+            name: job name
+        Returns: list of pods
+        """
+        pods = []
+        for pod in self.list_pods(namespace=namespace):
+            if pod.metadata.labels.get('job-name', '') == name:
+                pods.append(pod)
+        return pods
+
+    def read_pod_log(self, namespace, name):
+        """Reads and returns pod log
+
+        Args:
+            namespace: project(namespace) name
+            name: pod name
+        Returns: list of pods
+        """
+        return self.k_api.read_namespaced_pod_log(name=name, namespace=namespace)
+
+    def delete_pod(self, namespace, name, options=None):
+        """Tries to remove passed pod
+
+        Args:
+            namespace: project(namespace) name
+            name: pod name
+            options: delete options like force delete and etc
+        Returns: Pod
+        """
+        return self.k_api.delete_namespaced_pod(namespace=namespace, name=name,
+                                                body=options or self.kclient.V1DeleteOptions())
