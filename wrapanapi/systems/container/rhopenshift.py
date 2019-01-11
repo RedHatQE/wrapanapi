@@ -447,7 +447,17 @@ class Openshift(System):
             raise
 
     def create_template_entities(self, namespace, entities):
-        # fixme: add docstring
+        """Creates entities from openshift template.
+
+        Since there is no methods in openshift/kubernetes rest api for app deployment from template,
+        it is necessary to create template entities one by one using respective entity api.
+
+        Args:
+            namespace: (str) openshift namespace
+            entities: (list) openshift entities
+
+        Returns: None
+        """
         self.logger.debug("passed template entities:\n %r", entities)
         kinds = set([e['kind'] for e in entities])
         entity_names = {e: inflection.underscore(e) for e in kinds}
