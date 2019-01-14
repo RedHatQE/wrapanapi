@@ -192,17 +192,18 @@ class AzureInstance(Instance):
         """
         Clean up a VM
 
-        Deletes VM, then also deletes NICs/PIPs associated with the VM.
-        Any exceptions raised during NIC/PIP delete attempts are logged only.
+        Deletes VM, then also deletes NICs/PIPs/Discs associated with the VM.
+        Any exceptions raised during NIC/PIP/Disc delete attempts are logged only.
         """
         self.delete()
-        self.logger.info("cleanup: removing NICs/PIPs for VM '%s'", self.name)
+        self.logger.info("cleanup: removing NICs/PIPs/Discs for VM '%s'", self.name)
         try:
             self.system.remove_nics_by_search(self.name, self._resource_group)
             self.system.remove_pips_by_search(self.name, self._resource_group)
+            self.system.remove_discs_by_search(self.name)
         except Exception:
             self.logger.exception(
-                "cleanup: failed to cleanup NICs/PIPs for VM '%s'", self.name)
+                "cleanup: failed to cleanup NICs/PIPs/Discs for VM '%s'", self.name)
         return True
 
     def start(self):
@@ -463,6 +464,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.storage_account = kwargs.get("storage_account")
         self.storage_key = kwargs.get("storage_key")
         self.template_container = kwargs['provisioning']['template_container']
+        self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
         self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
 
         self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
@@ -740,7 +742,24 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             results.append((pip, operation.status()))
         if not results:
             self.logger.debug('No PIPs matching "%s" template were found', pip_template)
-            return results
+        return results
+
+    def remove_discs_by_search(self, disc_name):
+        """
+        Used for clean_up jobs to remove discs that are left after deleting the VM
+        """
+        self.logger.info('Attempting to find the disc image {}'.format(disc_name))
+        results = []
+        discs = self.find_templates(container='system',
+                                    prefix='{}{}'.format(self.orphaned_discs_path, disc_name))
+
+        for disc in discs:
+            disc.delete()
+            self.logger.info('disc {} removed'.format(disc_name))
+            results.append(disc_name)
+        if not results:
+            self.logger.debug('No discs matching {} were found'.format(disc_name))
+        return results
 
     def create_netsec_group(self, group_name, resource_group=None):
         security_groups = self.network_client.network_security_groups
