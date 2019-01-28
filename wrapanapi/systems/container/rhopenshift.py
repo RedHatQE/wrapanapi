@@ -321,6 +321,8 @@ class Openshift(System):
             tags: (dict) dict with tags if some tag isn't passed it is set to 'latest'
             vm_name: (str) is used as project name if passed. otherwise, name is generated (sprout)
             progress_callback: (func) function to return current progress (sprout)
+            template_params: (dict) parameters to override during template deployment
+            running_pods: (list) checks that passed pods are running instead of default set
             since input tags are image stream tags whereas template expects its own tags.
             So, input tags should match stream2template_tags_mapping.
             password: this password will be set as default everywhere
@@ -358,6 +360,8 @@ class Openshift(System):
         else:
             proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
 
+        template_params = kwargs.pop('template_params', {})
+        running_pods = kwargs.pop('running_pods', ())
         proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
         self.logger.info("unique id %s, project name %s", proj_id, proj_name)
 
@@ -421,6 +425,9 @@ class Openshift(System):
         processing_params = {'DATABASE_PASSWORD': password,
                              'APPLICATION_DOMAIN': proj_url}
         processing_params.update(prepared_tags)
+
+        # updating template parameters
+        processing_params.update(template_params)
         self.logger.info(("processing template and passed params in order to "
                           "prepare list of required project entities"))
         template_entities = self.process_template(name=template, namespace=self.default_namespace,
@@ -434,7 +441,7 @@ class Openshift(System):
         progress_callback("Waiting for all pods to be ready and running")
         try:
             wait_for(self.is_vm_running, num_sec=600,
-                     func_kwargs={'vm_name': proj_name})
+                     func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
             self.logger.info("all pods look up and running")
             progress_callback("Everything has been deployed w/o errors")
             return {'url': proj_url,
@@ -507,15 +514,6 @@ class Openshift(System):
         Returns: whether vm action has been initiated properly
         """
         self.logger.info("removing vm/project %s", vm_name)
-        # openshift 3.6 has an issue. if pvc/pv are removed earlier than pods,
-        # pods get hung and cannot be removed.
-        # so, we need to stop all pods in project before removal
-        try:
-            self.stop_vm(vm_name)
-            self.wait_vm_stopped(vm_name, num_sec=60)
-        except BaseException as e:
-            self.logger.exception("vm %s couldn't be stopped because of '%s'. calling remove vm",
-                                  vm_name, e.message)
         self.delete_project(name=vm_name)
         return True
 
@@ -688,6 +686,21 @@ class Openshift(System):
         self.logger.info("creating service %s", service_name)
         output = self.k_api.create_namespaced_service(namespace=namespace, body=service)
         self.wait_service_exist(namespace=namespace, name=service_name)
+        return output
+
+    def create_endpoints(self, namespace, **kwargs):
+        """Creates Endpoints entity using REST API.
+
+        Args:
+            namespace: openshift namespace where entity has to be created
+            kwargs: Endpoints data
+        Return: data if entity was created w/o errors
+        """
+        endpoints = self.kclient.V1Endpoints(**kwargs)
+        endpoints_name = endpoints.to_dict()['metadata']['name']
+        self.logger.info("creating endpoints %s", endpoints_name)
+        output = self.k_api.create_namespaced_endpoints(namespace=namespace, body=endpoints)
+        self.wait_endpoints_exist(namespace=namespace, name=endpoints_name)
         return output
 
     def create_route(self, namespace, **kwargs):
@@ -931,6 +944,20 @@ class Openshift(System):
         """
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_service,
+                                     'name': name,
+                                     'namespace': namespace})[0]
+
+    def wait_endpoints_exist(self, namespace, name, wait=60):
+        """Checks whether Endpoints exists within some time.
+
+        Args:
+            name: entity name
+            namespace: openshift namespace where entity should exist
+            wait: entity should appear for this time then - True, otherwise False
+        Return: True/False
+        """
+        return wait_for(self._does_exist, num_sec=wait,
+                        func_kwargs={'func': self.k_api.read_namespaced_endpoints,
                                      'name': name,
                                      'namespace': namespace})[0]
 
@@ -1246,18 +1273,19 @@ class Openshift(System):
         return self.security_api.patch_security_context_constraints(name=scc_name,
                                                                     body=update_scc_cmd)
 
-    def is_vm_running(self, vm_name):
+    def is_vm_running(self, vm_name, running_pods=()):
         """Emulates check is vm(appliance) up and running
 
         Args:
             vm_name: (str) project(namespace) name
+            running_pods: (list) checks only passed number of pods. otherwise, default set.
         Return: True/False
         """
         if not self.does_vm_exist(vm_name):
             return False
         self.logger.info("checking all pod statuses for vm name %s", vm_name)
 
-        for pod_name in self.get_required_pods(vm_name):
+        for pod_name in running_pods or self.get_required_pods(vm_name):
             if self.is_pod_running(namespace=vm_name, name=pod_name):
                 continue
             else:
@@ -1383,8 +1411,9 @@ class Openshift(System):
             vm_name: VM name
         Returns: True/False
         """
-        return (self.is_vm_running(vm_name) or self.is_vm_stopped(vm_name) or
-                self.is_vm_suspended(vm_name))
+        return (self.is_vm_running(vm_name)
+                or self.is_vm_stopped(vm_name)
+                or self.is_vm_suspended(vm_name))
 
     @property
     def can_rename(self):
