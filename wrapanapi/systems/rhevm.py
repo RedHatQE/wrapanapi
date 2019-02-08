@@ -1008,7 +1008,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                             async_=True, import_as_template=True):
         image_service = self._get_image_service(source_storage_domain_name, source_template_name)
         image_service.import_(
-            async_=async_,
+            async=async_,
             import_as_template=import_as_template,
             template=types.Template(name=target_template_name),
             cluster=types.Cluster(name=target_cluster_name),
