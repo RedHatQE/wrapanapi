@@ -407,6 +407,11 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             region_name=self._region_name, config=connection_config
         )
 
+        self.ecr_connection = boto3client(
+            'ecr', aws_access_key_id=self._username, aws_secret_access_key=self._password,
+            region_name=self._region_name, config=connection_config
+        )
+
         self.cloudformation_connection = boto3client(
             'cloudformation', aws_access_key_id=self._username,
             aws_secret_access_key=self._password, region_name=self._region_name,
@@ -1160,3 +1165,16 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 except Exception:
                     pass
         return queue_dict
+
+    def get_registry_data(self):
+        # Returns dict with docker registry url and token
+        data = self.ecr_connection.get_authorization_token()
+        if data['ResponseMetadata']['HTTPStatusCode'] >= 400:
+            raise NotFoundError("couldn't get registry details. please check environment setup")
+
+        try:
+            first_registry = data['authorizationData'][0]
+            return {'token': first_registry['authorizationToken'],
+                    'registry': first_registry['proxyEndpoint']}
+        except (IndexError, KeyError):
+            raise NotFoundError("couldn't get registry details. please check environment setup")
