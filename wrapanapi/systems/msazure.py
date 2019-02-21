@@ -333,7 +333,14 @@ class AzureBlobImage(Template):
         subnet = vm_settings['subnet_range']
         address_space = vm_settings['address_space']
         vnet_name = vm_settings['virtual_net']
+
+        # checking whether passed vm size value is correct
+        vm_sizes = {t.value for t in VirtualMachineSizeTypes}
         vm_size = vm_settings['vm_size']
+        if vm_size not in vm_sizes:
+            raise ValueError("wrong vm size %s passed. possible size: %s", vm_size,
+                             ",".join(vm_sizes))
+
         storage_container = vm_settings['storage_container']
         # nsg_name = vm_settings['network_nsg']  # todo: check whether nsg is necessary at all
 
@@ -416,7 +423,7 @@ class AzureBlobImage(Template):
         vm_parameters = {
             'location': location,
             'hardware_profile': {
-                'vm_size': getattr(VirtualMachineSizeTypes, vm_size)
+                'vm_size': vm_size
             },
             'storage_profile': {
                 'os_disk': {
