@@ -17,6 +17,7 @@ openshift==0.3.4
 packaging
 pyvmomi>=6.5.0.2017.5.post1
 python-cinderclient
+python-swiftclient
 python-glanceclient
 python-ironicclient
 python-keystoneclient
