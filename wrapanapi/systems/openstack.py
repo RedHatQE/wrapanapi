@@ -27,7 +27,7 @@ from novaclient.client import SessionClient
 from novaclient.v2.floating_ips import FloatingIP
 from requests.exceptions import Timeout
 from swiftclient import client as swiftclient
-from swiftclient.exceptions import ClientException as swift_exceptions
+from swiftclient.exceptions import ClientException as SwiftException
 from wait_for import wait_for
 
 from wrapanapi.entities import (
@@ -862,7 +862,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return [flavor.name for flavor in flavor_list]
 
     def list_volume(self):  # TODO: maybe names? Could not get it to work via API though ...
-        import ipdb; ipdb.set_trace()
         volume_list = self.capi.volumes.list()
         return [volume.id for volume in volume_list]
 
@@ -1074,13 +1073,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def list_containers(self):
         """Returns list of Containers."""
         _, containers = self.sapi.get_account()
-        return [cont["name"] for  cont in containers]
+        return [cont["name"] for cont in containers]
 
     def container_exist(self, name):
         try:
             self.sapi.head_container(name)
             return True
-        except swift_exceptions as e:
+        except SwiftException as e:
             if e.http_status != "404":
                 self.logger.error("An error occurred checking for the existence of the container")
             return False
@@ -1088,14 +1087,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def create_container(self, name):
         try:
             self.sapi.put_container(name)
-        except swift_exceptions as e:
+        except SwiftException as e:
             self.logger.error("Failed to create container with error: %s" % e)
 
     def delete_container(self, name):
         try:
             self.sapi.delete_container(name)
             return True
-        except swift_exceptions as e:
+        except SwiftException as e:
             self.logger.error("Failed to delete container with error: %s" % e)
             return False
 
@@ -1108,26 +1107,22 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         try:
             self.sapi.head_object(container_name, object_name)
             return True
-        except swift_exceptions as e:
+        except SwiftException as e:
             if e.http_status != "404":
                 self.logger.error("An error occurred checking for the existence of the object")
             return False
 
     def create_object(self, container_name, path, object_name=None):
         if not object_name:
-            os.path.basename(path)
-        with open(path, 'r') as obj:
-            self.sapi.put_object(
-                container_name,
-                obj,
-                contents=obj,
-                content_type='text/plain'
-            )
+            object_name = os.path.basename(path)
 
-    def delete_object(self, name):
+        with open(path, 'r') as obj:
+            self.sapi.put_object(container_name, object_name, contents=obj)
+
+    def delete_object(self, container_name, object_name):
         try:
-            self.sapi.delete_container(name)
+            self.sapi.delete_object(container_name, object_name)
             return True
-        except swift_exceptions as e:
-            self.logger.error("Failed to delete container with error: %s" % e)
+        except SwiftException as e:
+            self.logger.error("Failed to delete object with error: %s" % e)
             return False
