@@ -1071,39 +1071,81 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         }
 
     def list_containers(self):
-        """Returns list of Containers."""
+        """List of available containers.
+
+        Returns: list List of containers name.
+        """
+
         _, containers = self.sapi.get_account()
         return [cont["name"] for cont in containers]
 
-    def container_exist(self, name):
+    def container_exist(self, container_name):
+        """Check container exist or not.
+
+        Args:
+            container_name: name of container.
+
+        Returns: bool
+        """
+
         try:
-            self.sapi.head_container(name)
+            self.sapi.head_container(container_name)
             return True
         except SwiftException as e:
             if e.http_status != "404":
                 self.logger.error("An error occurred checking for the existence of the container")
             return False
 
-    def create_container(self, name):
+    def create_container(self, container_name):
+        """Create container.
+
+        Args:
+            container_name: name of container
+        """
+
         try:
-            self.sapi.put_container(name)
+            self.sapi.put_container(container_name)
         except SwiftException as e:
             self.logger.error("Failed to create container with error: %s" % e)
 
-    def delete_container(self, name):
+    def delete_container(self, container_name):
+        """Delete existing container
+
+        Args:
+            container_name: name of container
+
+        Returns: bool
+        """
+
         try:
-            self.sapi.delete_container(name)
+            self.sapi.delete_container(container_name)
             return True
         except SwiftException as e:
             self.logger.error("Failed to delete container with error: %s" % e)
             return False
 
     def list_objects(self, container_name):
-        """Returns list of objects for container."""
+        """List of available object in container.
+
+        Args:
+            container_name: name of container
+
+        Returns: list List of existing objects
+        """
+
         container = self.sapi.get_container(container_name)
         return [obj["name"] for obj in container[1]]
 
     def object_exist(self, container_name, object_name):
+        """Check object exist or not under container.
+
+        Args:
+            container_name: name of container
+            object_name: name of object
+
+        Returns: bool
+        """
+
         try:
             self.sapi.head_object(container_name, object_name)
             return True
@@ -1113,6 +1155,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             return False
 
     def create_object(self, container_name, path, object_name=None):
+        """Upload the object under container.
+
+        Args:
+            container_name: name of container
+            path: local object path
+            object_name: name of object
+        """
+
         if not object_name:
             object_name = os.path.basename(path)
 
@@ -1120,9 +1170,32 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             self.sapi.put_object(container_name, object_name, contents=obj)
 
     def delete_object(self, container_name, object_name):
+        """Delete object from container.
+
+        Args:
+            container_name: name of container
+            object_name: name of object
+
+        Returns: bool
+        """
+
         try:
             self.sapi.delete_object(container_name, object_name)
             return True
         except SwiftException as e:
             self.logger.error("Failed to delete object with error: %s" % e)
             return False
+
+    def download_object(self, container_name, object_name, path):
+        """Download object from container.
+
+        Args:
+            container_name: name of container
+            object_name: name of object
+            path: local object path where like to save.
+        """
+
+        _, obj_contents = self.sapi.get_object(container_name, object_name)
+
+        with open(path, "w") as obj:
+            obj.write(obj_contents)
