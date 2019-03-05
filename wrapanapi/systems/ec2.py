@@ -393,10 +393,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             region_name=self._region_name, config=connection_config
         )
 
-        self.elb_connection = ELBConnection(
-            self._username, self._password, region=_regions(
-                regionmodule=elb, regionname=self._region_name)
-        )
+        self.elb_connection = boto3client('elb', aws_access_key_id=self._username,
+            aws_secret_access_key=self._password, region_name=self._region_name,
+            config=connection_config)
 
         self.s3_connection = boto3resource(
             's3', aws_access_key_id=self._username, aws_secret_access_key=self._password,
@@ -887,13 +886,15 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     def get_all_unused_loadbalancers(self):
         return [
             loadbalancer for loadbalancer
-            in self.elb_connection.get_all_load_balancers()
-            if not loadbalancer.instances]
+            in self.elb_connection.describe_load_balancers().get("LoadBalancerDescriptions")
+            if not loadbalancer.get("Instances")]
 
     def delete_loadbalancer(self, loadbalancer):
-        self.logger.info(" Deleting Elastic Load Balancer '%s'", loadbalancer.name)
+        self.logger.info(" Deleting Elastic Load Balancer '%s'",
+                         loadbalancer.get("LoadBalancerName"))
         try:
-            self.elb_connection.delete_load_balancer(loadbalancer.name)
+            self.elb_connection.delete_load_balancer(
+                LoadBalancerName=loadbalancer.get("LoadBalancerName"))
             return True
 
         except ActionTimedOutError:
@@ -1095,7 +1096,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List EC2 Load Balancers")
-        return [loadbalancer.name for loadbalancer in self.elb_connection.get_all_load_balancers()]
+        return [loadbalancer.get("LoadBalancerName") for loadbalancer in
+                self.elb_connection.describe_load_balancers().get("LoadBalancerDescriptions")]
 
     def list_network(self):
         self.logger.info("Attempting to List EC2 Virtual Private Networks")
