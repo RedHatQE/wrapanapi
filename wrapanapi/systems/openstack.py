@@ -1073,7 +1073,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def list_containers(self):
         """List of available containers.
 
-        Returns: list List of containers name.
+        Returns: List of containers name.
         """
 
         _, containers = self.sapi.get_account()
@@ -1130,7 +1130,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Args:
             container_name: name of container
 
-        Returns: list List of existing objects
+        Returns: List of existing objects
         """
 
         container = self.sapi.get_container(container_name)
