@@ -1079,23 +1079,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         _, containers = self.sapi.get_account()
         return [cont["name"] for cont in containers]
 
-    def container_exist(self, container_name):
-        """Check container exist or not.
-
-        Args:
-            container_name: name of container.
-
-        Returns: bool
-        """
-
-        try:
-            self.sapi.head_container(container_name)
-            return True
-        except SwiftException as e:
-            if e.http_status != "404":
-                self.logger.error("An error occurred checking for the existence of the container")
-            return False
-
     def create_container(self, container_name):
         """Create container.
 
@@ -1135,24 +1118,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         container = self.sapi.get_container(container_name)
         return [obj["name"] for obj in container[1]]
-
-    def object_exist(self, container_name, object_name):
-        """Check object exist or not under container.
-
-        Args:
-            container_name: name of container
-            object_name: name of object
-
-        Returns: bool
-        """
-
-        try:
-            self.sapi.head_object(container_name, object_name)
-            return True
-        except SwiftException as e:
-            if e.http_status != "404":
-                self.logger.error("An error occurred checking for the existence of the object")
-            return False
 
     def create_object(self, container_name, path, object_name=None):
         """Upload the object under container.
