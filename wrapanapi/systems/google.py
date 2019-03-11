@@ -418,21 +418,22 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         self._region = kwargs.get('region')
         scope = kwargs.get('scope', self.default_scope)
 
-        service_account = kwargs.get('service_account', None)
-        if service_account:
-            service_account = dict(service_account.items())
+        if 'service_account' in kwargs:
+            service_account = dict(kwargs.get('service_account').items())
             service_account['private_key'] = service_account['private_key'].replace('\\n', '\n')
-            credentials = ServiceAccountCredentials.from_json_keyfile_dict(
-                service_account, scopes=scope)
+            service_account['type'] = service_account.get('type', 'service_account')  # default it
+            credentials = ServiceAccountCredentials.from_json_keyfile_dict(service_account,
+                                                                           scopes=scope)
         elif file_type == 'json':
             file_path = kwargs.get('file_path', None)
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                file_path, scopes=scope)
+            credentials = ServiceAccountCredentials.from_json_keyfile_name(file_path,
+                                                                           scopes=scope)
         elif file_type == 'p12':
             file_path = kwargs.get('file_path', None)
             client_email = kwargs.get('client_email', None)
-            credentials = ServiceAccountCredentials.from_p12_keyfile(
-                client_email, file_path, scopes=scope)
+            credentials = ServiceAccountCredentials.from_p12_keyfile(client_email,
+                                                                     file_path,
+                                                                     scopes=scope)
         http_auth = credentials.authorize(httplib2.Http())
         self._compute = build('compute', 'v1', http=http_auth)
         self._storage = build('storage', 'v1', http=http_auth)
