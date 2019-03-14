@@ -367,56 +367,29 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         super(EC2System, self).__init__(**kwargs)
         self._username = kwargs.get('username')
         self._password = kwargs.get('password')
+        self._region_name = kwargs.get('region')
+
         connection_config = Config(
             signature_version='s3v4',
             retries=dict(
                 max_attempts=10
             )
         )
+        connection_kwargs = {
+            'aws_access_key_id': self._username,
+            'aws_secret_access_key': self._password,
+            'region_name': self._region_name,
+            'config': connection_config
+        }
 
-        self._region_name = kwargs.get('region')
-
-        self.sqs_connection = boto3client(
-            'sqs', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.elb_connection = boto3client('elb', aws_access_key_id=self._username,
-            aws_secret_access_key=self._password, region_name=self._region_name,
-            config=connection_config)
-
-        self.s3_connection = boto3resource(
-            's3', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.ec2_connection = boto3client(
-            'ec2', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.ec2_resource = boto3resource(
-            'ec2', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.ecr_connection = boto3client(
-            'ecr', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.cloudformation_connection = boto3client(
-            'cloudformation', aws_access_key_id=self._username,
-            aws_secret_access_key=self._password, region_name=self._region_name,
-            config=connection_config
-        )
-
-        self.cloudformation_resource = boto3resource(
-            'cloudformation', aws_access_key_id=self._username,
-            aws_secret_access_key=self._password, region_name=self._region_name,
-            config=connection_config
-        )
-
+        self.sqs_connection = boto3client('sqs', **connection_kwargs)
+        self.elb_connection = boto3client('elb', **connection_kwargs)
+        self.s3_connection = boto3resource('s3', **connection_kwargs)
+        self.ec2_connection = boto3client('ec2', **connection_kwargs)
+        self.ec2_resource = boto3resource('ec2', **connection_kwargs)
+        self.ecr_connection = boto3client('ecr', **connection_kwargs)
+        self.cloudformation_connection = boto3client('cloudformation', **connection_kwargs)
+        self.cloudformation_resource = boto3resource('cloudformation', **connection_kwargs)
         self.sns_connection = boto3client('sns', region_name=self._region_name)
 
         self.kwargs = kwargs
