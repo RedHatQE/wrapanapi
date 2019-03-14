@@ -589,7 +589,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         stack_status_filter:  list of stack statuses to filter for. See ``StackStates``
         """
         stack_list = [
-            CloudFormationStack(system=self, uuid=stack_summary['StackId'])
+            CloudFormationStack(system=self, uuid=stack_summary['StackId'],
+                                raw=self.cloudformation_resource.Stack(stack_summary['StackName']))
             for stack_summary in self.cloudformation_connection.list_stacks()['StackSummaries']
             if stack_summary['StackStatus'] in stack_status_filter
         ]
@@ -639,7 +640,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             # Stack not found, if searching by name, look through deleted stacks...
             if searching_by_name and 'Stack with id {} does not exist'.format(name) in str(error):
                 stack_list = [
-                    CloudFormationStack(system=self, uuid=stack_summary['StackId'])
+                    CloudFormationStack(system=self, uuid=stack_summary['StackId'],
+                                        raw=self.cloudformation_resource.Stack(
+                                            stack_summary['StackName']))
                     for stack_summary
                     in self.cloudformation_connection.list_stacks()['StackSummaries']
                     if stack_summary['StackName'] == name
@@ -735,15 +738,16 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
         images = []
         if public:
-            # Doesn't work correctly - Filters are ignored when **kwargs used
-            images.extend(self.ec2_connection.describe_images(
-                Filters=[{'Name': 'is-public', 'Values': ['true']}], **kwargs).get("Images"))
+            public_kwargs = {'Filters': [{'Name': 'is-public', 'Values': ['true']}]}
+            if 'Filters' in kwargs:
+                public_kwargs['Filters'] = kwargs['Filters'] + public_kwargs['Filters']
+            else:
+                public_kwargs.update(kwargs)
+            images.extend(self.ec2_connection.describe_images(**public_kwargs).get("Images"))
         if executable_by_me:
-            # Doesn't work correctly - ExecutableUsers is ignored when **kwargs used
             images.extend(self.ec2_connection.describe_images(
                 ExecutableUsers=['self'], **kwargs).get("Images"))
         if owned_by_me:
-            # Doesn't work correctly - Owners is ignored when **kwargs used
             images.extend(self.ec2_connection.describe_images(
                 Owners=['self'], **kwargs).get("Images"))
 
