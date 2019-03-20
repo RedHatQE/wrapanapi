@@ -1,6 +1,7 @@
 # coding: utf-8
 from __future__ import absolute_import
 
+import base64
 import os
 import re
 from datetime import datetime
@@ -1174,7 +1175,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
         try:
             first_registry = data['authorizationData'][0]
-            return {'token': first_registry['authorizationToken'],
+            username, password = base64.b64decode(first_registry['authorizationToken']).split(':')
+            return {'username': username,
+                    'password': password,
                     'registry': first_registry['proxyEndpoint']}
         except (IndexError, KeyError):
             raise NotFoundError("couldn't get registry details. please check environment setup")
