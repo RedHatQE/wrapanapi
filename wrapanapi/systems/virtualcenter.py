@@ -5,9 +5,6 @@ Used to communicate with providers without using CFME facilities
 """
 from __future__ import absolute_import
 
-#juwatts
-import sys
-
 import atexit
 import operator
 import re
@@ -192,6 +189,7 @@ class VMWareVMOrTemplate(Entity):
         vm_clone_spec.location = vm_reloc_spec
         vm_clone_spec.snapshot = None
 
+        # Optional arguments
         if cpu is not None:
             vm_clone_spec.config.numCPUs = int(cpu)
         if ram is not None:
@@ -287,7 +285,11 @@ class VMWareVMOrTemplate(Entity):
         return self.system.get_obj_list(vim.ResourcePool)[0]
 
     def _get_cluster_compute_resource(self, cluster_compute_resource_name=None):
-        """ Returns a Compute Cluster Resource managed object for a specified name.
+        """ Returns a Compute Cluster Resource managed object. If a name is specified,
+        a vim.ClusterComputeResource object is returned for the specific resource. If no name if
+        specified, the method checks if there are is a default resource specified and returns the
+        object of the resource. Finally,  if there is no name or defaults specified, it queries
+        the Vmware provider and picks the first object returned in the list.
 
         Args:
             cluster_compute_resource_name (string): The name of the Cluster Compute Resource.
@@ -356,11 +358,9 @@ class VMWareVMOrTemplate(Entity):
                                                                      name=destination,
                                                                      spec=vm_clone_spec)
 
-        #sys.exit('juwatts quit')
-
         return action(**action_args)
 
-    def _clone_on_storage_cluster(self, destination, resourcepool, datastore, power_on, sparse,
+    def _clone_on_datastore_cluster(self, destination, resourcepool, datastore, power_on, sparse,
                                   template, progress_callback, cpu, ram, host,
                                   source_template, deploy_on_ds_cluster):
         """Set all required parameters for a clone or relocate on a datastore cluster"""
@@ -436,7 +436,7 @@ class VMWareVMOrTemplate(Entity):
                 # Pick a datastore by space
                 picked_datastore = self._pick_datastore(allowed_datastores)
             # Pick a datastore cluster if present
-            elif self.system.list_storage_cluster():
+            elif self.system.list_datastore_cluster():
                 picked_datastore = self._pick_datastore_cluster()
             else:
                 # Use the same datastore
@@ -459,7 +459,7 @@ class VMWareVMOrTemplate(Entity):
         elif isinstance(picked_datastore, vim.StoragePod):
             task_args['deploy_on_ds_cluster'] = True
             task_args.pop('relocate')
-            task = self._clone_on_storage_cluster(**task_args)
+            task = self._clone_on_datastore_cluster(**task_args)
         else:
             raise NotImplementedError("{} not supported for datastore".format(picked_datastore))
 
@@ -1136,7 +1136,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def list_datastore(self):
         return [str(h.name) for h in self.get_obj_list(vim.Datastore) if h.host]
 
-    def list_storage_cluster(self):
+    def list_datastore_cluster(self):
         return [str(h.name) for h in self.get_obj_list(vim.StoragePod)]
 
     def list_cluster(self):
@@ -1247,8 +1247,8 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         return network
 
     def get_datastore(self, datastore_name):
-        """Fetch the Datastore object, for a datastore, or StoragePod object, for a datastore
-        cluster, from a provided name
+        """Fetch the Datastore object(for a datastor) or StoragePod object (for a datastore
+        cluster) from a provided name
 
         Args:
             datastore_name: The name of the datastore or datastore cluster
@@ -1257,7 +1257,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
 
         if datastore_name in self.list_datastore():
             datastore = self.get_obj(vimtype=vim.Datastore, name=datastore_name)
-        elif datastore_name in self.list_storage_cluster():
+        elif datastore_name in self.list_datastore_cluster():
             datastore = self.get_obj(vimtype=vim.StoragePod, name=datastore_name)
         else:
             raise NotImplementedError("{ds} was not found as a datastore on {p}".format(
