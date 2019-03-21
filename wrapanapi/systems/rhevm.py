@@ -71,6 +71,10 @@ class _SharedMethodsMixin(object):
     def get_nics(self):
         return self.api.nics_service().list()
 
+    def get_vnic_profiles(self):
+        """ Get vnic_profiles of the VM/template """
+        return [nic.vnic_profile for nic in self.get_nics()]
+
     def _nic_action(self, nic, network_name, interface='VIRTIO', on_boot=True,
                    vnic_profile=None, nic_service=None, action='add'):
         """Call an action on nic_service, could be a vmnic or vmnics service
@@ -90,11 +94,7 @@ class _SharedMethodsMixin(object):
         service = nic_service or self.api.nics_service()
         nic.network = self._get_network(network_name)
         vnic_name = vnic_profile or network_name
-        vnic_list = self.system.api.system_service().vnic_profiles_service().list()
-        try:
-            nic.vnic_profile = [v_nic for v_nic in vnic_list if v_nic.name == vnic_name][0]
-        except IndexError:
-            raise NotFoundError('Unable to find vnic_profile matching name {}'.format(vnic_name))
+        nic.vnic_profile = self.system.get_vnic_profile(vnic_name)
         nic.interface = getattr(types.NicInterface, interface)
         nic.on_boot = on_boot
         # service attribute should be method we can call and pass the nic to
@@ -1079,3 +1079,18 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             cluster=types.Cluster(id=cluster_id),
             template=types.Template(id=export_template.id)
         )
+
+    @property
+    def _vnic_profile_service(self):
+        return self.api.system_service().vnic_profiles_service()
+
+    def list_vnic_profiles(self):
+        """ List all the vnic profiles on the RHEVM system."""
+        return self._vnic_profile_service.list()
+
+    def get_vnic_profile(self, profile_name):
+        """ The vnic_profiles that exist on the system, where the key is the vnic_profile name."""
+        try:
+            return next(vnic for vnic in self.list_vnic_profiles() if vnic.name == profile_name)
+        except StopIteration:
+            raise NotFoundError('Unable to find vnic_profile matching name {}'.format(profile_name))
