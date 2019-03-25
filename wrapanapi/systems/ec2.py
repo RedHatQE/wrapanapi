@@ -821,7 +821,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         else:
             raise ValueError("Object is not iterable.")
         for bucket in buckets:
-            self.logger.info("Trying to delete bucket '%s'", bucket.anem)
+            self.logger.info("Trying to delete bucket '%s'", bucket.name)
             keys = [obj.key for obj in bucket.objects.all()]
             try:
                 if keys:
