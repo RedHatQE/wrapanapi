@@ -150,3 +150,15 @@ class VMError(Exception):
 class VMCreationDateError(Exception):
     """Raised when we cannot determine a creation date for a VM"""
     pass
+
+
+class VMInstanceNotStopped(Exception):
+    """Raised if a VM or instance is not in stopped state."""
+    def __init__(self, vm_name, action="action"):
+        self.vm_name = vm_name
+        self.action = action
+
+    def __str__(self):
+        return "Could not perform '{a}' on '{vm}' because it's not stopped.".format(
+            a=self.action, vm=self.vm_name
+        )

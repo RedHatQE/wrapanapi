@@ -27,8 +27,8 @@ from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin,
 from wrapanapi.entities.base import Entity
 from wrapanapi.exceptions import (HostNotRemoved, NotFoundError,
                                   VMCreationDateError, VMInstanceNotCloned,
-                                  VMInstanceNotFound, VMInstanceNotSuspended,
-                                  VMNotFoundViaIP)
+                                  VMInstanceNotFound, VMInstanceNotStopped,
+                                  VMInstanceNotSuspended, VMNotFoundViaIP)
 from wrapanapi.systems.base import System
 
 
@@ -491,6 +491,56 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
                 raise VMCreationDateError('Could not find a creation date for {}'.format(self.name))
         # localize and make tz-naive
         return creation_time.astimezone(pytz.UTC)
+
+    @property
+    def cpu_hot_plug(self):
+        return self.raw.config.cpuHotAddEnabled
+
+    @property
+    def memory_hot_plug(self):
+        return self.raw.config.memoryHotAddEnabled
+
+    @cpu_hot_plug.setter
+    def cpu_hot_plug(self, value):
+        """
+        Set cpuHotPlug (enabled/disabled) for VM/Instance.
+
+        Args:
+            value (bool): cpu hot plug state
+        """
+        if self.cpu_hot_plug != value:
+            if self.is_stopped:
+                spec = vim.vm.ConfigSpec()
+                spec.cpuHotAddEnabled = value
+                task = self.raw.ReconfigVM_Task(spec)
+
+                try:
+                    wait_for(lambda: task.info.state not in ["running", "queued"])
+                except TimedOutError:
+                    self.logger.exception("Task did not go to success state: %s", task)
+            else:
+                raise VMInstanceNotStopped(self.name, "cpuHotPlug")
+
+    @memory_hot_plug.setter
+    def memory_hot_plug(self, value):
+        """
+        Set memoryHotPlug (enabled/disabled) for VM/Instance
+
+        Args:
+            value (bool): memory hot plug state
+        """
+        if self.memory_hot_plug != value:
+            if self.is_stopped:
+                spec = vim.vm.ConfigSpec()
+                spec.memoryHotAddEnabled = value
+                task = self.raw.ReconfigVM_Task(spec)
+
+                try:
+                    wait_for(lambda: task.info.state not in ["running", "queued"])
+                except TimedOutError:
+                    self.logger.exception("Task did not go to success state: %s", task)
+            else:
+                raise VMInstanceNotStopped(self.name, "memoryHotPlug")
 
     def start(self):
         if self.is_running:
