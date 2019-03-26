@@ -35,9 +35,10 @@ class _TagMixin(object):
 
     def get_tag_value(self, key):
         self.refresh()
-        for tag in self.raw.tags:
-            if tag.get('Key') == key:
-                return tag.get('Value')
+        if self.raw.tags:
+            for tag in self.raw.tags:
+                if tag.get('Key') == key:
+                    return tag.get('Value')
         return None
 
     def unset_tag(self, key, value):
@@ -193,11 +194,11 @@ class EC2Instance(Instance, _TagMixin):
 
 class StackStates(object):
     ACTIVE = ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
-              'UPDATE_ROLLBACK_COMPLETE'],
-    COMPLETE = ['CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'],
+              'UPDATE_ROLLBACK_COMPLETE']
+    COMPLETE = ['CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']
     FAILED = ['ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
-              'UPDATE_ROLLBACK_FAILED'],
-    DELETED = ['DELETE_COMPLETE'],
+              'UPDATE_ROLLBACK_FAILED']
+    DELETED = ['DELETE_COMPLETE']
     IN_PROGRESS = ['CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
                    'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
                    'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
@@ -251,7 +252,7 @@ class CloudFormationStack(Stack):
         """
         Re-pull the data for this stack
         """
-        self.raw = self.system.get_stack(self.raw.name).raw
+        self.raw = self.system.get_stack(self.uuid).raw
         return self.raw
 
     def delete(self):
@@ -301,7 +302,7 @@ class EC2Image(Template, _TagMixin):
     @property
     def name(self):
         tag_value = self.get_tag_value('Name')
-        return self.raw.name or tag_value if tag_value else self.raw.id
+        return tag_value if tag_value else self.raw.name
 
     @property
     def uuid(self):
@@ -443,10 +444,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 if vm_state is not VmState.DELETED
             ]
         }
-        if 'filters' not in kwargs_dict:
+        if 'Filters' not in kwargs_dict:
             kwargs_dict['Filters'] = [new_filter]
         else:
-            kwargs_dict['Filters'].update(new_filter)
+            kwargs_dict['Filters'].append(new_filter)
         return kwargs_dict
 
     def find_vms(self, name=None, id=None, filters=None, hide_deleted=True):
@@ -483,7 +484,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 # Switch to using the id search method
                 kwargs = {'InstanceIds': [name]}
             else:
-                kwargs = {'Filters': [{'Name': 'tag:Name', 'Value': name}]}
+                kwargs = {'Filters': [{'Name': 'tag:Name', 'Values': [name]}]}
 
         if hide_deleted:
             self._add_filter_for_terminated(kwargs)
@@ -674,7 +675,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             owned_by_me: search images owned only by me (default True)
             public: search public images (default False)
         """
-        img_filter = [{'Name': 'image-type', 'Values': 'machine'}]
+        img_filter = [{'Name': 'image-type', 'Values': ['machine']}]
 
         if not any([public, executable_by_me, owned_by_me]):
             raise ValueError(
@@ -692,7 +693,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                                                               Filters=img_filter).get("Images"))
 
         return [EC2Image(system=self, raw=self.ec2_resource.Image(image["ImageId"]))
-                for image in set(images)]
+                for image in images]
 
     def find_templates(self, name=None, id=None, executable_by_me=True, owned_by_me=True,
                        public=False, filters=None):
