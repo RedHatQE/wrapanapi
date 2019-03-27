@@ -33,8 +33,10 @@ from wait_for import wait_for
 from wrapanapi.entities import (
     Instance, Template, TemplateMixin, VmMixin, VmState)
 from wrapanapi.exceptions import (
-    ActionTimedOutError, ImageNotFoundError, KeystoneVersionNotSupported, MultipleImagesError,
-    MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs, VMInstanceNotFound)
+    ActionTimedOutError, ImageNotFoundError, ItemNotFound, KeystoneVersionNotSupported,
+    MultipleImagesError, MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs,
+    VMInstanceNotFound
+)
 from wrapanapi.systems.base import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -1073,23 +1075,22 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def list_containers(self):
         """List of available containers.
 
-        Returns: List of containers name.
+        Returns: list of containers name.
         """
 
         _, containers = self.sapi.get_account()
-        return [cont["name"] for cont in containers]
+        return [cont.get("name") for cont in containers]
 
     def create_container(self, container_name):
         """Create container.
 
         Args:
             container_name: name of container
+
+        Return: None
         """
 
-        try:
-            self.sapi.put_container(container_name)
-        except SwiftException as e:
-            self.logger.error("Failed to create container with error: %s" % e)
+        self.sapi.put_container(container_name)
 
     def delete_container(self, container_name):
         """Delete existing container
@@ -1102,10 +1103,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         try:
             self.sapi.delete_container(container_name)
-            return True
         except SwiftException as e:
-            self.logger.error("Failed to delete container with error: %s" % e)
-            return False
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=container_name, item_type="Swift Container")
+            else:
+                raise
+
+        return container_name not in self.list_containers()
 
     def list_objects(self, container_name):
         """List of available object in container.
@@ -1113,26 +1117,39 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Args:
             container_name: name of container
 
-        Returns: List of existing objects
+        Returns: list of existing objects
         """
 
-        container = self.sapi.get_container(container_name)
-        return [obj["name"] for obj in container[1]]
+        try:
+            _, objects = self.sapi.get_container(container_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=container_name, item_type="Swift Container")
+            else:
+                raise
+
+        return [obj.get("name") for obj in objects]
 
     def create_object(self, container_name, path, object_name=None):
         """Upload the object under container.
 
         Args:
             container_name: name of container
-            path: local object path
-            object_name: name of object
+            path: local object file path
+            object_name: object name to put; if None, the object name is expected to be default name
+
+        Return: None
+
+        Usage is as follows. Assuming local object file `/tmp/tmptydqzc.pdf`:
+        .. code-block:: python
+            mgmt.create_object(container_name="test_cont", path="//tmp/tmptydqzc.pdf",
+            object_name="test_obj")
         """
 
-        if not object_name:
-            object_name = os.path.basename(path)
+        name = object_name or os.path.basename(path)
 
-        with open(path, 'r') as obj:
-            self.sapi.put_object(container_name, object_name, contents=obj)
+        with open(path, 'rb') as obj:
+            self.sapi.put_object(container_name, name, contents=obj)
 
     def delete_object(self, container_name, object_name):
         """Delete object from container.
@@ -1146,10 +1163,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         try:
             self.sapi.delete_object(container_name, object_name)
-            return True
         except SwiftException as e:
-            self.logger.error("Failed to delete object with error: %s" % e)
-            return False
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=object_name, item_type="Swift Object")
+            else:
+                raise
+
+        return object_name not in self.list_objects(container_name)
 
     def download_object(self, container_name, object_name, path):
         """Download object from container.
@@ -1158,9 +1178,20 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             container_name: name of container
             object_name: name of object
             path: local object path where like to save.
+
+        Returns: None
         """
 
-        _, obj_contents = self.sapi.get_object(container_name, object_name)
+        try:
+            _, obj_contents = self.sapi.get_object(container_name, object_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(
+                    name=object_name,
+                    item_type="Swift Object in Container {}".format(container_name)
+                )
+            else:
+                raise
 
-        with open(path, "w") as obj:
+        with open(path, "wb") as obj:
             obj.write(obj_contents)
