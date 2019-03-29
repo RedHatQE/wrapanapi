@@ -25,7 +25,7 @@ from wait_for import TimedOutError, wait_for
 from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin,
                                 VmState)
 from wrapanapi.entities.base import Entity
-from wrapanapi.exceptions import (HostNotRemoved, NotFoundError,
+from wrapanapi.exceptions import (DatastoreNotFoundError, HostNotRemoved, NotFoundError,
                                   VMCreationDateError, VMInstanceNotCloned,
                                   VMInstanceNotFound, VMInstanceNotStopped,
                                   VMInstanceNotSuspended, VMNotFoundViaIP)
@@ -113,6 +113,11 @@ def get_task_error_message(task):
     return message
 
 
+def progress_log_callback(logger, source, destination, progress):
+    logger.info("Provisioning progress {}->{}: {}".format(
+        source, destination, str(progress)))
+
+
 class VMWareVMOrTemplate(Entity):
     """
     Holds shared methods/properties that VM's and templates have in common.
@@ -163,29 +168,20 @@ class VMWareVMOrTemplate(Entity):
         return self.raw.runtime.host.name
 
     @staticmethod
-    def _progress_log_callback(logger, source, destination, progress):
-        logger.info("Provisioning progress {}->{}: {}".format(
-            source, destination, str(progress)))
-
-    @staticmethod
     def _get_loc_of_vm(source_template, progress_callback):
         """ Get the location where the inventory object will be stored"""
-        try:
-            folder = source_template.parent.parent.vmParent
-        except AttributeError:
-            folder = source_template.parent
+        folder = getattr(source_template.parent.parent, "vmParent", None) or source_template.parent
         progress_callback("Picked folder `{}`".format(folder.name))
-
         return folder
 
     @staticmethod
-    def _set_vm_clone_spec(power_on, template, cpu, ram, vm_reloc_spec):
+    def _set_vm_clone_spec(mark_template, power_on, vm_reloc_spec, cpu, ram):
         """Set properties for Virtual Machine Cloning Operation specification """
 
         vm_clone_spec = vim.VirtualMachineCloneSpec()
 
         vm_clone_spec.powerOn = power_on
-        vm_clone_spec.template = template
+        vm_clone_spec.template = mark_template
         vm_clone_spec.location = vm_reloc_spec
         vm_clone_spec.snapshot = None
 
@@ -245,29 +241,37 @@ class VMWareVMOrTemplate(Entity):
         vmfilespath = self.raw.config.files.vmPathName
         return str(vmfilespath)
 
-    def _pick_datastore(self, allowed_datastores):
-        """Pick a datastore based on free space."""
+    def pick_datastore(self, allowed_datastores):
+        """ Pick a datastore based on free space.
+         Args:
+             allowed_datastores: A list of allowed datastore names that can be deployed on
+         Returns:
+             pyVmomi.vim.Datastore: The managed object of the datastore.
+        """
         possible_datastores = [
             ds for ds in self.system.get_obj_list(vim.Datastore)
             if ds.name in allowed_datastores and ds.summary.accessible and
             ds.summary.multipleHostAccess and ds.overallStatus != "red"]
+        if not possible_datastores:
+            raise DatastoreNotFoundError(item_type='datastores')
         possible_datastores.sort(
             key=lambda ds: float(ds.summary.freeSpace) / float(ds.summary.capacity),
             reverse=True)
-        if not possible_datastores:
-            raise Exception("No possible datastores!")
         return possible_datastores[0]
 
-    def _pick_datastore_cluster(self):
-        """Pick a datastore cluster based on free space."""
-        possible_datastores = [dsc for dsc in self.system.get_obj_list(vim.StoragePod)
-                               if dsc.overallStatus != "red"]
-        possible_datastores.sort(
+    def pick_datastore_cluster(self):
+        """ Pick a datastore cluster based on free space.
+        Returns:
+             pyVmomi.vim.StoragePod: The managed object of the datastore cluster.
+        """
+        possible_datastore_clusters = [dsc for dsc in self.system.get_obj_list(vim.StoragePod)
+                                       if dsc.overallStatus != "red"]
+        if not possible_datastore_clusters:
+            raise DatastoreNotFoundError(item_type='datastore clusters')
+        possible_datastore_clusters.sort(
             key=lambda dsc: float(dsc.summary.freeSpace) / float(dsc.summary.capacity),
             reverse=True)
-        if not possible_datastores:
-            raise Exception("No possible datastore clusters!")
-        return possible_datastores[0]
+        return possible_datastore_clusters[0]
 
     def _get_resource_pool(self, resource_pool_name=None):
         """ Returns a resource pool managed object for a specified name.
@@ -282,44 +286,45 @@ class VMWareVMOrTemplate(Entity):
             return self.system.get_obj(vim.ResourcePool, resource_pool_name)
         elif self.system.default_resource_pool is not None:
             return self.system.get_obj(vim.ResourcePool, self.system.default_resource_pool)
-        return self.system.get_obj_list(vim.ResourcePool)[0]
+        else:
+            return self.system.get_obj_list(vim.ResourcePool)[0]
 
-    def _get_cluster_compute_resource(self, cluster_compute_resource_name=None):
+    def _get_cluster_compute_resource(self, resource_name=None):
         """ Returns a Compute Cluster Resource managed object. If a name is specified,
-        a vim.ClusterComputeResource object is returned for the specific resource. If no name if
+        a vim.ClusterComputeResource object is returned for the specific resource. If no name is
         specified, the method checks if there are is a default resource specified and returns the
         object of the resource. Finally,  if there is no name or defaults specified, it queries
         the Vmware provider and picks the first object returned in the list.
-
         Args:
-            cluster_compute_resource_name (string): The name of the Cluster Compute Resource.
+            resource_name (string): The name of the Cluster Compute Resource.
             If None, first one will be picked.
         Returns:
              pyVmomi.vim.ClusterComputeResource: The managed object of the cluster compute resource.
         """
-        if cluster_compute_resource_name is not None:
-            return self.system.get_obj(vim.ClusterComputeResource, cluster_compute_resource_name)
+        if resource_name is not None:
+            return self.system.get_obj(vim.ClusterComputeResource, resource_name)
         elif self.system.default_cluster_compute_resource is not None:
             return self.system.get_obj(vim.ClusterComputeResource,
                                        self.system.default_cluster_compute_resource)
-        return self.system.get_obj_list(vim.ClusterComputeResource)[0]
+        else:
+            return self.system.get_obj_list(vim.ClusterComputeResource)[0]
 
-    def _set_vm_relocate_spec(self, resourcepool, host, sparse, progress_callback,
+    def _set_vm_relocate_spec(self, resource_pool, host, sparse, progress_callback,
                               deploy_on_ds_cluster):
         """Set properties for Virtual Machine Relocate Operation specification """
 
         vm_reloc_spec = vim.VirtualMachineRelocateSpec()
 
-        # RESOURCE POOL
-        if isinstance(resourcepool, vim.ResourcePool):
-            vm_reloc_spec.pool = resourcepool
-        elif isinstance(resourcepool, vim.ClusterComputeResource):
-            vm_reloc_spec.pool = resourcepool.resourcePool
+        # Set resource pool
+        if isinstance(resource_pool, vim.ResourcePool):
+            vm_reloc_spec.pool = resource_pool
+        elif isinstance(resource_pool, vim.ClusterComputeResource):
+            vm_reloc_spec.pool = resource_pool.resourcePool
         else:
             if deploy_on_ds_cluster:
-                vm_reloc_spec.pool = self._get_cluster_compute_resource(resourcepool).resourcePool
+                vm_reloc_spec.pool = self._get_cluster_compute_resource(resource_pool).resourcePool
             else:
-                vm_reloc_spec.pool = self._get_resource_pool(resourcepool)
+                vm_reloc_spec.pool = self._get_resource_pool(resource_pool)
         progress_callback("Picked resource pool `{}`".format(vm_reloc_spec.pool.name))
 
         # Target Host for the VM, this could be none
@@ -327,17 +332,19 @@ class VMWareVMOrTemplate(Entity):
                               else self.system.get_obj(vim.HostSystem, host))
         if sparse:
             vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().sparse
+            progress_callback("Transformation has been set to sparse")
         else:
             vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().flat
+            progress_callback("Transformation has been set to flat")
 
         return vm_reloc_spec
 
-    def _clone_on_datastore(self, destination, resourcepool, datastore, power_on, sparse,
-                            template, progress_callback, cpu, ram, relocate, host,
+    def _clone_on_datastore(self, destination, resource_pool, datastore, power_on, sparse,
+                            mark_template, progress_callback, cpu, ram, relocate, host,
                             source_template, deploy_on_ds_cluster):
         """Set all required parameters for a clone or relocate on a datastore"""
 
-        vm_reloc_spec = self._set_vm_relocate_spec(resourcepool=resourcepool, host=host,
+        vm_reloc_spec = self._set_vm_relocate_spec(resource_pool=resource_pool, host=host,
                                                    sparse=sparse,
                                                    progress_callback=progress_callback,
                                                    deploy_on_ds_cluster=deploy_on_ds_cluster)
@@ -345,32 +352,34 @@ class VMWareVMOrTemplate(Entity):
         # Set the datastore property
         vm_reloc_spec.datastore = datastore
 
-        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, template=template,
-                                                cpu=cpu, ram=ram,
-                                                vm_reloc_spec=vm_reloc_spec)
+        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, mark_template=mark_template,
+                                                cpu=cpu, ram=ram, vm_reloc_spec=vm_reloc_spec)
 
         # Get the location of the new VM
         folder = self._get_loc_of_vm(source_template=source_template,
                                      progress_callback=progress_callback)
 
-        action = source_template.RelocateVM_Task if relocate else source_template.CloneVM_Task
+        if relocate:
+            action = source_template.RelocateVM_Task
+        else:
+            action = source_template.CloneVM_Task
         action_args = dict(spec=vm_reloc_spec) if relocate else dict(folder=folder,
                                                                      name=destination,
                                                                      spec=vm_clone_spec)
 
         return action(**action_args)
 
-    def _clone_on_datastore_cluster(self, destination, resourcepool, datastore, power_on, sparse,
-                                  template, progress_callback, cpu, ram, host,
-                                  source_template, deploy_on_ds_cluster):
+    def _clone_on_datastore_cluster(self, destination, resource_pool, datastore, power_on, sparse,
+                                    mark_template, progress_callback, cpu, ram, host,
+                                    source_template, deploy_on_ds_cluster):
         """Set all required parameters for a clone or relocate on a datastore cluster"""
 
-        vm_reloc_spec = self._set_vm_relocate_spec(resourcepool=resourcepool, host=host,
+        vm_reloc_spec = self._set_vm_relocate_spec(resource_pool=resource_pool, host=host,
                                                    sparse=sparse,
                                                    progress_callback=progress_callback,
                                                    deploy_on_ds_cluster=deploy_on_ds_cluster)
 
-        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, template=template,
+        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, mark_template=mark_template,
                                                 cpu=cpu, ram=ram,
                                                 vm_reloc_spec=vm_reloc_spec)
 
@@ -399,19 +408,46 @@ class VMWareVMOrTemplate(Entity):
         if result:
             key = result.recommendations[0].key
         else:
-            raise Exception(
+            raise ValueError(
                 "RecommendDatastore task failed to provide host for  {}".format(destination))
 
         return self.system.content.storageResourceManager.ApplyStorageDrsRecommendation_Task(
             key=key)
 
-    def _clone(self, destination, resourcepool=None, datastore=None, power_on=True, sparse=False,
-               template=False, provision_timeout=1800, progress_callback=None,
+    def _clone(self, destination, resource_pool=None, datastore=None, power_on=True, sparse=False,
+               mark_template=False, provision_timeout=1800, progress_callback=None,
                allowed_datastores=None, cpu=None, ram=None, relocate=False, host=None, **kwargs):
         """
         Clone this template to a VM
         When relocate is True, relocated (migrated) with VMRelocateSpec instead of being cloned
         Returns a VMWareVirtualMachine object
+        Args:
+            destination (string): Name for cloned virtual machine.
+            resource_pool: The resource pool to which this virtual machine should be attached.
+                Can be a vim.ResourcePool object, vim.ClusterComputeResource object, or string.
+            datastore: Datastore or Datastore Cluster to deploy the VM on. Can be a string,
+                vim.Datastore object (for datastore), or vim.StoragePod object (for datastore
+                cluster)
+            power_on (boolean): Specifies whether or not the new VM should be powered on after
+                creation
+            sparse (boolean): If set to true, sets the transformations on the virtual disk to be
+                sparse. IE, growable virtual disk.
+            mark_template (boolean): Specifies whether or not the new virtual machine should be
+                marked as a template
+            provision_timeout (int): Number of seconds to wait before timing out
+            progress_callback: Callback for progress with signature function
+                (logger, source, destination, progress)
+            allowed_datastores: A list of datastore names (string) that a VM can deploy on.
+                Note: This does not include datastore clusters.
+            cpu (int or string): number of vCPUs for the Virtual Machine.
+            ram (int or string): size of VM's memory in MB.
+            relocate(boolean): When set to true, relocates a virtual machine's virtual disks to a
+                different specified datastore or host.
+            host: The target host for the virtual machine, can be a string or vim.HostSystem object
+            **kwargs: Additional keyword arguments will be passed to ``_clone``
+        Returns:
+             VMWareVirtualMachine object
+
         """
         try:
             vm = self.system.get_vm(destination)
@@ -422,22 +458,22 @@ class VMWareVMOrTemplate(Entity):
 
         if progress_callback is None:
             progress_callback = partial(
-                self._progress_log_callback, self.logger, self.name, destination)
+                progress_log_callback, self.logger, self.name, destination)
 
         source_template = self.raw
 
         # DATASTORE
         if isinstance(datastore, six.string_types):
-            picked_datastore = self.system.get_datastore(datastore_name=datastore)
+            picked_datastore = self.system.get_datastore(name=datastore)
         elif isinstance(datastore, (vim.Datastore, vim.StoragePod)):
             picked_datastore = datastore
         else:
             if allowed_datastores is not None:
                 # Pick a datastore by space
-                picked_datastore = self._pick_datastore(allowed_datastores)
+                picked_datastore = self.pick_datastore(allowed_datastores)
             # Pick a datastore cluster if present
             elif self.system.list_datastore_cluster():
-                picked_datastore = self._pick_datastore_cluster()
+                picked_datastore = self.pick_datastore_cluster()
             else:
                 # Use the same datastore
                 datastores = source_template.datastore
@@ -448,9 +484,9 @@ class VMWareVMOrTemplate(Entity):
 
         progress_callback("Picked datastore `{}`".format(picked_datastore.name))
 
-        task_args = dict(destination=destination, resourcepool=resourcepool,
+        task_args = dict(destination=destination, resource_pool=resource_pool,
                          datastore=picked_datastore, power_on=power_on, sparse=sparse,
-                         template=template, progress_callback=progress_callback, cpu=cpu,
+                         mark_template=mark_template, progress_callback=progress_callback, cpu=cpu,
                          ram=ram, relocate=relocate, host=host, source_template=source_template,
                          deploy_on_ds_cluster=False)
 
@@ -484,7 +520,7 @@ class VMWareVMOrTemplate(Entity):
                 self.name, get_task_error_message(task)
             )
             raise VMInstanceNotCloned(destination)
-        if template:
+        if mark_template:
             entity_cls = VMWareTemplate
         else:
             entity_cls = VMWareVirtualMachine
@@ -1246,21 +1282,21 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             raise NotFoundError
         return network
 
-    def get_datastore(self, datastore_name):
-        """Fetch the Datastore object(for a datastor) or StoragePod object (for a datastore
+    def get_datastore(self, name):
+        """Fetch the Datastore object(for a datastore) or StoragePod object (for a datastore
         cluster) from a provided name
 
         Args:
-            datastore_name: The name of the datastore or datastore cluster
+            name: The name of the datastore or datastore cluster
         Returns: A object of vim.Datastore or vim.StoragePod
         """
 
-        if datastore_name in self.list_datastore():
-            datastore = self.get_obj(vimtype=vim.Datastore, name=datastore_name)
-        elif datastore_name in self.list_datastore_cluster():
-            datastore = self.get_obj(vimtype=vim.StoragePod, name=datastore_name)
+        if name in self.list_datastore() and name not in self.list_datastore_cluster():
+            datastore = self.get_obj(vimtype=vim.Datastore, name=name)
+        elif name in self.list_datastore_cluster():
+            datastore = self.get_obj(vimtype=vim.StoragePod, name=name)
         else:
-            raise NotImplementedError("{ds} was not found as a datastore on {p}".format(
-                ds=datastore_name, p=self.hostname))
+            raise ValueError("{ds} was not found as a datastore on {p}".format(
+                ds=name, p=self.hostname))
 
         return datastore
