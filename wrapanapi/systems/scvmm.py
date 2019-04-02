@@ -116,6 +116,10 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def name(self):
         return self.raw['Name']
 
+    @property
+    def host(self):
+        return self.raw["HostName"]
+
     def _get_state(self):
         self.refresh(read_from_hyperv=False)
         return self._api_state_to_vmstate(self.raw['StatusString'])
@@ -123,6 +127,11 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     @property
     def uuid(self):
         return self._id
+
+    @property
+    def vmid(self):
+        """ VMId is the ID of the VM according to Hyper-V"""
+        return self.raw["VMId"]
 
     @property
     def ip(self):
@@ -173,7 +182,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def delete(self):
         self.logger.info("Deleting SCVMM VM %s", self._log_str)
         self.ensure_state(VmState.STOPPED)
-        self._do_vm("Remove", params='-Force')
+        self._do_vm("Remove")
         wait_for(
             lambda: not self.exists, delay=5, timeout="3m",
             message="vm {} to not exist".format(self._log_str)
@@ -207,7 +216,6 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         return SCVirtualMachine(system=self.system, name=vm_name)
 
     def enable_virtual_services(self):
-        hyperv_vm_id = self.raw['VMId']
         script = """
             $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
             $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
@@ -217,7 +225,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             Read-SCVirtualMachine -VM $vm
         """.format(
             dom=self.system.domain, user=self.system.user,
-            password=self.system.password, scvmm_vm_id=self._id, h_id=hyperv_vm_id
+            password=self.system.password, scvmm_vm_id=self._id, h_id=self.vmid
         )
         self.system.run_script(script)
 
