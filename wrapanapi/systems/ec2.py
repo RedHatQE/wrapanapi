@@ -2,15 +2,10 @@
 from __future__ import absolute_import
 
 import base64
+import boto3
 import os
 import re
-from datetime import datetime
 
-import pytz
-from boto import UserAgent
-from boto.ec2 import EC2Connection, elb, get_region
-from boto.ec2.elb import ELBConnection
-from boto.exception import BotoServerError
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from boto3 import (
@@ -36,14 +31,18 @@ def _regions(regionmodule, regionname):
 
 class _TagMixin(object):
     def set_tag(self, key, value):
-        self.system.api.create_tags([self.uuid], tags={key: value})
+        self.system.ec2_connection.create_tags(Resources=[self.uuid], Tags={key: value})
 
     def get_tag_value(self, key):
         self.refresh()
-        return self.raw.tags.get(key)
+        if self.raw.tags:
+            for tag in self.raw.tags:
+                if tag.get('Key') == key:
+                    return tag.get('Value')
+        return None
 
     def unset_tag(self, key, value):
-        self.system.api.delete_tags([self.uuid], tags={key: value})
+        self.system.ec2_connection.delete_tags(Resources=[self.uuid], Tags={key: value})
 
 
 class EC2Instance(Instance, _TagMixin):
@@ -72,7 +71,7 @@ class EC2Instance(Instance, _TagMixin):
 
         super(EC2Instance, self).__init__(system, raw, **kwargs)
 
-        self._api = self.system.api
+        self._api = self.system.ec2_connection
 
     @property
     def _identifying_attrs(self):
@@ -80,7 +79,8 @@ class EC2Instance(Instance, _TagMixin):
 
     @property
     def name(self):
-        return getattr(self.raw, 'name', None) or self.raw.tags.get('Name', self.raw.id)
+        tag_value = self.get_tag_value('Name')
+        return getattr(self.raw, 'name', None) or tag_value if tag_value else self.raw.id
 
     @property
     def uuid(self):
@@ -92,12 +92,12 @@ class EC2Instance(Instance, _TagMixin):
 
     def _get_state(self):
         self.refresh()
-        return self._api_state_to_vmstate(self.raw.state)
+        return self._api_state_to_vmstate(self.raw.state.get("Name"))
 
     @property
     def ip(self):
         self.refresh()
-        return self.raw.ip_address
+        return self.raw.public_ip_address
 
     @property
     def type(self):
@@ -106,14 +106,12 @@ class EC2Instance(Instance, _TagMixin):
     @property
     def creation_time(self):
         self.refresh()
-        # Example instance.launch_time: 2014-08-13T22:09:40.000Z
-        launch_time = datetime.strptime(self.raw.launch_time, '%Y-%m-%dT%H:%M:%S.%fZ')
-        # use replace here to make tz-aware. python doesn't handle single 'Z' as UTC
-        return launch_time.replace(tzinfo=pytz.UTC)
+        # Example instance.launch_time: datetime.datetime(2019, 3, 13, 14, 45, 33, tzinfo=tzutc())
+        return self.raw.launch_time
 
     def rename(self, new_name):
         self.logger.info("setting name of EC2 instance %s to %s", self.uuid, new_name)
-        self.raw.add_tag('Name', new_name)
+        self.raw.create_tags(Tags=[{'Key': 'Name', 'Value': new_name}])
         self.refresh()  # update raw
         return new_name
 
@@ -196,11 +194,11 @@ class EC2Instance(Instance, _TagMixin):
 
 class StackStates(object):
     ACTIVE = ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
-              'UPDATE_ROLLBACK_COMPLETE'],
-    COMPLETE = ['CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'],
+              'UPDATE_ROLLBACK_COMPLETE']
+    COMPLETE = ['CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']
     FAILED = ['ROLLBACK_COMPLETE', 'CREATE_FAILED', 'ROLLBACK_FAILED', 'DELETE_FAILED',
-              'UPDATE_ROLLBACK_FAILED'],
-    DELETED = ['DELETE_COMPLETE'],
+              'UPDATE_ROLLBACK_FAILED']
+    DELETED = ['DELETE_COMPLETE']
     IN_PROGRESS = ['CREATE_IN_PROGRESS', 'ROLLBACK_IN_PROGRESS', 'DELETE_IN_PROGRESS',
                    'UPDATE_IN_PROGRESS', 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS',
                    'UPDATE_ROLLBACK_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS',
@@ -223,7 +221,7 @@ class CloudFormationStack(Stack):
             raw: raw dict for this stack returned by boto CloudFormation.Client.describe_stacks()
             uuid: the stack ID
         """
-        self._uuid = raw['StackId'] if raw else kwargs.get('uuid')
+        self._uuid = raw.stack_id if raw else kwargs.get('uuid')
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
 
@@ -236,7 +234,7 @@ class CloudFormationStack(Stack):
 
     @property
     def name(self):
-        return self.raw['StackName']
+        return self.raw.name
 
     @property
     def uuid(self):
@@ -245,7 +243,7 @@ class CloudFormationStack(Stack):
     @property
     def creation_time(self):
         self.refresh()
-        return self.raw['CreationTime']
+        return self.raw.creation_time
 
     def get_details(self):
         return self.raw
@@ -254,15 +252,7 @@ class CloudFormationStack(Stack):
         """
         Re-pull the data for this stack
         """
-        try:
-            self.raw = self._api.describe_stacks(StackName=self._uuid)['Stacks'][0]
-        except BotoServerError as error:
-            if error.status == 404:
-                raise NotFoundError('stack {}'.format(self._uuid))
-            else:
-                raise
-        except IndexError:
-            raise NotFoundError('stack {}'.format(self._uuid))
+        self.raw = self.system.get_stack(self.uuid).raw
         return self.raw
 
     def delete(self):
@@ -275,7 +265,7 @@ class CloudFormationStack(Stack):
         """
         self.logger.info("terminating EC2 stack '%s', id: '%s'", self.name, self.uuid)
         try:
-            self._api.delete_stack(self.uuid)
+            self.raw.delete()
             return True
         except ActionTimedOutError:
             return False
@@ -303,7 +293,7 @@ class EC2Image(Template, _TagMixin):
 
         super(EC2Image, self).__init__(system, raw, **kwargs)
 
-        self._api = self.system.api
+        self._api = self.system.ec2_connection
 
     @property
     def _identifying_attrs(self):
@@ -311,14 +301,15 @@ class EC2Image(Template, _TagMixin):
 
     @property
     def name(self):
-        return self.raw.tags.get('Name') or self.raw.name or self.raw.id
+        tag_value = self.get_tag_value('Name')
+        return tag_value if tag_value else self.raw.name
 
     @property
     def uuid(self):
         return self._uuid
 
     def refresh(self):
-        image = self._api.get_image(self._uuid)
+        image = self.system.get_template(self.raw.id).raw
         if not image:
             raise ImageNotFoundError(self._uuid)
         self.raw = image
@@ -334,7 +325,7 @@ class EC2Image(Template, _TagMixin):
         """
         Deregister the EC2 image and delete the snapshot
         """
-        return self.raw.deregister(delete_snapshot=True)
+        return self.delete()
 
     def deploy(self, *args, **kwargs):
         """
@@ -377,48 +368,29 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         super(EC2System, self).__init__(**kwargs)
         self._username = kwargs.get('username')
         self._password = kwargs.get('password')
+        self._region_name = kwargs.get('region')
+
         connection_config = Config(
             signature_version='s3v4',
             retries=dict(
                 max_attempts=10
             )
         )
+        connection_kwargs = {
+            'aws_access_key_id': self._username,
+            'aws_secret_access_key': self._password,
+            'region_name': self._region_name,
+            'config': connection_config
+        }
 
-        self._region_name = kwargs.get('region')
-        self._region = get_region(self._region_name)
-        self.api = EC2Connection(self._username, self._password, region=self._region)
-
-        self.sqs_connection = boto3client(
-            'sqs', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.elb_connection = ELBConnection(
-            self._username, self._password, region=_regions(
-                regionmodule=elb, regionname=self._region_name)
-        )
-
-        self.s3_connection = boto3resource(
-            's3', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.ec2_connection = boto3client(
-            'ec2', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.ecr_connection = boto3client(
-            'ecr', aws_access_key_id=self._username, aws_secret_access_key=self._password,
-            region_name=self._region_name, config=connection_config
-        )
-
-        self.cloudformation_connection = boto3client(
-            'cloudformation', aws_access_key_id=self._username,
-            aws_secret_access_key=self._password, region_name=self._region_name,
-            config=connection_config
-        )
-
+        self.sqs_connection = boto3client('sqs', **connection_kwargs)
+        self.elb_connection = boto3client('elb', **connection_kwargs)
+        self.s3_connection = boto3resource('s3', **connection_kwargs)
+        self.ec2_connection = boto3client('ec2', **connection_kwargs)
+        self.ec2_resource = boto3resource('ec2', **connection_kwargs)
+        self.ecr_connection = boto3client('ecr', **connection_kwargs)
+        self.cloudformation_connection = boto3client('cloudformation', **connection_kwargs)
+        self.cloudformation_resource = boto3resource('cloudformation', **connection_kwargs)
         self.sns_connection = boto3client('sns', region_name=self._region_name)
 
         self.kwargs = kwargs
@@ -445,34 +417,37 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         pass
 
     def info(self):
-        """Returns the current versions of boto and the EC2 API being used"""
-        return '%s %s' % (UserAgent, self.api.APIVersion)
+        """Returns the current versions of boto3"""
+        return boto3.__version__
 
     def _get_instances(self, **kwargs):
         """
         Gets instance reservations and parses instance objects
         """
-        reservations = self.api.get_all_instances(**kwargs)
+        reservations = self.ec2_connection.describe_instances(**kwargs).get('Reservations')
         instances = list()
         for reservation in reservations:
-            for instance in reservation.instances:
+            for instance in reservation.get("Instances"):
                 instances.append(
-                    EC2Instance(system=self, raw=instance)
+                    EC2Instance(system=self, raw=self.ec2_resource.Instance(
+                        instance.get("InstanceId")))
                 )
         return instances
 
     @staticmethod
     def _add_filter_for_terminated(kwargs_dict):
         new_filter = {
-            'instance-state-name': [
+            'Name': 'instance-state-name',
+            'Values':
+            [
                 api_state for api_state, vm_state in EC2Instance.state_map.items()
                 if vm_state is not VmState.DELETED
             ]
         }
-        if 'filters' not in kwargs_dict:
-            kwargs_dict['filters'] = new_filter
+        if 'Filters' not in kwargs_dict:
+            kwargs_dict['Filters'] = [new_filter]
         else:
-            kwargs_dict['filters'].update(new_filter)
+            kwargs_dict['Filters'].append(new_filter)
         return kwargs_dict
 
     def find_vms(self, name=None, id=None, filters=None, hide_deleted=True):
@@ -499,17 +474,17 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 "You must select one of these search methods: name, id, or filters")
 
         if id:
-            kwargs = {'instance_ids': [id]}
+            kwargs = {'InstanceIds': [id]}
         elif filters:
-            kwargs = {'filters': filters}
+            kwargs = {'Filters': filters}
         elif name:
             # Quick validation that the instance name isn't actually an ID
             pattern = re.compile(r'^i-\w{8,17}$')
             if pattern.match(name):
                 # Switch to using the id search method
-                kwargs = {'instance_ids': [name]}
+                kwargs = {'InstanceIds': [name]}
             else:
-                kwargs = {'filters': {'tag:Name': name}}
+                kwargs = {'Filters': [{'Name': 'tag:Name', 'Values': [name]}]}
 
         if hide_deleted:
             self._add_filter_for_terminated(kwargs)
@@ -615,7 +590,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         stack_status_filter:  list of stack statuses to filter for. See ``StackStates``
         """
         stack_list = [
-            CloudFormationStack(system=self, uuid=stack_summary['StackId'])
+            CloudFormationStack(system=self, uuid=stack_summary['StackId'],
+                                raw=self.cloudformation_resource.Stack(stack_summary['StackName']))
             for stack_summary in self.cloudformation_connection.list_stacks()['StackSummaries']
             if stack_summary['StackStatus'] in stack_status_filter
         ]
@@ -656,7 +632,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
         try:
             # Try to find by name/id directly by using describe_stacks
             stack_list = [
-                CloudFormationStack(system=self, uuid=stack['StackId'], raw=stack)
+                CloudFormationStack(system=self, uuid=stack['StackId'],
+                                    raw=self.cloudformation_resource.Stack(stack['StackName']))
                 for stack
                 in self.cloudformation_connection.describe_stacks(StackName=name_or_id)['Stacks']
             ]
@@ -664,7 +641,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             # Stack not found, if searching by name, look through deleted stacks...
             if searching_by_name and 'Stack with id {} does not exist'.format(name) in str(error):
                 stack_list = [
-                    CloudFormationStack(system=self, uuid=stack_summary['StackId'])
+                    CloudFormationStack(system=self, uuid=stack_summary['StackId'],
+                                        raw=self.cloudformation_resource.Stack(
+                                            stack_summary['StackName']))
                     for stack_summary
                     in self.cloudformation_connection.list_stacks()['StackSummaries']
                     if stack_summary['StackName'] == name
@@ -696,7 +675,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
             owned_by_me: search images owned only by me (default True)
             public: search public images (default False)
         """
-        img_filter = {'image-type': 'machine'}
+        img_filter = [{'Name': 'image-type', 'Values': ['machine']}]
 
         if not any([public, executable_by_me, owned_by_me]):
             raise ValueError(
@@ -704,13 +683,17 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
         images = []
         if public:
-            images.extend(self.api.get_all_images(filters=img_filter))
+            img_filter.append({'Name': 'is-public', 'Values': ['true']})
+            images.extend(self.ec2_connection.describe_images(Filters=img_filter).get("Images"))
         if executable_by_me:
-            images.extend(self.api.get_all_images(executable_by=['self'], filters=img_filter))
+            images.extend(self.ec2_connection.describe_images(
+                ExecutableUsers=['self'], Filters=img_filter).get("Images"))
         if owned_by_me:
-            images.extend(self.api.get_all_images(owners=['self'], filters=img_filter))
+            images.extend(self.ec2_connection.describe_images(Owners=['self'],
+                                                              Filters=img_filter).get("Images"))
 
-        return [EC2Image(system=self, raw=image) for image in set(images)]
+        return [EC2Image(system=self, raw=self.ec2_resource.Image(image["ImageId"]))
+                for image in images]
 
     def find_templates(self, name=None, id=None, executable_by_me=True, owned_by_me=True,
                        public=False, filters=None):
@@ -739,16 +722,16 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                 "You must select one of these search methods: name, id, or filters")
 
         if id:
-            kwargs = {'image_ids': [id]}
+            kwargs = {'ImageIds': [id]}
         elif filters:
-            kwargs = {'filters': filters}
+            kwargs = {'Filters': filters}
         elif name:
             # Quick validation that the image name isn't actually an ID
             if name.startswith('ami-'):
                 # Switch to using the id search method
-                kwargs = {'image_ids': [name]}
+                kwargs = {'ImageIds': [name]}
             else:
-                kwargs = {'filters': {'name': name}}
+                kwargs = {'Filters': [{'Name': 'name', 'Values': [name]}]}
 
         if not any([public, executable_by_me, owned_by_me]):
             raise ValueError(
@@ -756,13 +739,21 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
         images = []
         if public:
-            images.extend(self.api.get_all_images(**kwargs))
+            public_kwargs = {'Filters': [{'Name': 'is-public', 'Values': ['true']}]}
+            if 'Filters' in kwargs:
+                public_kwargs['Filters'] = kwargs['Filters'] + public_kwargs['Filters']
+            else:
+                public_kwargs.update(kwargs)
+            images.extend(self.ec2_connection.describe_images(**public_kwargs).get("Images"))
         if executable_by_me:
-            images.extend(self.api.get_all_images(executable_by=['self'], **kwargs))
+            images.extend(self.ec2_connection.describe_images(
+                ExecutableUsers=['self'], **kwargs).get("Images"))
         if owned_by_me:
-            images.extend(self.api.get_all_images(owners=['self'], **kwargs))
+            images.extend(self.ec2_connection.describe_images(
+                Owners=['self'], **kwargs).get("Images"))
 
-        return [EC2Image(system=self, raw=image) for image in set(images)]
+        return [EC2Image(system=self, raw=self.ec2_resource.Image(image['ImageId']))
+                for image in images]
 
     def get_template(self, name_or_id):
         matches = self.find_templates(name=name_or_id)
@@ -851,13 +842,13 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     def get_all_disassociated_addresses(self):
         return [
             addr for addr
-            in self.api.get_all_addresses()
-            if not addr.instance_id and not addr.network_interface_id]
+            in self.ec2_connection.describe_addresses().get("Addresses")
+            if not addr.get("InstanceId") and not addr.get("NetworkInterfaceId")]
 
     def release_vpc_address(self, alloc_id):
         self.logger.info(" Releasing EC2 VPC EIP '%s'", str(alloc_id))
         try:
-            self.api.release_address(allocation_id=alloc_id)
+            self.ec2_connection.release_address(AllocationId=alloc_id)
             return True
 
         except ActionTimedOutError:
@@ -866,15 +857,15 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     def release_address(self, address):
         self.logger.info(" Releasing EC2-CLASSIC EIP '%s'", address)
         try:
-            self.api.release_address(public_ip=address)
+            self.ec2_connection.release_address(PublicIp=address)
             return True
 
         except ActionTimedOutError:
             return False
 
     def get_all_unattached_volumes(self):
-        return [volume for volume in self.api.get_all_volumes() if not
-                volume.attach_data.status]
+        return self.ec2_connection.describe_volumes(
+            Filters=[{"Name": "status", "Values": ["available"]}]).get("Volumes")
 
     def delete_sqs_queue(self, queue_url):
         self.logger.info(" Deleting SQS queue '%s'", queue_url)
@@ -887,20 +878,23 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
     def get_all_unused_loadbalancers(self):
         return [
             loadbalancer for loadbalancer
-            in self.elb_connection.get_all_load_balancers()
-            if not loadbalancer.instances]
+            in self.elb_connection.describe_load_balancers().get("LoadBalancerDescriptions")
+            if not loadbalancer.get("Instances")]
 
     def delete_loadbalancer(self, loadbalancer):
-        self.logger.info(" Deleting Elastic Load Balancer '%s'", loadbalancer.name)
+        self.logger.info(" Deleting Elastic Load Balancer '%s'",
+                         loadbalancer.get("LoadBalancerName"))
         try:
-            self.elb_connection.delete_load_balancer(loadbalancer.name)
+            self.elb_connection.delete_load_balancer(
+                LoadBalancerName=loadbalancer.get("LoadBalancerName"))
             return True
 
         except ActionTimedOutError:
             return False
 
     def get_all_unused_network_interfaces(self):
-        return [eni for eni in self.api.get_all_network_interfaces() if eni.status == "available"]
+        return self.ec2_connection.describe_network_interfaces(
+            Filters=[{"Name": "status", "Values": ["available"]}]).get("NetworkInterfaces")
 
     def import_image(self, s3bucket, s3key, format="vhd", description=None):
         self.logger.info(
@@ -1095,7 +1089,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List EC2 Load Balancers")
-        return [loadbalancer.name for loadbalancer in self.elb_connection.get_all_load_balancers()]
+        return [loadbalancer.get("LoadBalancerName") for loadbalancer in
+                self.elb_connection.describe_load_balancers().get("LoadBalancerDescriptions")]
 
     def list_network(self):
         self.logger.info("Attempting to List EC2 Virtual Private Networks")
@@ -1121,7 +1116,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
 
     def list_security_group(self):
         self.logger.info("Attempting to List EC2 security groups")
-        return [sec_gp.name for sec_gp in self.api.get_all_security_groups()]
+        return [sec_gp.get("GroupName") for sec_gp in
+                self.ec2_connection.describe_security_groups().get("SecurityGroups")]
 
     def list_router(self):
         route_tables = self.ec2_connection.describe_route_tables()['RouteTables']
