@@ -29,12 +29,18 @@ class _SharedMethodsMixin(object):
     def _identifying_attrs(self):
         return {'uuid': self._uuid}
 
-    def refresh(self):
+    def refresh(self, **kwargs):
         """
         Re-pull the data for this entity and update this instance's attributes
+
+        Args:
+            kwargs: passed to VmService or TemplateService get() call
+
+        http://ovirt.github.io/ovirt-engine-sdk/master/services.m.html   (next line for specifics)
+            #ovirtsdk4.services.TemplateService.get
         """
         try:
-            self._raw = self.api.get()
+            self._raw = self.api.get(**kwargs)
         except OVirtNotFoundError:
             raise ItemNotFound(self.uuid, self.__class__.__name__)
 
@@ -175,6 +181,17 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         self.refresh()
         return self.raw.cluster
 
+    @property
+    def storage_domains(self):
+        """get the disk storage domains
+
+        Returns:
+            list of ovirt.types.StorageDomain
+        """
+        self.refresh()
+        disks = [a.disk for a in self.api.disk_attachments_service().list()]
+        return [self.system.api.follow_link(d.storage_domains.pop()) for d in disks]
+
     def delete(self):
         """
         Removes the entity on the provider
@@ -312,8 +329,15 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             self.wait_for_state(VmState.SUSPENDED)
             return True
 
-    def mark_as_template(self, template_name=None, cluster=None, delete=True, delete_on_error=True,
-                         **kwargs):
+    def mark_as_template(
+        self,
+        template_name=None,
+        cluster_name=None,
+        storage_domain_name=None,
+        delete=True,
+        delete_on_error=True,
+        **kwargs
+    ):
         """Turns the VM off, creates template from it and deletes the original VM.
 
         Mimics VMware behaviour here.
@@ -323,7 +347,9 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         In other words, can only rename when template_name != vm_name, or when delete is true
         Args:
             delete: Whether to delete the VM (default: True)
-            template_name: If you want, you can specific an exact template name
+            template_name (str): If you want, you can specific an exact template name
+            cluster_name (str): name of the cluster to put template on
+            storage_domain_name (str): name of the storage domain to put template on
             delete_on_error: delete on timeout as well.
 
         Returns:
@@ -347,7 +373,11 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                 self.ensure_state(VmState.STOPPED)
                 # Create template based on this VM
                 template = self.system.create_template(
-                    template_name=temp_template_name, vm_name=self.name, cluster_name=cluster)
+                    template_name=temp_template_name,
+                    vm_name=self.name,
+                    cluster_name=cluster_name,
+                    storage_domain_name=storage_domain_name
+                )
             if delete and self.exists:
                 # Delete the original VM
                 self.delete()
@@ -503,15 +533,6 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
     def _identifying_attrs(self):
         return {'uuid': self._uuid}
 
-    def refresh(self):
-        """
-        Re-pull the data for this entity and update this instance's attributes
-        """
-        try:
-            self._raw = self.api.get()
-        except OVirtNotFoundError:
-            raise ItemNotFound(self.uuid, self.__class__.__name__)
-
     @property
     def name(self):
         """
@@ -560,18 +581,20 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             self.refresh()
             return True
 
-    def wait_for_ok_status(self):
+    def wait_for_ok_status(self, timeout=1800):
         wait_for(
             lambda: self.api.get().status == types.TemplateStatus.OK,
-            num_sec=30 * 60, message="template is OK", delay=45)
+            num_sec=timeout,
+            message="template is OK",
+            delay=10)
 
-    def deploy(self, vm_name, **kwargs):
+    def deploy(self, vm_name, cluster, timeout=900, power_on=True, **kwargs):
         """
         Deploy a VM using this template
 
         Args:
             vm_name -- name of VM to create
-            cluster -- cluster to which VM should be deployed
+            cluster -- cluster name to which VM should be deployed
             timeout (optional) -- default 900
             power_on (optional) -- default True
             placement_policy_host (optional)
@@ -579,35 +602,55 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             cpu (optional) -- number of cpu cores
             sockets (optional) -- numbner of cpu sockets
             ram (optional) -- memory in GB
+            storage_domain (optional) -- storage domain name to which VM should be deployed
 
         Returns:
             wrapanapi.systems.rhevm.RHEVMVirtualMachine
         """
         self.logger.debug(' Deploying RHEV template %s to VM %s', self.name, vm_name)
-        timeout = kwargs.pop('timeout', 900)
-        power_on = kwargs.pop('power_on', True)
         vm_kwargs = {
             'name': vm_name,
-            'cluster': self.system.get_cluster(kwargs['cluster']),
+            'cluster': self.system.get_cluster(cluster),
             'template': self.raw,
         }
+        clone = None
+        domain_name = kwargs.get('storage_domain')
+        if domain_name:
+            # need to specify storage domain, if its different than the template's disks location
+            # then additional options required. disk allocation mode in UI required to be clone
+            clone = True
+            target_storage_domain = self.system.get_storage_domain(domain_name)
+            disk_attachments = []
+            for template_attachment in self.api.disk_attachments_service().list():
+                new_attachment = types.DiskAttachment(
+                    disk=types.Disk(
+                        id=template_attachment.id,
+                        format=types.DiskFormat.COW,
+                        storage_domains=[target_storage_domain]
+                    )
+                )
+                disk_attachments.append(new_attachment)
+
+            vm_kwargs['disk_attachments'] = disk_attachments
+
+        # Placement requires two args
         if 'placement_policy_host' in kwargs and 'placement_policy_affinity' in kwargs:
             host = types.Host(name=kwargs['placement_policy_host'])
             policy = types.VmPlacementPolicy(
                 hosts=[host],
                 affinity=kwargs['placement_policy_affinity'])
             vm_kwargs['placement_policy'] = policy
-        if 'cpu' in kwargs:
+
+        # if cpu is passed, also default a sockets # unless its passed
+        cpu = kwargs.get('cpu', None)  # don't set default if its not passed
+        if cpu:
             vm_kwargs['cpu'] = types.Cpu(
-                topology=types.CpuTopology(
-                    cores=kwargs['cpu'],
-                    sockets=kwargs.pop('sockets')
-                )
+                topology=types.CpuTopology(cores=cpu, sockets=kwargs.get('sockets', 1))
             )
         if 'ram' in kwargs:
             vm_kwargs['memory'] = int(kwargs['ram'])  # in Bytes
         vms_service = self.system.api.system_service().vms_service()
-        vms_service.add(types.Vm(**vm_kwargs))
+        vms_service.add(types.Vm(**vm_kwargs), clone=clone)
         vm = self.system.get_vm(vm_name)
         vm.wait_for_state(VmState.STOPPED, timeout=timeout)
         if power_on:
@@ -824,16 +867,16 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def disconnect(self):
         self.api.close()
 
-    def _get_cluster(self, cluster_name):
-        cluster = 'name={}'.format(cluster_name)
-        return self.api.system_service().clusters_service().list(search=cluster)[0]
-
     def remove_host_from_cluster(self, hostname):
         raise NotImplementedError('remove_host_from_cluster not implemented')
 
     def get_cluster(self, cluster_name):
-        cluster = 'name={}'.format(cluster_name)
-        return self.api.system_service().clusters_service().list(search=cluster)[0]
+        try:
+            return self.api.system_service().clusters_service().list(
+                search='name={}'.format(cluster_name)
+            )[0]
+        except IndexError:
+            raise NotFoundError('Cluster not found with name {}'.format(cluster_name))
 
     @property
     def _templates_service(self):
@@ -881,29 +924,67 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             )
         return matches[0]
 
-    def create_template(self, template_name, vm_name, cluster_name=None):
+    def create_template(self, template_name, vm_name, cluster_name=None, storage_domain_name=None,
+                        timeout=600):
         """
         Create a template based on a VM.
 
         Creates on the same cluster as the VM unless 'cluster_name' is specified
+
+        http://ovirt.github.io/ovirt-engine-sdk/master/services.m.html
+            #ovirtsdk4.services.TemplatesService.add
+
+        Args:
+            template_name (str): name for the resulting template
+            vm_name (str): name of the VM to create template from
+            cluster_name (str): Optional name of cluster for the template, defaults to source VM's
+            storage_domain_name (str): name of storage domain for template
+            timeout (int): timeout for template creation and waiting for ok status
+                            total wait time for function is 2 times this value
         """
         vm = self.get_vm(vm_name)
+        vm.refresh(follow='disk_attachments')  # include disk_attachment refs
 
-        if cluster_name:
-            cluster = self.get_cluster(cluster_name)
-        else:
-            cluster = vm.cluster
+        cluster = self.get_cluster(cluster_name) if cluster_name else vm.cluster
 
-        new_template = types.Template(name=template_name, vm=vm.raw, cluster=cluster)
+        template_kwargs = dict(
+            name=template_name,
+            vm=vm.raw,
+            cluster=cluster,
+        )
+
+        if storage_domain_name:
+            template_kwargs.update({'storage_domain': self.get_storage_domain(storage_domain_name)})
+        # FIXME: pick domain from the VM's disk storage domains
+        # might not need to pass explicitly in this case anyway
+        # ovirt API a bit complicated here, failing to pickup on the setting
+        # It needs a rich VM object, with its disk attachment assignments filled out with disk IDs
+        # and the domain set for each disk, or globally for the template
+        # else:
+        #     domains = vm.storage_domains
+        #     if len(set([d.name for d in domains])) > 1:
+        #         self.logger.warning(
+        #             'More than one storage domain for VM disks,'
+        #             'picking one for creating template: %r',
+        #             domains
+        #         )
+        #     storage_domain = domains[0]
+
+        new_template = types.Template(**template_kwargs)
+
         self.api.system_service().templates_service().add(new_template)
 
         # First it has to appear
         wait_for(
-            lambda: self.does_template_exist(template_name),
-            num_sec=30 * 60, message="template exists", delay=45)
+            func=self.does_template_exist,
+            func_args=[template_name],
+            num_sec=timeout,
+            message="template exists",
+            delay=5
+        )
         # Then the process has to finish
         template = self.get_template(template_name)
-        template.wait_for_ok_status()
+        template.wait_for_ok_status(timeout=timeout)
         return template
 
     def usage_and_quota(self):
@@ -992,7 +1073,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             storage_domain = query_result[0]
             return self._storage_domains_service.storage_domain_service(storage_domain.id)
 
-    def _get_storage_domain(self, name):
+    def get_storage_domain(self, name):
         return self._get_storage_domain_service(name).get()
 
     def _get_images_service(self, storage_domain_name):
@@ -1070,8 +1151,8 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def import_template(self, edomain, sdomain, cluster, temp_template):
         export_sd_service = self._get_storage_domain_service(edomain)
         export_template = self.get_template_from_storage_domain(temp_template, edomain)
-        target_storage_domain = self._get_storage_domain(sdomain)
-        cluster_id = self._get_cluster(cluster).id
+        target_storage_domain = self.get_storage_domain(sdomain)
+        cluster_id = self.get_cluster(cluster).id
         sd_template_service = export_sd_service.templates_service().template_service(
             export_template.id)
         sd_template_service.import_(
