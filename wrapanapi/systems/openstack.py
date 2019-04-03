@@ -6,6 +6,7 @@ Used to communicate with providers without using CFME facilities
 from __future__ import absolute_import
 
 import json
+import os
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -25,13 +26,17 @@ from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
 from novaclient.v2.floating_ips import FloatingIP
 from requests.exceptions import Timeout
+from swiftclient import client as swiftclient
+from swiftclient.exceptions import ClientException as SwiftException
 from wait_for import wait_for
 
 from wrapanapi.entities import (
     Instance, Template, TemplateMixin, VmMixin, VmState)
 from wrapanapi.exceptions import (
-    ActionTimedOutError, ImageNotFoundError, KeystoneVersionNotSupported, MultipleImagesError,
-    MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs, VMInstanceNotFound)
+    ActionTimedOutError, ImageNotFoundError, ItemNotFound, KeystoneVersionNotSupported,
+    MultipleImagesError, MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs,
+    VMInstanceNotFound
+)
 from wrapanapi.systems.base import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -567,6 +572,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self._gapi = None
         self._kapi = None
         self._capi = None
+        self._sapi = None
         self._tenant_api = None
         self._stackapi = None
 
@@ -637,6 +643,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if not self._capi:
             self._capi = cinderclient.Client(session=self.session, service_type="volume")
         return self._capi
+
+    @property
+    def sapi(self):
+        if not self._sapi:
+            self._sapi = swiftclient.Connection(session=self.session)
+        return self._sapi
 
     @property
     def stackapi(self):
@@ -1059,3 +1071,127 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             'cpu_total': host_cpus,
             'cpu_limit': data['maxTotalCores'] if data['maxTotalCores'] >= 0 else None,
         }
+
+    def list_containers(self):
+        """List of available containers.
+
+        Returns: list of containers name.
+        """
+
+        _, containers = self.sapi.get_account()
+        return [cont.get("name") for cont in containers]
+
+    def create_container(self, container_name):
+        """Create container.
+
+        Args:
+            container_name: name of container
+
+        Return: None
+        """
+
+        self.sapi.put_container(container_name)
+
+    def delete_container(self, container_name):
+        """Delete existing container
+
+        Args:
+            container_name: name of container
+
+        Returns: bool
+        """
+
+        try:
+            self.sapi.delete_container(container_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=container_name, item_type="Swift Container")
+            else:
+                raise
+
+        return container_name not in self.list_containers()
+
+    def list_objects(self, container_name):
+        """List of available object in container.
+
+        Args:
+            container_name: name of container
+
+        Returns: list of existing objects
+        """
+
+        try:
+            _, objects = self.sapi.get_container(container_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=container_name, item_type="Swift Container")
+            else:
+                raise
+
+        return [obj.get("name") for obj in objects]
+
+    def create_object(self, container_name, path, object_name=None):
+        """Upload the object under container.
+
+        Args:
+            container_name: name of container
+            path: local object file path
+            object_name: object name to put; if None, the object name is expected to be default name
+
+        Return: None
+
+        Usage is as follows. Assuming local object file `/tmp/tmptydqzc.pdf`:
+        .. code-block:: python
+            mgmt.create_object(container_name="test_cont", path="//tmp/tmptydqzc.pdf",
+            object_name="test_obj")
+        """
+
+        name = object_name or os.path.basename(path)
+
+        with open(path, 'rb') as obj:
+            self.sapi.put_object(container_name, name, contents=obj)
+
+    def delete_object(self, container_name, object_name):
+        """Delete object from container.
+
+        Args:
+            container_name: name of container
+            object_name: name of object
+
+        Returns: bool
+        """
+
+        try:
+            self.sapi.delete_object(container_name, object_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(name=object_name, item_type="Swift Object")
+            else:
+                raise
+
+        return object_name not in self.list_objects(container_name)
+
+    def download_object(self, container_name, object_name, path):
+        """Download object from container.
+
+        Args:
+            container_name: name of container
+            object_name: name of object
+            path: local object path where like to save.
+
+        Returns: None
+        """
+
+        try:
+            _, obj_contents = self.sapi.get_object(container_name, object_name)
+        except SwiftException as e:
+            if e.http_reason == "Not Found":
+                raise ItemNotFound(
+                    name=object_name,
+                    item_type="Swift Object in Container {}".format(container_name)
+                )
+            else:
+                raise
+
+        with open(path, "wb") as obj:
+            obj.write(obj_contents)
