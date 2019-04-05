@@ -860,6 +860,31 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         cluster_list = self.api.system_service().clusters_service().list(**kwargs)
         return [cluster.name for cluster in cluster_list]
 
+    def get_disks(self, name):
+        return self.api.system_service().disks_service().list(search=name)
+
+    def list_disks(self, status=None, **kwargs):
+        """
+        List all of the disks present on RHV
+
+        Keywords:
+            status (optional) -- status of the disk.One of OK, LOCKED, ILLEGAL.
+
+        Returns:
+            list of disk names(str)
+        """
+        disks_list = self.api.system_service().disks_service().list()
+        if status is None:
+            return [disk.name for disk in disks_list]
+        try:
+            return [
+                disk.name for disk in disks_list
+                if disk.status == types.DiskStatus.__members__[status.upper()]
+            ]
+
+        except (KeyError, AttributeError):  # catches the __members__ lookup on first loop iteration
+            raise ValueError('invalid status passed, only values "OK","LOCKED","ILLEGAL" allowed.')
+
     def info(self):
         # and we got nothing!
         pass
