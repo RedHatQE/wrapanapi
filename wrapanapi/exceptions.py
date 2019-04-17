@@ -60,6 +60,16 @@ class LabelNotFoundException(NotFoundError):
             self._label_key)
 
 
+class DatastoreNotFoundError(NotFoundError):
+    """Raised if a datastore(s) or datastore clusters(s) are not found"""
+    def __init__(self, item_type):
+        self.item_type = item_type
+
+    def __str__(self):
+        return 'Could not find any "{}" available for provisioning, check the status'.format(
+            self.item_type)
+
+
 class NetworkNameNotFound(NotFoundError):
     pass
 
