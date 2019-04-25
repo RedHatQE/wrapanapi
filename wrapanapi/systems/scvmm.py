@@ -229,6 +229,14 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         )
         self.system.run_script(script)
 
+    def create_snapshot(self):
+        self.logger.info("Creating a checkpoint/snapshot of VM '%s'", self.name)
+        script = """
+            $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
+            New-SCVMCheckpoint -VM $vm
+        """.format(scvmm_vm_id=self._id)
+        self.system.run_script(script)
+
     def get_hardware_configuration(self):
         self.refresh(read_from_hyperv=True)
         data = {'mem': self.raw['Memory'], 'cpu': self.raw['CPUCount']}
