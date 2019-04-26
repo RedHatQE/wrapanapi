@@ -257,7 +257,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         ips = []
         rep_dev_service = self.api.reported_devices_service()
         for dev in rep_dev_service.list():
-            for listed_ip in dev.ips:
+            for listed_ip in dev.ips or []:  # ips property could be None
                 ips.append(listed_ip.address)
         return ips
 
