@@ -641,7 +641,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     @property
     def capi(self):
         if not self._capi:
-            self._capi = cinderclient.Client(session=self.session, service_type="volume")
+            self._capi = cinderclient.Client(session=self.session)
         return self._capi
 
     @property
@@ -778,8 +778,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Returns:
             List of OpenstackInstance objects
         """
-        if not name and not ip:
-            raise ValueError("Must find by name, ip, or both")
+        if not any((name, ip, id)):
+            raise ValueError("Any of these parameters must be specified: name, ip, or id")
         matches = []
         instances = self.list_vms()
         for instance in instances:
@@ -905,7 +905,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def with_volume(self, *args, **kwargs):
         """Creates a context manager that creates a single volume with parameters defined via params
         and destroys it after exiting the context manager
-
         For arguments description, see the :py:meth:`OpenstackSystem.create_volume`.
         """
         volume = self.create_volume(*args, **kwargs)
@@ -916,6 +915,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     @contextmanager
     def with_volumes(self, *configurations, **kwargs):
+        try:
+            volumes = self.volume_configurations(*configurations, **kwargs)
+            yield volumes
+        finally:
+            self.delete_volume(*volumes)
+
+    def volume_configurations(self, *configurations, **kwargs):
         """Similar to :py:meth:`OpenstackSystem.with_volume`, but with multiple volumes.
 
         Args:
@@ -931,14 +937,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
             .. code-block:: python
 
-               with mgmt.with_volumes(1, n=10) as (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9):
-                   pass  # provisions 10 identical 1G volumes
+               mgmt.volume_configurations(1, n=10) as (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9):
+               # provisions 10 identical 1G volumes
 
-               with mgmt.with_volumes(1, 2) as (d0, d1):
-                   pass  # d0 1G, d1 2G
+               volume_configurations(1, 2) as (d0, d1):
+               # d0 1G, d1 2G
 
-               with mgmt.with_volumes((1, {}), (2, {})) as (d0, d1):
-                   pass  # d0 1G, d1 2G same as before but you can see you can pass kwargs through
+               volume_configurations((1, {}), (2, {})) as (d0, d1):
+               # d0 1G, d1 2G same as before but you can see you can pass kwargs through
 
         """
         n = kwargs.pop("n", None)
@@ -950,29 +956,24 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             raise ValueError("n does not equal the length of configurations")
         # now n == len(configurations)
         volumes = []
-        try:
-            for configuration in configurations:
-                if isinstance(configuration, int):
-                    size, kwargs = configuration, {}
-                elif len(configuration) == 1:
-                    size, kwargs = configuration[0], {}
-                elif len(configuration) == 2:
-                    size, kwargs = configuration
-                else:
-                    size = configuration[0]
-                    kwargs = configuration[1]
-                volumes.append(self.create_volume(size, **kwargs))
-            yield volumes
-        finally:
-            self.delete_volume(*volumes)
+        for configuration in configurations:
+            if isinstance(configuration, int):
+                size, kwargs = configuration, {}
+            elif len(configuration) == 1:
+                size, kwargs = configuration[0], {}
+            elif len(configuration) == 2:
+                size, kwargs = configuration
+            else:
+                size = configuration[0]
+                kwargs = configuration[1]
+            volumes.append(self.create_volume(size, **kwargs))
+        return volumes
 
     def volume_attachments(self, volume_id):
         """Returns a dictionary of ``{instance: device}`` relationship of the volume."""
         volume = self.capi.volumes.get(volume_id)
-        result = {}
-        for attachment in volume.attachments:
-            result[self.get_vm(attachment['server_id']).name] = attachment['device']
-        return result
+        return {self.get_vm(id=attachment['server_id']).name: attachment['device']
+                for attachment in volume.attachments}
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
