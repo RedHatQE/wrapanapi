@@ -62,6 +62,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         'Missing': VmState.ERROR,
         'Creation Failed': VmState.ERROR,
     }
+    ALLOWED_CHECK_TYPES = ["Standard", "Production", "ProductionOnly"]
 
     def __init__(self, system, raw=None, **kwargs):
         """
@@ -226,6 +227,40 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         """.format(
             dom=self.system.domain, user=self.system.user,
             password=self.system.password, scvmm_vm_id=self._id, h_id=self.vmid
+        )
+        self.system.run_script(script)
+
+    def create_snapshot(self, check_type="Standard"):
+        """ Create a snapshot of a VM, set checkpoint type to standard by default. """
+        self.set_checkpoint_type(check_type=check_type)
+        self.logger.info("Creating a checkpoint/snapshot of VM '%s'", self.name)
+        script = """
+            $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
+            New-SCVMCheckpoint -VM $vm
+        """.format(scvmm_vm_id=self._id)
+        self.system.run_script(script)
+
+    def set_checkpoint_type(self, check_type="Standard"):
+        """ Set the checkpoint type of a VM, check_type must be one of ALLOW_CHECK_TYPES """
+        self.logger.info("Setting checkpoint type to %s for VM '%s'", check_type, self.name)
+
+        if check_type not in self.ALLOWED_CHECK_TYPES:
+            raise NameError("checkpoint type '{}' not understood".format(check_type))
+
+        script = """
+            $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
+            $pwd = ConvertTo-SecureString "{password}" -AsPlainText -Force
+            $creds = New-Object System.Management.Automation.PSCredential("{dom}\\{user}", $pwd)
+            Invoke-Command -ComputerName $vm.HostName -Credential $creds -ScriptBlock {{
+                Get-VM -Id {h_id} | Set-VM -CheckpointType {check_type}
+            }}
+        """.format(
+            dom=self.system.domain,
+            user=self.system.user,
+            password=self.system.password,
+            scvmm_vm_id=self._id,
+            h_id=self.vmid,
+            check_type=check_type
         )
         self.system.run_script(script)
 
