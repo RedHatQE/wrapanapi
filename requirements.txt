@@ -13,7 +13,8 @@ inflection
 miq-version>=0.1.6
 oauth2client
 ovirt-engine-sdk-python~=4.3
-openshift==0.3.4
+#openshift==0.3.4
+openshift==0.8.8
 packaging
 pyvmomi>=6.5.0.2017.5.post1
 python-cinderclient
