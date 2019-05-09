@@ -604,7 +604,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $lib = Get-SCLibraryShare
             Read-SCLibraryShare -LibraryShare $lib[0] -Path {path} -RunAsynchronously
-            """.format(path=path)
+        """.format(path=path)
         self.run_script(script)
 
     def download_file(self, url, name, dest="L:\\Library\\VHDs\\"):
@@ -612,18 +612,29 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         self.logger.info("Downloading file {} from url into: {}".format(name, dest))
         script = """
             $url = "{url}"
-            $output = "{dest}{name}" 
+            $output = "{dest}{name}"
             $wc = New-Object System.Net.WebClient
             $wc.DownloadFile($url, $output)
-            """.format(url=url, name=name, dest=dest)
+        """.format(url=url, name=name, dest=dest)
         self.run_script(script)
+        # refresh the library so it's available for SCVMM to use
+        self.refresh_library()
+
+    def delete_file(self, name, dest="L:\\Library\\VHDs\\"):
+        """ Deletes a file from the SCVMM library """
+        self.logger.info("Deleting file {} from: {}".format(name, dest))
+        script = """
+            $fname = "{dest}{name}"
+            Remove-Item -Path $fname
+        """.format(name=name, dest=dest)
+        self.run_script(script)
+        self.refresh_library()
 
     def refresh_library(self):
         """ Perform a generic refresh of the SCVMM library """
         self.logger.info("Refreshing VMM library...")
         script = """
-            $lib = Get-LibraryShare
-            Refresh-LibraryShare $lib
+            Refresh-LibraryShare
         """
         self.run_script(script)
 
