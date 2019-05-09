@@ -58,6 +58,14 @@ class _SharedMethodsMixin(object):
         """
         return self._uuid
 
+    @property
+    def creation_time(self):
+        """
+        Returns creation time of VM/instance
+        """
+        self.refresh()
+        return self.raw.creation_time.astimezone(pytz.UTC)
+
     def _get_nic_service(self, nic_name):
         for nic in self.api.nics_service().list():
             if nic.name == nic_name:
@@ -260,14 +268,6 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             for listed_ip in dev.ips or []:  # ips property could be None
                 ips.append(listed_ip.address)
         return ips
-
-    @property
-    def creation_time(self):
-        """
-        Returns creation time of VM/instance
-        """
-        self.refresh()
-        return self.raw.creation_time.astimezone(pytz.UTC)
 
     def start(self):
         """
