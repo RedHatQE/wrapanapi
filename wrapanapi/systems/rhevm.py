@@ -58,6 +58,14 @@ class _SharedMethodsMixin(object):
         """
         return self._uuid
 
+    @property
+    def creation_time(self):
+        """
+        Returns creation time of VM/instance
+        """
+        self.refresh()
+        return self.raw.creation_time.astimezone(pytz.UTC)
+
     def _get_nic_service(self, nic_name):
         for nic in self.api.nics_service().list():
             if nic.name == nic_name:
@@ -260,14 +268,6 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             for listed_ip in dev.ips or []:  # ips property could be None
                 ips.append(listed_ip.address)
         return ips
-
-    @property
-    def creation_time(self):
-        """
-        Returns creation time of VM/instance
-        """
-        self.refresh()
-        return self.raw.creation_time.astimezone(pytz.UTC)
 
     def start(self):
         """
@@ -1148,30 +1148,95 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def get_storage_domain_connections(self, storage_domain):
         return self._get_storage_domain_service(storage_domain).storage_connections_service().list()
 
-    def change_storage_domain_state(self, state, storage_domain_name):
-        dcs = self._data_centers_service.list()
-        for dc in dcs:
-            storage_domains = self.api.follow_link(dc.storage_domains)
-            for domain in storage_domains:
-                if domain.name == storage_domain_name:
-                    asds = self._get_attached_storage_domain_service(dc.id, domain.id)
-                    if state == "maintenance" and domain.status.value == "active":
-                        asds.deactivate()
-                    elif state == "active" and domain.status.value != "active":
-                        asds.activate()
-                    wait_for(lambda: domain.status.value == state, delay=5, num_sec=240)
-                    return True
-        return False
+    def change_storage_domain_state(self, state, storage_domain_name, timeout=300):
+        """Activate/deactivate storage domain
+        Cannot directly set state to things like 'locked', 'detaching', etc
 
-    def get_template_from_storage_domain(self, template_name, storage_domain_name):
+        Notes:
+            Any state passed that is not 'active' is taken to be a 'deactivate' action
+            Thus any state other than 'active' will result in storage domain being in maintenance
+            Does not wait for steady state before deactivating, simply looks for non-active state
+
+        Args:
+            state (str): valid ovirt.types.StorageDomainStatus enum value
+            storage_domain_name (str): name of the storage domain to modify state on
+            timeout (int): number of seconds to wait for state change
+
+        Returns:
+            None: domain already on given state
+            True: domain changed to given state
+
+        Raises:
+            ValueError: when an invalid StorageDomainStatus enum is passed, or storage domain name
+            TimedOutError: when the desired state is not reached in the timeout
+        """
+        desired_state = getattr(types.StorageDomainStatus, state.upper(), None)
+        active = types.StorageDomainStatus.ACTIVE
+        if desired_state is None:
+            raise ValueError('Invalid state [{}] passed for setting storage domain, '
+                             'value values are {}'.format(state, list(types.StorageDomainStatus)))
+        for datacenter in self._data_centers_service.list():
+            for domain in self.api.follow_link(datacenter.storage_domains):
+                if domain.name == storage_domain_name:
+                    attached_service = self._get_attached_storage_domain_service(datacenter.id,
+                                                                                 domain.id)
+                    domain_status = self.api.follow_link(domain).status
+                    if domain_status == desired_state:
+                        return None  # already on the state we wanted
+                    elif desired_state != active:
+                        attached_service.deactivate()
+                        expected_state = types.StorageDomainStatus.MAINTENANCE
+                    else:
+                        attached_service.activate()
+                        expected_state = active
+                    wait_for(
+                        lambda: self.api.follow_link(domain).status == expected_state,
+                        delay=5,
+                        num_sec=timeout,
+                        message='waiting for {} to reach state {}'.format(storage_domain_name,
+                                                                          expected_state)
+                    )
+                    return True
+        else:
+            # domain name was never matched on any data center
+            raise ValueError('Given domain name [{}] was never matched'.format(storage_domain_name))
+
+    def get_template_from_storage_domain(
+        self, template_name, storage_domain_name, unregistered=False
+    ):
+        """get a specific named template on a given storage domain
+
+        Args:
+            template_name (str): name of the template to get
+            storage_domain_name (str): name of the storage domain to get a template on
+            unregistered (bool): passed to ovirt TemplatesService.list()
+
+        Raises:
+            exceptions that ovirt returns, ItemNotFound if the storage_domain_name is bad
+        """
         sds = self._get_storage_domain_service(storage_domain_name)
-        for template in sds.templates_service().list(unregistered=False):
+        for template in sds.templates_service().list(unregistered=unregistered):
             if template.name == template_name:
                 return RHEVMTemplate(system=self, uuid=template.id)
         raise NotFoundError(
             'template {} in storage domain {}'
             .format(template_name, storage_domain_name)
         )
+
+    def list_templates_from_storage_domain(self, storage_domain_name, unregistered=False):
+        """list the templates on a specific given storage_domain
+
+        Args:
+            storage_domain_name (str): name of the storage domain to list templates on
+
+        Raises:
+            exceptions that ovirt returns, ItemNotFound if the storage_domain_name is bad
+        """
+        sds = self._get_storage_domain_service(storage_domain_name)
+        return [
+            RHEVMTemplate(system=self, uuid=template.id)
+            for template in sds.templates_service().list(unregistered=unregistered)
+        ]
 
     def import_template(self, edomain, sdomain, cluster, temp_template):
         export_sd_service = self._get_storage_domain_service(edomain)
