@@ -1149,19 +1149,57 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         return self._get_storage_domain_service(storage_domain).storage_connections_service().list()
 
     def change_storage_domain_state(self, state, storage_domain_name, timeout=300):
-        dcs = self._data_centers_service.list()
-        for dc in dcs:
-            storage_domains = self.api.follow_link(dc.storage_domains)
-            for domain in storage_domains:
+        """Activate/deactivate storage domain
+        Cannot directly set state to things like 'locked', 'detaching', etc
+
+        Notes:
+            Any state passed that is not 'active' is taken to be a 'deactivate' action
+            Thus any state other than 'active' will result in storage domain being in maintenance
+            Does not wait for steady state before deactivating, simply looks for non-active state
+
+        Args:
+            state (str): valid ovirt.types.StorageDomainStatus enum value
+            storage_domain_name (str): name of the storage domain to modify state on
+            timeout (int): number of seconds to wait for state change
+
+        Returns:
+            None: domain already on given state
+            True: domain changed to given state
+
+        Raises:
+            ValueError: when an invalid StorageDomainStatus enum is passed, or storage domain name
+            TimedOutError: when the desired state is not reached in the timeout
+        """
+        desired_state = getattr(types.StorageDomainStatus, state.upper(), None)
+        active = types.StorageDomainStatus.ACTIVE
+        if desired_state is None:
+            raise ValueError('Invalid state [{}] passed for setting storage domain, '
+                             'value values are {}'.format(state, list(types.StorageDomainStatus)))
+        for datacenter in self._data_centers_service.list():
+            for domain in self.api.follow_link(datacenter.storage_domains):
                 if domain.name == storage_domain_name:
-                    asds = self._get_attached_storage_domain_service(dc.id, domain.id)
-                    if state == "maintenance" and domain.status.value == "active":
-                        asds.deactivate()
-                    elif state == "active" and domain.status.value != "active":
-                        asds.activate()
-                    wait_for(lambda: domain.status.value == state, delay=5, num_sec=timeout)
+                    attached_service = self._get_attached_storage_domain_service(datacenter.id,
+                                                                                 domain.id)
+                    domain_status = self.api.follow_link(domain).status
+                    if domain_status == desired_state:
+                        return None  # already on the state we wanted
+                    elif desired_state != active:
+                        attached_service.deactivate()
+                        expected_state = types.StorageDomainStatus.MAINTENANCE
+                    else:
+                        attached_service.activate()
+                        expected_state = active
+                    wait_for(
+                        lambda: self.api.follow_link(domain).status == expected_state,
+                        delay=5,
+                        num_sec=timeout,
+                        message='waiting for {} to reach state {}'.format(storage_domain_name,
+                                                                          expected_state)
+                    )
                     return True
-        return False
+        else:
+            # domain name was never matched on any data center
+            raise ValueError('Given domain name [{}] was never matched'.format(storage_domain_name))
 
     def get_template_from_storage_domain(
         self, template_name, storage_domain_name, unregistered=False
