@@ -598,13 +598,44 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     def disconnect(self):
         pass
 
-    def update_scvmm_library(self):
+    def update_scvmm_library(self, path="VHDs"):
         # This forces SCVMM to update Library after a template change instead of waiting on timeout
         self.logger.info("Updating SCVMM Library")
         script = """
-            $lib = Get-SCLibraryShare | where {$_.name -eq \'VMMLibrary\'}
-            Read-SCLibraryShare -LibraryShare $lib[0] -Path VHDs -RunAsynchronously
-            """
+            $lib = Get-SCLibraryShare
+            Read-SCLibraryShare -LibraryShare $lib[0] -Path {path} -RunAsynchronously
+        """.format(path=path)
+        self.run_script(script)
+
+    def download_file(self, url, name, dest="L:\\Library\\VHDs\\"):
+        """ Downloads a file given a URL into the SCVMM library (or any dest) """
+        self.logger.info("Downloading file {} from url into: {}".format(name, dest))
+        script = """
+            $url = "{url}"
+            $output = "{dest}{name}"
+            $wc = New-Object System.Net.WebClient
+            $wc.DownloadFile($url, $output)
+        """.format(url=url, name=name, dest=dest)
+        self.run_script(script)
+        # refresh the library so it's available for SCVMM to use
+        self.refresh_library()
+
+    def delete_file(self, name, dest="L:\\Library\\VHDs\\"):
+        """ Deletes a file from the SCVMM library """
+        self.logger.info("Deleting file {} from: {}".format(name, dest))
+        script = """
+            $fname = "{dest}{name}"
+            Remove-Item -Path $fname
+        """.format(name=name, dest=dest)
+        self.run_script(script)
+        self.refresh_library()
+
+    def refresh_library(self):
+        """ Perform a generic refresh of the SCVMM library """
+        self.logger.info("Refreshing VMM library...")
+        script = """
+            Refresh-LibraryShare
+        """
         self.run_script(script)
 
     class PowerShellScriptError(Exception):
