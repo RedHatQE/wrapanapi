@@ -1148,7 +1148,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def get_storage_domain_connections(self, storage_domain):
         return self._get_storage_domain_service(storage_domain).storage_connections_service().list()
 
-    def change_storage_domain_state(self, state, storage_domain_name):
+    def change_storage_domain_state(self, state, storage_domain_name, timeout=300):
         dcs = self._data_centers_service.list()
         for dc in dcs:
             storage_domains = self.api.follow_link(dc.storage_domains)
@@ -1159,19 +1159,46 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                         asds.deactivate()
                     elif state == "active" and domain.status.value != "active":
                         asds.activate()
-                    wait_for(lambda: domain.status.value == state, delay=5, num_sec=240)
+                    wait_for(lambda: domain.status.value == state, delay=5, num_sec=timeout)
                     return True
         return False
 
-    def get_template_from_storage_domain(self, template_name, storage_domain_name):
+    def get_template_from_storage_domain(
+        self, template_name, storage_domain_name, unregistered=False
+    ):
+        """get a specific named template on a given storage domain
+
+        Args:
+            template_name (str): name of the template to get
+            storage_domain_name (str): name of the storage domain to get a template on
+            unregistered (bool): passed to ovirt TemplatesService.list()
+
+        Raises:
+            exceptions that ovirt returns, ItemNotFound if the storage_domain_name is bad
+        """
         sds = self._get_storage_domain_service(storage_domain_name)
-        for template in sds.templates_service().list(unregistered=False):
+        for template in sds.templates_service().list(unregistered=unregistered):
             if template.name == template_name:
                 return RHEVMTemplate(system=self, uuid=template.id)
         raise NotFoundError(
             'template {} in storage domain {}'
             .format(template_name, storage_domain_name)
         )
+
+    def list_templates_from_storage_domain(self, storage_domain_name, unregistered=False):
+        """list the templates on a specific given storage_domain
+
+        Args:
+            storage_domain_name (str): name of the storage domain to list templates on
+
+        Raises:
+            exceptions that ovirt returns, ItemNotFound if the storage_domain_name is bad
+        """
+        sds = self._get_storage_domain_service(storage_domain_name)
+        return [
+            RHEVMTemplate(system=self, uuid=template.id)
+            for template in sds.templates_service().list(unregistered=unregistered)
+        ]
 
     def import_template(self, edomain, sdomain, cluster, temp_template):
         export_sd_service = self._get_storage_domain_service(edomain)
