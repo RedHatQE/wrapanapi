@@ -630,5 +630,14 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         self.run_script(script)
         self.update_scvmm_library(dest)
 
+    def delete_vhd(self, name):
+        """ Deletes a vhd or vhdx file """
+        self.logger.info("Removing the vhd {} from the library".format(name))
+        script = """
+            $vhd = Get-SCVirtualHardDisk -Name "{}"
+            Remove-SCVirtualHardDisk -VirtualHardDisk $vhd
+        """.format(name)
+        self.run_script(script)
+
     class PowerShellScriptError(Exception):
         pass
