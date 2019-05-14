@@ -618,7 +618,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """.format(url=url, name=name, dest=dest)
         self.run_script(script)
         # refresh the library so it's available for SCVMM to use
-        self.refresh_library()
+        self.update_scvmm_library(dest)
 
     def delete_file(self, name, dest="L:\\Library\\VHDs\\"):
         """ Deletes a file from the SCVMM library """
@@ -628,15 +628,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             Remove-Item -Path $fname
         """.format(name=name, dest=dest)
         self.run_script(script)
-        self.refresh_library()
-
-    def refresh_library(self):
-        """ Perform a generic refresh of the SCVMM library """
-        self.logger.info("Refreshing VMM library...")
-        script = """
-            Refresh-LibraryShare
-        """
-        self.run_script(script)
+        self.update_scvmm_library(dest)
 
     class PowerShellScriptError(Exception):
         pass
