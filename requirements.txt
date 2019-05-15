@@ -32,7 +32,8 @@ six
 tzlocal
 vspk==5.3.2
 wait_for
-websocket_client
+#websocket_client
+websocket_client==0.56.0
 
 # suds jurko supports python3, suds is only used on python2
 suds-jurko; python_version > '3.0'

@@ -168,9 +168,10 @@ class Openshift(System):
         token = 'Bearer {token}'.format(token=self.token)
         config = kubeclientconfig.new_client_from_config()
         #config = ociclient.Configuration()
-        config.host = url
-        config.verify_ssl = self.verify_ssl
-        config.debug = self.debug
+        config.configuration.host = url
+        #config.configuration.verify_ssl = self.verify_ssl
+        config.configuration.verify_ssl = False
+        config.configuration.debug = self.debug
         config.configuration.api_key['authorization'] = token
         self.dyn_client = DynamicClient(config)
 
