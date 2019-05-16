@@ -618,7 +618,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """.format(url=url, name=name, dest=dest)
         self.run_script(script)
         # refresh the library so it's available for SCVMM to use
-        self.refresh_library()
+        self.update_scvmm_library(dest)
 
     def delete_file(self, name, dest="L:\\Library\\VHDs\\"):
         """ Deletes a file from the SCVMM library """
@@ -628,14 +628,15 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             Remove-Item -Path $fname
         """.format(name=name, dest=dest)
         self.run_script(script)
-        self.refresh_library()
+        self.update_scvmm_library(dest)
 
-    def refresh_library(self):
-        """ Perform a generic refresh of the SCVMM library """
-        self.logger.info("Refreshing VMM library...")
+    def delete_vhd(self, name):
+        """ Deletes a vhd or vhdx file """
+        self.logger.info("Removing the vhd {} from the library".format(name))
         script = """
-            Refresh-LibraryShare
-        """
+            $vhd = Get-SCVirtualHardDisk -Name "{}"
+            Remove-SCVirtualHardDisk -VirtualHardDisk $vhd
+        """.format(name)
         self.run_script(script)
 
     class PowerShellScriptError(Exception):
