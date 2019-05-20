@@ -31,7 +31,8 @@ def _regions(regionmodule, regionname):
 
 class _TagMixin(object):
     def set_tag(self, key, value):
-        self.system.ec2_connection.create_tags(Resources=[self.uuid], Tags={key: value})
+        self.system.ec2_connection.create_tags(Resources=[self.uuid],
+                                               Tags=[{"Key": key, "Value": value}])
 
     def get_tag_value(self, key):
         self.refresh()
@@ -42,7 +43,8 @@ class _TagMixin(object):
         return None
 
     def unset_tag(self, key, value):
-        self.system.ec2_connection.delete_tags(Resources=[self.uuid], Tags={key: value})
+        self.system.ec2_connection.delete_tags(Resources=[self.uuid],
+                                               Tags=[{"Key": key, "Value": value}])
 
 
 class EC2Instance(Instance, _TagMixin):
