@@ -32,6 +32,11 @@ class VmState(object):
     UNKNOWN = 'VmState.UNKNOWN'
     SHELVED = 'VmState.SHELVED'
     SHELVED_OFFLOADED = 'VmState.SHELVED_OFFLOADED'
+    # Openshift Pod States
+    PENDING = 'VmState.PENDING'
+    SUCCEEDED = 'VmState.SUCCEEDED'
+    FAILED = 'VmState.FAILED'
+    UNKNOWN = 'VmState.UNKNOWN'
 
     @classmethod
     def valid_states(cls):
