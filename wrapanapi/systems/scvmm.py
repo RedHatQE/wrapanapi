@@ -592,6 +592,10 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     def list_hosts(self, **kwargs):
         return self._get_names('SCVMHost')
 
+    def list_vhds(self, **kwargs):
+        """ List all VHD names."""
+        return self._get_names("SCVirtualHardDisk")
+
     def info(self):
         return "SCVMMSystem host={}".format(self.host)
 
