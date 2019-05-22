@@ -376,6 +376,20 @@ class OpenstackInstance(Instance):
     def get_hardware_configuration(self):
         return {'ram': self.flavor.ram, 'cpu': self.flavor.vcpus}
 
+    @property
+    def attached_volumes(self):
+        """Find attached volumes of Openstack Instance/Server
+
+        Returns:
+            List of volume ids
+
+        Example:
+            .. code-block:: python
+
+               mgmt.get_vm(name='instance_name').attached_volumes
+        """
+        return [v['id'] for v in self.raw._info['os-extended-volumes:volumes_attached']]
+
 
 class OpenstackImage(Template):
     def __init__(self, system, raw=None, **kwargs):
