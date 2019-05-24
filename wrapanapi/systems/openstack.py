@@ -21,6 +21,7 @@ from heatclient import client as heat_client
 from keystoneauth1.identity import Password
 from keystoneauth1.session import Session
 from keystoneclient import client as keystone_client
+from neutronclient.v2_0 import client as neutronclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
@@ -585,6 +586,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self._api = None
         self._gapi = None
         self._kapi = None
+        self._napi = None
         self._capi = None
         self._sapi = None
         self._tenant_api = None
@@ -641,6 +643,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if not self._kapi:
             self._kapi = keystone_client.Client(self.keystone_version, session=self.session)
         return self._kapi
+
+    @property
+    def napi(self):
+        if not self._napi:
+            self._napi = neutronclient.Client(session=self.session)
+        return self._napi
 
     @property
     def tenant_api(self):
@@ -837,6 +845,24 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         elif len(matches) > 1:
             raise MultipleInstancesError('match criteria: {}'.format(kwargs))
         return matches[0]
+
+    def get_ports(self, uuid):
+        """
+        Get list of ports from openstack server
+
+        Args:
+            uuid (str): openstack server ID
+
+        Returns:
+            List of server ports
+
+        Example:
+            .. code-block:: python
+
+               mgmt.get_ports(uuid='server_uuid')
+        """
+        return [port['device_id'] for port in self.napi.list_ports()['ports']
+                if port['device_id'] == uuid]
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
