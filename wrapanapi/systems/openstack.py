@@ -846,23 +846,15 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             raise MultipleInstancesError('match criteria: {}'.format(kwargs))
         return matches[0]
 
-    def get_ports(self, uuid):
+    @property
+    def get_ports(self):
         """
-        Get list of ports from openstack server
-
-        Args:
-            uuid (str): openstack server ID
+        Get list of ports objects from openstack server
 
         Returns:
-            List of server ports
-
-        Example:
-            .. code-block:: python
-
-               mgmt.get_ports(uuid='server_uuid')
+            List of server ports objects
         """
-        return [port['device_id'] for port in self.napi.list_ports()['ports']
-                if port['device_id'] == uuid]
+        return self.napi.list_ports()['ports']
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
