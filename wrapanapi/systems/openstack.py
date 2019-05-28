@@ -63,7 +63,41 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class OpenstackInstance(Instance):
+class _SharedMethodsMixin(object):
+    """
+    Mixin class that holds properties/methods both VM's and templates share.
+
+    This should be listed first in the child class inheritance to satisfy
+    the methods required by the Vm/Template abstract base class
+    """
+    @property
+    def _identifying_attrs(self):
+        return {'uuid': self._uuid}
+
+    @property
+    def name(self):
+        """
+        Returns name of entity
+        """
+        return self.raw.name
+
+    @property
+    def uuid(self):
+        """
+        Returns unique ID of entity
+        """
+        return self._uuid
+
+    @property
+    def creation_time(self):
+        # Example vm.creation_time: 2014-08-14T23:29:30Z
+        self.refresh()
+        creation_time = datetime.strptime(self.raw.created, '%Y-%m-%dT%H:%M:%SZ')
+        # create time is UTC, localize it, strip tzinfo
+        return creation_time.replace(tzinfo=pytz.UTC)
+
+
+class OpenstackInstance(_SharedMethodsMixin, Instance):
     state_map = {
         'PAUSED': VmState.PAUSED,
         'ACTIVE': VmState.RUNNING,
@@ -89,18 +123,6 @@ class OpenstackInstance(Instance):
             raise ValueError("missing required kwarg: 'uuid'")
         self._api = self.system.api
         self._flavor = None
-
-    @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
-    def name(self):
-        return self.raw.name
-
-    @property
-    def uuid(self):
-        return self._uuid
 
     def refresh(self):
         """
@@ -151,14 +173,6 @@ class OpenstackInstance(Instance):
     @property
     def type(self):
         return self.flavor.name
-
-    @property
-    def creation_time(self):
-        # Example vm.creation_time: 2014-08-14T23:29:30Z
-        self.refresh()
-        creation_time = datetime.strptime(self.raw.created, '%Y-%m-%dT%H:%M:%SZ')
-        # create time is UTC, localize it, strip tzinfo
-        return creation_time.replace(tzinfo=pytz.UTC)
 
     def rename(self, new_name):
         self.raw.update(new_name)
@@ -377,7 +391,7 @@ class OpenstackInstance(Instance):
         return {'ram': self.flavor.ram, 'cpu': self.flavor.vcpus}
 
 
-class OpenstackImage(Template):
+class OpenstackImage(_SharedMethodsMixin, Template):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an OpenstackImage
@@ -392,18 +406,6 @@ class OpenstackImage(Template):
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
         self._api = self.system.api
-
-    @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
-    def name(self):
-        return self.raw.name
-
-    @property
-    def uuid(self):
-        return self._uuid
 
     def refresh(self):
         try:
