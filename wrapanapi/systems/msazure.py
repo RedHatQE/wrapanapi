@@ -174,6 +174,18 @@ class AzureInstance(Instance):
         return public_ip.ip_address
 
     @property
+    def all_ips(self):
+        """ Wrapping self.ip to meet abstractproperty requirement
+
+        TODO: Actually fetch the various addresses on non-primary interfaces
+
+        non-public addresses are not necessary for testing at this time, so not implementing
+
+        Returns: (list) the public IPv4 address in a list
+        """
+        return [self.ip]
+
+    @property
     def type(self):
         return self.raw.hardware_profile.vm_size
 

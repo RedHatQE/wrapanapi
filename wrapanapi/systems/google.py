@@ -101,15 +101,29 @@ class GoogleCloudInstance(Instance):
         return self._api_state_to_vmstate(self.raw['status'])
 
     @property
-    def ip(self):
+    def ip_internal(self):
         self.refresh()
-        return self.raw.get('networkInterfaces')[0].get('networkIP')
+        try:
+            return self.raw.get('networkInterfaces')[0].get('networkIP')
+        except IndexError:
+            return None
 
     @property
-    def ip_external(self):
+    def ip(self):
         self.refresh()
-        access_configs = self.raw.get('networkInterfaces')[0].get('accessConfigs')[0]
-        return access_configs.get('natIP')
+        try:
+            access_configs = self.raw.get('networkInterfaces', [{}])[0].get('accessConfigs', [])[0]
+            return access_configs.get('natIP')
+        except IndexError:
+            return None
+
+    @property
+    def all_ips(self):
+        """ Wrapping self.ip and self.ip_internal to meet abstractproperty requirement
+
+        Returns: (list) the addresses assigned to the machine
+        """
+        return [self.ip, self.ip_internal]
 
     @property
     def type(self):

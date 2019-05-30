@@ -641,6 +641,13 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
             return None
 
     @property
+    def all_ips(self):
+        """vmware is limited, can't get more than one IP for a vm summary
+        wrapper for API consistency
+        """
+        return [self.ip]
+
+    @property
     def creation_time(self):
         """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
 

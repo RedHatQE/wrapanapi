@@ -61,7 +61,7 @@ class _SharedMethodsMixin(object):
     @property
     def creation_time(self):
         """
-        Returns creation time of VM/instance
+        Returns creation time of VM
         """
         self.refresh()
         return self.raw.creation_time.astimezone(pytz.UTC)
@@ -252,16 +252,22 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
     @property
     def ip(self):
         """
-        Returns IPv4 or global IPv6 address of the VM/instance
+        Returns IPv4 or global IPv6 address of the VM
+
+        If there are multiple IP's on the VM, just returns the first non-link-local
         """
-        link_local_prefix = 'fe80::'
+        potentials = []
         for ip in self.all_ips:
-            if link_local_prefix not in ip[:len(link_local_prefix)]:
-                return ip
-        return None
+            if not ip.startswith('fe80::'):
+                potentials.append(ip)
+        return potentials[0] if potentials else None
 
     @property
     def all_ips(self):
+        """ Return all of the IPs
+
+        Returns: (list) the addresses assigned to the machine
+        """
         ips = []
         rep_dev_service = self.api.reported_devices_service()
         for dev in rep_dev_service.list():
@@ -271,7 +277,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
 
     def start(self):
         """
-        Starts the VM/instance. Blocks until task completes.
+        Starts the VM. Blocks until task completes.
 
         Returns: True if vm action has been initiated properly
         """
@@ -287,7 +293,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
 
     def stop(self):
         """
-        Stops the VM/instance. Blocks until task completes.
+        Stops the VM. Blocks until task completes.
 
         Returns: True if vm action has been initiated properly
         """
@@ -303,7 +309,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
 
     def restart(self):
         """
-        Restarts the VM/instance. Blocks until task completes.
+        Restarts the VM. Blocks until task completes.
 
         Returns: True if vm action has been initiated properly
         """
@@ -312,7 +318,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
 
     def suspend(self):
         """
-        Suspends the VM/instance.  Blocks until task completes.
+        Suspends the VM.  Blocks until task completes.
 
         Returns: True if vm action has been initiated properly
         """

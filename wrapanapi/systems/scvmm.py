@@ -145,6 +145,11 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         return ip if ip else None
 
     @property
+    def all_ips(self):
+        """ wrap self.ip to meet abstractproperty """
+        return [self.ip]
+
+    @property
     def creation_time(self):
         self.refresh()
         creation_time = convert_powershell_date(self.raw['CreationTime'])
