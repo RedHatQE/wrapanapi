@@ -25,6 +25,7 @@ from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
 from novaclient.v2.floating_ips import FloatingIP
+from openstack.connection import Connection
 from requests.exceptions import Timeout
 from swiftclient import client as swiftclient
 from swiftclient.exceptions import ClientException as SwiftException
@@ -152,15 +153,13 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
 
     def _get_networks(self):
         self.refresh()
-        # TODO: Do we really need to access a private attr here?
-        return self.raw._info['addresses']
+        return self.raw.addresses
 
-    @property
-    def ip(self):
+    def get_ip_by_type(self, ip_type):
         networks = self._get_networks()
         for network_nics in networks.values():
             for nic in network_nics:
-                if nic['OS-EXT-IPS:type'] == 'floating':
+                if nic['OS-EXT-IPS:type'] == ip_type:
                     return str(nic['addr'])
 
     @property
@@ -171,6 +170,17 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         """
         # raw.networks is dict of network: [ip, ip] key:value pairs
         return [ip for nets in self.raw.networks.values() for ip in nets]
+
+    @property
+    def floating_ip(self):
+        return self.get_ip_by_type('floating')
+
+    @property
+    def ip(self):
+        floating_ip = self.floating_ip
+        if floating_ip:
+            return floating_ip
+        return self.get_ip_by_type('fixed')
 
     @property
     def flavor(self):
@@ -187,6 +197,21 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         self.raw.update(new_name)
         self.refresh()  # update raw
 
+    def auto_assign_floating_ip(self, timeout=120):
+        """Auto assign a floating IP to this VM instance.
+
+        Args:
+            timeout: A  timeout in seconds to wait for assigning the floating IP before giving up.
+
+        Returns:
+              The public Floating IP or timeout error.
+        """
+        if self.floating_ip is not None:
+            return self.floating_ip
+        ip_address = self.system.connection.add_auto_ip(self.raw, wait=True, timeout=timeout)
+        assert self.floating_ip == ip_address.ip, 'Current IP does not match reserved floating IP!'
+        return ip_address
+
     def assign_floating_ip(self, floating_ip_pool, safety_timer=5):
         """Assigns a floating IP to an instance.
 
@@ -201,9 +226,9 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         instance = self.raw
 
         # Make sure it doesn't already have a floating IP...
-        if self.ip is not None:
+        if self.floating_ip is not None:
             self.logger.info("Instance %s already has a floating IP", self.name)
-            return self.ip
+            return self.floating_ip
 
         # Why while? Well, this code can cause one peculiarity. Race condition can "steal" a FIP
         # so this will loop until it really get the address. A small timeout is added to ensure
@@ -247,7 +272,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             time.sleep(safety_timer)
 
         self.logger.info('Instance %s got a floating IP %s', self.name, ip.ip)
-        assert self.ip == ip.ip, 'Current IP does not match reserved floating IP!'
+        assert self.floating_ip == ip.ip, 'Current IP does not match reserved floating IP!'
         return ip.ip
 
     def unassign_floating_ip(self):
@@ -257,7 +282,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             None if no FIP was dissociated. Otherwise it will return the Floating IP object.
         """
         instance = self.raw
-        ip_addr = self.ip
+        ip_addr = self.floating_ip
         if ip_addr is None:
             return None
         floating_ips = self._api.floating_ips.findall(ip=ip_addr)
@@ -268,7 +293,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             'Detaching floating IP %s/%s from %s', floating_ip.id, floating_ip.ip, instance.name)
         instance.remove_floating_ip(floating_ip)
         wait_for(
-            lambda: self.ip is None, delay=1, timeout='1m')
+            lambda: self.floating_ip is None, delay=1, timeout='1m')
         return floating_ip
 
     def delete(self, delete_fip=False):
@@ -603,6 +628,11 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self.password = password
         self.auth_url = auth_url
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self.domain_name = kwargs.get('domain_name') if self.keystone_version == 3 else None
+        if self.keystone_version == 3 and self.domain_id is None and self.domain_name is None:
+            raise AttributeError("kwargs is missing domain_id or domain_name")
+        self._app_name = kwargs.get('app_name')
+        self._app_version = kwargs.get('app_version')
         self._session = None
         self._api = None
         self._gapi = None
@@ -631,11 +661,28 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
                                password=self.password, project_name=self.tenant)
             if self.keystone_version == 3:
-                auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_name=self.domain_id))
+                auth_kwargs.update(dict(
+                    user_domain_id=self.domain_id,
+                    project_domain_id=self.domain_id,
+                    user_domain_name=self.domain_name,
+                    project_domain_name=self.domain_name,
+                ))
             pass_auth = Password(**auth_kwargs)
-            self._session = Session(auth=pass_auth, verify=False)
+            self._session = Session(
+                auth=pass_auth,
+                verify=False,
+                app_name=self._app_name,
+                app_version=self._app_version
+            )
         return self._session
+
+    @property
+    def connection(self):
+        return Connection(
+            session=self.session,
+            app_name=self._app_name,
+            app_version=self._app_version,
+        )
 
     @property
     def api(self):
@@ -758,8 +805,27 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         tid = self._get_tenant(name=tenant_name)
         self.tenant_api.delete(tid)
 
-    def create_vm(self):
-        raise NotImplementedError('create_vm not implemented.')
+    def create_vm(self, wait_for_state=VmState.RUNNING, wait_for_state_timeout=360,
+                  wait_for_state_delay=15, assign_floating_ip=False, floating_ip_pool=None,
+                  assign_floating_ip_timeout=120, **kwargs):
+        vm = self.connection.create_server(**kwargs)
+        vm_instance = self.get_instance(vm.id)
+        if wait_for_state:
+            vm_instance.wait_for_state(
+                wait_for_state,
+                timeout='{}s'.format(wait_for_state_timeout),
+                delay=wait_for_state_delay
+            )
+        if assign_floating_ip:
+            # logger.info("Assigning floating ip ...")
+            if floating_ip_pool is None:
+                vm_instance.auto_assign_floating_ip(timeout=assign_floating_ip_timeout)
+            else:
+                vm_instance.assign_floating_ip(floating_ip_pool)
+            # logger.info("Assigned floating ip: '%s'", self._assigned_floating_ip)
+        # return a fresh vm instance
+        vm_instance.refresh()
+        return vm_instance
 
     def _generic_paginator(self, f):
         """A generic paginator for OpenStack services
@@ -878,6 +944,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             List of server ports objects
         """
         return self.napi.list_ports()['ports']
+
+    def get_instance(self, vm_name_or_id):
+        """Return the virtual machine instance by it's id or name"""
+        vm_munch = self.connection.get_server(vm_name_or_id)  # vm_munch type: Optional[munch.Munch]
+        if not vm_munch:
+            raise VMInstanceNotFound(vm_name_or_id)
+        return OpenstackInstance(self, raw=vm_munch)
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
