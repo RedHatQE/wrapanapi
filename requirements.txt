@@ -21,6 +21,7 @@ python-swiftclient
 python-glanceclient
 python-ironicclient
 python-keystoneclient
+python-neutronclient==6.12.0
 python-novaclient==7.1.2
 python-heatclient
 pyvcloud==19.1.2

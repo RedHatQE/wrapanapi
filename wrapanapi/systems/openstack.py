@@ -21,6 +21,7 @@ from heatclient import client as heat_client
 from keystoneauth1.identity import Password
 from keystoneauth1.session import Session
 from keystoneclient import client as keystone_client
+from neutronclient.v2_0 import client as neutronclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
@@ -376,6 +377,20 @@ class OpenstackInstance(Instance):
     def get_hardware_configuration(self):
         return {'ram': self.flavor.ram, 'cpu': self.flavor.vcpus}
 
+    @property
+    def attached_volumes(self):
+        """Find attached volumes of Openstack Instance/Server
+
+        Returns:
+            List of volume ids
+
+        Example:
+            .. code-block:: python
+
+               mgmt.get_vm(name='instance_name').attached_volumes
+        """
+        return [v['id'] for v in self.raw._info['os-extended-volumes:volumes_attached']]
+
 
 class OpenstackImage(Template):
     def __init__(self, system, raw=None, **kwargs):
@@ -571,6 +586,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self._api = None
         self._gapi = None
         self._kapi = None
+        self._napi = None
         self._capi = None
         self._sapi = None
         self._tenant_api = None
@@ -627,6 +643,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if not self._kapi:
             self._kapi = keystone_client.Client(self.keystone_version, session=self.session)
         return self._kapi
+
+    @property
+    def napi(self):
+        if not self._napi:
+            self._napi = neutronclient.Client(session=self.session)
+        return self._napi
 
     @property
     def tenant_api(self):
@@ -823,6 +845,16 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         elif len(matches) > 1:
             raise MultipleInstancesError('match criteria: {}'.format(kwargs))
         return matches[0]
+
+    @property
+    def get_ports(self):
+        """
+        Get list of ports objects from openstack server
+
+        Returns:
+            List of server ports objects
+        """
+        return self.napi.list_ports()['ports']
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
