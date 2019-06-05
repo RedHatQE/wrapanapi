@@ -529,24 +529,6 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             raise ValueError("missing required kwarg: 'uuid'")
         self.api = system.api.system_service().templates_service().template_service(self._uuid)
 
-    @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
-    def name(self):
-        """
-        Returns name of template
-        """
-        return self.raw.name
-
-    @property
-    def uuid(self):
-        """
-        Returns unique ID of template
-        """
-        return self._uuid
-
     def delete(self, timeout=120):
         """
         Removes the entity on the provider
