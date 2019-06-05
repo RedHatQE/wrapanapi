@@ -197,29 +197,14 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         self.raw.update(new_name)
         self.refresh()  # update raw
 
-    def auto_assign_floating_ip(self, timeout=120):
-        """Auto assign a floating IP to this VM instance.
-
-        Args:
-            timeout: A  timeout in seconds to wait for assigning the floating IP before giving up.
-
-        Returns:
-              The public Floating IP or timeout error.
-        """
-        if self.floating_ip is not None:
-            return self.floating_ip
-        ip_address = self.system.connection.add_auto_ip(self.raw, wait=True, timeout=timeout)
-        assert self.floating_ip == ip_address.ip, 'Current IP does not match reserved floating IP!'
-        return ip_address
-
-    def assign_floating_ip(self, floating_ip_pool, safety_timer=5):
+    def assign_floating_ip(self, floating_ip_pool=None, safety_timer=5, timeout=120):
         """Assigns a floating IP to an instance.
 
         Args:
-            floating_ip_pool: Name of the floating IP pool to take from.
+            floating_ip_pool (str): Name of the floating IP pool to take from.
             safety_timer: A timeout after assigning the FIP that is used to detect whether another
                 external influence did not steal our FIP. Default is 5.
-
+            timeout: A timeout in seconds to wait for assigning the floating IP before giving up.
         Returns:
             The public FIP. Raises an exception in case of error.
         """
@@ -229,6 +214,12 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         if self.floating_ip is not None:
             self.logger.info("Instance %s already has a floating IP", self.name)
             return self.floating_ip
+
+        if floating_ip_pool is None:
+            # auto assign floating ip
+            ip = self.system.connection.add_auto_ip(self.raw, wait=True, timeout=timeout)
+            assert self.floating_ip == ip, 'Current IP does not match reserved floating IP!'
+            return ip
 
         # Why while? Well, this code can cause one peculiarity. Race condition can "steal" a FIP
         # so this will loop until it really get the address. A small timeout is added to ensure
@@ -805,27 +796,35 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         tid = self._get_tenant(name=tenant_name)
         self.tenant_api.delete(tid)
 
-    def create_vm(self, wait_for_state=VmState.RUNNING, wait_for_state_timeout=360,
-                  wait_for_state_delay=15, assign_floating_ip=False, floating_ip_pool=None,
-                  assign_floating_ip_timeout=120, **kwargs):
-        vm = self.connection.create_server(**kwargs)
-        vm_instance = self.get_instance(vm.id)
-        if wait_for_state:
-            vm_instance.wait_for_state(
-                wait_for_state,
-                timeout='{}s'.format(wait_for_state_timeout),
-                delay=wait_for_state_delay
-            )
+    def create_vm(self, name, image_name=None, image_id=None, assign_floating_ip=False,
+                  floating_ip_pool=None, assign_floating_ip_timeout=120, **kwargs):
+        """Create a Openstack instance
+
+        Args:
+            name (str): The name of the VM instance to create.
+            image_name (str): From witch image name to deploy the new VM instance.
+            image_id (str): From witch image id to deploy the new VM instance.
+            assign_floating_ip (bool): Whether to assign floating ip.
+            floating_ip_pool (str): the floating ip pool, otherwise auto floating ip be used.
+            assign_floating_ip_timeout (int): The timeout for assigning floating ip.
+            kwargs : the kwargs to pass to image deploy.
+
+        Returns:
+            Openstack VM instance created
+        """
+        if all(kwarg is None for kwarg in (image_name, image_id)):
+            raise ValueError("Please specify image_name or image_id")
+
+        image = self.get_template(name=image_name, id=image_id)
+        instance = image.deploy(name, **kwargs)
         if assign_floating_ip:
-            # logger.info("Assigning floating ip ...")
-            if floating_ip_pool is None:
-                vm_instance.auto_assign_floating_ip(timeout=assign_floating_ip_timeout)
-            else:
-                vm_instance.assign_floating_ip(floating_ip_pool)
-            # logger.info("Assigned floating ip: '%s'", self._assigned_floating_ip)
+            instance.assign_floating_ip(
+                floating_ip_pool=floating_ip_pool,
+                timeout=assign_floating_ip_timeout,
+            )
         # return a fresh vm instance
-        vm_instance.refresh()
-        return vm_instance
+        instance.refresh()
+        return instance
 
     def _generic_paginator(self, f):
         """A generic paginator for OpenStack services
@@ -860,7 +859,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return lists
 
     def list_vms(self, filter_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': True})
+        call = partial(self.api.servers.list, True, {'all_tenants': filter_tenants})
         instances = self._generic_paginator(call)
         if filter_tenants:
             # Filter instances based on their tenant ID
@@ -870,7 +869,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             instances = [i for i in instances if i.tenant_id in ids]
         return [OpenstackInstance(system=self, uuid=i.id, raw=i) for i in instances]
 
-    def find_vms(self, name=None, id=None, ip=None):
+    def find_vms(self, name=None, id=None, ip=None, filter_tenants=True):
         """
         Find VM based on name OR IP OR ID
 
@@ -885,14 +884,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             name (str)
             id (str)
             ip (str)
-
+            filter_tenants (bool)
         Returns:
             List of OpenstackInstance objects
         """
         if not any((name, ip, id)):
             raise ValueError("Any of these parameters must be specified: name, ip, or id")
         matches = []
-        instances = self.list_vms()
+        instances = self.list_vms(filter_tenants=filter_tenants)
         for instance in instances:
             # Use 'instance.raw' below so we don't refresh the properties, since we
             # *just* pulled down this list of VMs and stored the raw data in list_vms()
@@ -906,7 +905,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 matches.append(instance)
         return matches
 
-    def get_vm(self, name=None, id=None, ip=None):
+    def get_vm(self, name=None, id=None, ip=None, filter_tenants=True):
         """
         Get a VM based on name, or ID, or IP
 
@@ -916,6 +915,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             name (str)
             id (str)
             ip (str)
+            filter_tenants (bool)
 
         Returns:
             single OpenstackInstance object
@@ -925,7 +925,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             MultipleInstancesError -- more than 1 vm found
         """
         # Store the kwargs used for the exception msg's
-        kwargs = {'name': name, 'id': id, 'ip': ip}
+        kwargs = {'name': name, 'id': id, 'ip': ip, 'filter_tenants': filter_tenants}
         kwargs = {key: val for key, val in kwargs.items() if val is not None}
 
         matches = self.find_vms(**kwargs)
@@ -944,13 +944,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             List of server ports objects
         """
         return self.napi.list_ports()['ports']
-
-    def get_instance(self, vm_name_or_id):
-        """Return the virtual machine instance by it's id or name"""
-        vm_munch = self.connection.get_server(vm_name_or_id)  # vm_munch type: Optional[munch.Munch]
-        if not vm_munch:
-            raise VMInstanceNotFound(vm_name_or_id)
-        return OpenstackInstance(self, raw=vm_munch)
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
