@@ -156,9 +156,17 @@ class Vm(with_metaclass(ABCMeta, Entity)):
     @abstractproperty
     def ip(self):
         """
-        Returns IP address of the VM/instance
+        Returns: (string) externally reachable IP address of the VM/instance (when possible)
 
         Should refresh if necessary to get most up-to-date info
+        """
+
+    @abstractproperty
+    def all_ips(self):
+        """
+        Returns: (list) All ip addresses available on the VM
+
+        For consistency on platforms that return link-local and restricted network addresses
         """
 
     @abstractproperty

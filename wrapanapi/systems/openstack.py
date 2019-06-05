@@ -165,6 +165,15 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
                     return str(nic['addr'])
 
     @property
+    def all_ips(self):
+        """ Get all the IPs on the machine
+
+        Returns: (list) the addresses assigned to the machine
+        """
+        # raw.networks is dict of network: [ip, ip] key:value pairs
+        return [ip for nets in self.raw.networks.values() for ip in nets]
+
+    @property
     def flavor(self):
         if not self._flavor:
             flavor_id = self.raw.flavor['id']

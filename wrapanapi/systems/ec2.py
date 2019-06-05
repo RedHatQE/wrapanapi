@@ -102,6 +102,14 @@ class EC2Instance(Instance, _TagMixin):
         return self.raw.public_ip_address
 
     @property
+    def all_ips(self):
+        """ Wrapping self.ip to meet abstractproperty requirement
+
+        Returns: (list) the addresses assigned to the machine
+        """
+        return [self.ip]
+
+    @property
     def type(self):
         return self.raw.instance_type
 
