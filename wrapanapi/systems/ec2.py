@@ -13,12 +13,12 @@ from boto3 import (
     client as boto3client
 )
 
-from wrapanapi.entities import (Instance, Stack, StackMixin, Template,
-                                TemplateMixin, VmMixin, VmState)
+from wrapanapi.entities import (Instance, Network, NetworkMixin, Stack, StackMixin,
+                                Template, TemplateMixin, VmMixin, VmState)
 from wrapanapi.exceptions import (ActionTimedOutError, ImageNotFoundError,
                                   MultipleImagesError, MultipleInstancesError,
-                                  MultipleItemsError, NotFoundError,
-                                  VMInstanceNotFound)
+                                  MultipleItemsError, NetworkNotFoundError,
+                                  NotFoundError, VMInstanceNotFound)
 from wrapanapi.systems.base import System
 
 
@@ -353,7 +353,66 @@ class EC2Image(Template, _TagMixin):
         return self.system.create_vm(image_id=self.uuid, *args, **kwargs)
 
 
-class EC2System(System, VmMixin, TemplateMixin, StackMixin):
+class EC2Vpc(Network, _TagMixin):
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Constructor for an EC2Network tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the boto.ec2.network.Network object if already obtained, or None
+            uuid: unique ID of the network
+        """
+        self._uuid = raw.id if raw else kwargs.get('uuid')
+        if not self._uuid:
+            raise ValueError("missing required kwarg: 'uuid'")
+
+        super(EC2Vpc, self).__init__(system, raw, **kwargs)
+
+        self._api = self.system.ec2_connection
+
+    @property
+    def _identifying_attrs(self):
+        return {'uuid': self._uuid}
+
+    @property
+    def name(self):
+        tag_value = self.get_tag_value('Name')
+        return tag_value if tag_value else self.raw.id
+
+    @property
+    def uuid(self):
+        return self._uuid
+
+    def get_details(self):
+        return self.raw
+
+    def refresh(self):
+        vpc = self.system.get_network(self.raw.id).raw
+        if not vpc:
+            raise NetworkNotFoundError(self._uuid)
+        self.raw = vpc
+        return self.raw
+
+    def delete(self):
+        """
+        Delete Network
+        """
+        self.logger.info("Deleting EC2Vpc '%s', id: '%s'", self.name, self.uuid)
+        try:
+            self.raw.delete()
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def cleanup(self):
+        """
+        Cleanup Network
+        """
+        return self.delete()
+
+
+class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
     """EC2 Management System, powered by boto
 
     Wraps the EC2 API
@@ -1193,3 +1252,45 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin):
                     'registry': first_registry['proxyEndpoint']}
         except (IndexError, KeyError):
             raise NotFoundError("couldn't get registry details. please check environment setup")
+
+    def create_network(self, cidr_block='10.0.0.0/16'):
+        try:
+            response = self.ec2_connection.create_vpc(CidrBlock=cidr_block)
+            network_id = response.get('Vpc').get('VpcId')
+            return EC2Vpc(system=self, uuid=network_id, raw=self.ec2_resource.Vpc(network_id))
+        except Exception:
+            return False
+
+    def get_network(self, name_or_id):
+        networks = self.find_networks(name_or_id)
+        if not networks:
+            raise NotFoundError("Network with name {} not found".format(name_or_id))
+        elif len(networks) > 1:
+            raise MultipleItemsError("Multiple networks with name {} found".format(name_or_id))
+        return networks[0]
+
+    def list_networks(self):
+        """
+        Returns a list of Network objects
+        """
+        network_list = [
+            EC2Vpc(system=self, uuid=vpc['VpcId'], raw=self.ec2_resource.Vpc(vpc['VpcId']))
+            for vpc in self.ec2_connection.describe_vpcs().get('Vpcs')
+        ]
+        return network_list
+
+    def find_networks(self, name_or_id):
+        """
+        Return list of all networks with given name or id
+        Args:
+            name_or_id: name or id to search for if starts with vpc- then it's evaluated as id
+        Returns:
+            List of EC2Vpc objects
+        """
+        if name_or_id.startswith('vpc-'):
+            vpcs = self.ec2_connection.describe_vpcs(VpcIds=[name_or_id])
+        else:
+            vpcs = self.ec2_connection.describe_vpcs(Filters=[{'Name': 'tag:Name',
+                                                              'Values': [name_or_id]}])
+        return [EC2Vpc(system=self, raw=self.ec2_resource.Vpc(vpc['VpcId']))
+                for vpc in vpcs.get('Vpcs')]
