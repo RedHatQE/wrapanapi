@@ -431,8 +431,8 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                 if self.system.api.follow_link(disk_attach.disk).id == disk_id].pop()
         return getattr(disk, 'status', None) == types.DiskStatus.OK
 
-    def add_disk(self, storage_domain=None, size=None, interface='VIRTIO', format=None,
-                 active=True):
+    def add_disk(self, storage_domain=None, size=None, interface='virtio', format='cow',
+                 active=True, sparse=True, name=None):
         """
         Add disk to VM
 
@@ -442,6 +442,8 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             interface: string disk interface type
             format: string disk format type
             active: boolean whether the disk is active
+            sparse: boolean whether the disk is preallocated (False) or thin-provisioned (True)
+            name: string name of the disk
         Returns: None
         Notes:
             Disk format and interface type definitions, and their valid values,
@@ -451,10 +453,12 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         """
         disk_attachments_service = self.api.disk_attachments_service()
         disk_attach = types.DiskAttachment(
-            disk=types.Disk(format=types.DiskFormat(format),
+            disk=types.Disk(name=name,
+                            format=types.DiskFormat(format.lower()),
                             provisioned_size=size,
-                            storage_domains=[types.StorageDomain(name=storage_domain)]),
-            interface=getattr(types.DiskInterface, interface),
+                            storage_domains=[types.StorageDomain(name=storage_domain)],
+                            sparse=bool(sparse)),
+            interface=types.DiskInterface(interface.lower()),
             active=active
         )
         disk_attachment = disk_attachments_service.add(disk_attach)
