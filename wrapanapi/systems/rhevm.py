@@ -362,6 +362,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         wrapanapi.systems.rhevm.RHEVMTemplate object
         """
         temp_template_name = template_name or "mrk_tmpl_{}".format(fauxfactory.gen_alphanumeric(8))
+        template = None
         try:
             # Check if this template already exists and ensure it is in an OK state...
             create_new_template = True
@@ -389,11 +390,11 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                 self.delete()
             # if template_name was passed, it was used in creating the template, no rename needed
             # rename back to the VM name only if no template_name passed and delete
-            if not template_name and delete:
+            if not template_name and delete and template is not None:
                 template.rename(self.name)
         except TimedOutError:
             self.logger.error("Hit TimedOutError marking VM as template")
-            if delete_on_error:
+            if delete_on_error and template is not None:
                 try:
                     template.delete()
                 except Exception:
