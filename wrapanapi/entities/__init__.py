@@ -7,6 +7,7 @@ from .template import Template, TemplateMixin
 from .vm import Vm, VmState, VmMixin
 from .instance import Instance
 from .physical_container import PhysicalContainer
+from .project import Project, ProjectMixin
 from .stack import Stack, StackMixin
 from .server import Server, ServerState
 

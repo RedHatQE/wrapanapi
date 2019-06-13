@@ -11,6 +11,7 @@ from random import choice
 
 import inflection
 import six
+from cached_property import cached_property
 from kubernetes import client as kubeclient
 from kubernetes import config as kubeclientconfig
 from openshift.dynamic import DynamicClient
@@ -19,7 +20,8 @@ from miq_version import TemplateName, Version
 from openshift import client as ociclient
 from wait_for import TimedOutError, wait_for
 
-from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin, VmState)
+from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin, VmState, ProjectMixin,
+                                Project)
 from wrapanapi.systems.base import System
 
 
@@ -88,6 +90,68 @@ def unauthenticated_error_handler(method):
     return wrap
 
 
+class Project(Project):
+
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Construct a VMWareVirtualMachine instance
+
+        Args:
+            system: instance of VMWareSystem
+            raw: pyVmomi.vim.VirtualMachine object
+            name: name of VM
+        """
+        super(Project, self).__init__(system, raw, **kwargs)
+        self._name = raw.metadata.name if raw else kwargs.get('name')
+        if not self._name:
+            raise ValueError("missing required kwarg 'name'")
+        self.v1_project = self.system.ocp_client.resources.get(
+            api_version='project.openshift.io/v1', kind='Project')
+
+    @property
+    def get_quota(self):
+        return self.system.ocp_client.resources.get(api_version='v1', kind='ResourceQuota').get(
+            namespace=self.name)
+
+    @property
+    def _identifying_attrs(self):
+        return {'name': self._name}
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def uuid(self):
+        try:
+            return str(self.raw.metadata.uid)
+        except AttributeError:
+            return self.name
+
+    @property
+    def ip(self):
+        raise NotImplementedError
+
+    def start(self):
+        raise NotImplementedError
+
+    def stop(self):
+        raise NotImplementedError
+
+    def restart(self):
+        raise NotImplementedError
+
+    def delete(self):
+        self.v1_project.delete(name=self.name)
+
+    def refresh(self):
+        self.raw = self.system.get_project(name=self.name).raw
+        return self.raw
+
+    def cleanup(self):
+        return self.delete()
+
+
 class Pod(Vm):
     state_map = {
         'pending': VmState.PENDING,
@@ -111,6 +175,7 @@ class Pod(Vm):
         self._namespace = raw.metadata.namespace if raw else kwargs.get('namespace')
         if not self._name:
             raise ValueError("missing required kwarg 'name'")
+        self.v1_pod = self.system.ocp_client.resources.get(api_version='v1', kind='Pod')
 
     @property
     def _identifying_attrs(self):
@@ -230,16 +295,14 @@ class Pod(Vm):
         raise NotImplementedError
 
     def delete(self):
-        self.ocp_client.resources.get(api_version='v1', kind='Pod').delete(name=self.name,
-                                                                           namespace=self.namespace)
+        self.v1_pod.delete(name=self.name, namespace=self.namespace)
+
     def refresh(self):
-        self.raw = self.system.get_pod_by_name(name=self.name, namespace=self.namespace).raw
+        self.raw = self.system.get_pod(name=self.name, namespace=self.namespace).raw
         return self.raw
 
     def cleanup(self):
         return self.delete()
-
-
 
     @property
     def creation_time(self):
@@ -254,7 +317,7 @@ class Pod(Vm):
 
 
 @reconnect(unauthenticated_error_handler)
-class Openshift(System, VmMixin):
+class Openshift(System, VmMixin, ProjectMixin):
 
     _stats_available = {
         'num_container': lambda self: len(self.list_container()),
@@ -323,6 +386,8 @@ class Openshift(System, VmMixin):
         self.verify_ssl = verify_ssl
         self.ssl_ca_cert = kwargs.get('ssl_ca_cert', '')
 
+        self.ociclient = ociclient
+
         self.k8s_client = self._k8s_client_connect()
 
         self.ocp_client = DynamicClient(self.k8s_client)
@@ -373,6 +438,19 @@ class Openshift(System, VmMixin):
                                                port=self.port)
         return "rhopenshift {}".format(url)
 
+    @cached_property
+    def v1_project(self):
+        return self.ocp_client.resources.get(api_version='project.openshift.io/v1', kind='Project')
+
+    @cached_property
+    def v1_pod(self):
+        return self.ocp_client.resources.get(api_version='v1', kind='Pod')
+
+    @cached_property
+    def v1_route(self):
+        return self.ocp_client.resources.get(api_version='route.openshift.io/v1', kind='Route')
+
+
     @property
     def can_suspend(self):
         return True
@@ -381,20 +459,15 @@ class Openshift(System, VmMixin):
     def can_pause(self):
         return False
 
-    def get_ocp_obj_list(self, resource_type, namespace):
-
-        return self.ocp_client.resources.get(api_version='v1', kind=resource_type).get(
-            namespace=namespace)
-
-    def get_ocp_obj(self, resource_type, name, namespace):
+    def get_ocp_obj(self, resource_type, name, namespace=None):
         ocp_obj = None
-        for item in self.get_ocp_obj_list(resource_type=resource_type, namespace=namespace).items:
+        for item in getattr(self, resource_type).get(namespace=namespace).items:
             if item.metadata.name == name:
                 ocp_obj = item
                 break
         return ocp_obj
 
-    def get_pod_by_name(self, name, namespace=None):
+    def get_pod(self, name, namespace=None):
         """
         Get a VM based on name
 
@@ -414,7 +487,7 @@ class Openshift(System, VmMixin):
 
         return Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
 
-    get_vm = get_pod_by_name
+    get_vm = get_pod
 
     def create_vm(self, name, **kwargs):
         raise NotImplementedError('This function has not yet been implemented.')
@@ -430,49 +503,74 @@ class Openshift(System, VmMixin):
          Returns:
              list of wrapanapi.entities.Vm
         """
-        return self.get_ocp_obj_list(resource_type='Pod', namespace=namespace)
+        return [
+            Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
+            for pod in self.v1_pod.get(namespace=namespace).items]
 
     list_vms = list_pods
 
+    def create_project(self, name, description=None, **kwargs):
+
+        proj = self.ociclient.V1Project()
+        proj.metadata = {'name': name, 'annotations': {}}
+        if description:
+            proj.metadata['annotations'] = {'openshift.io/description': description}
+
+        self.logger.info("creating new project with name %s", name)
+
+        project = self.v1_project.create(body=proj)
+
+        return Project(system=self, name=project.metadata.name, raw=project)
+
+    def find_projects(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def get_project(self, name):
+        project = self.get_ocp_obj(resource_type='v1_project', name=name)
+
+        return Project(system=self, name=project.metadata.name, raw=project)
+
     def list_project(self, namespace=None):
 
-        return self.get_ocp_obj_list(resource_type='Project', namespace=namespace)
+        return [
+            Project(system=self, name=project.metadata.name, raw=project)
+            for project in self.v1_project.get(namespace=namespace).items]
 
     def list_routes(self, namespace=None):
 
-        return self.get_ocp_obj_list(resource_type='Route', namespace=namespace)
+        return self.v1_route.get(namespace=namespace)
 
-    def list_image_streams(self, namespace=None):
-
-        return self.get_ocp_obj_list(resource_type='ImageStreamList', namespace=namespace)
-
-    def list_image_stream_imagess(self, namespace=None):
-
-        return self.get_ocp_obj_list(resource_type='ImageStreamImageList', namespace=namespace)
-
-    def list_templates(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='Template', namespace=namespace)
-
-    def list_deployment_config(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='DeploymentConfig', namespace=namespace)
-
-    def list_services(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='Service', namespace=namespace)
-
-    def list_replication_controller(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='ReplicationController', namespace=namespace)
-
-    def list_node(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='Node', namespace=namespace)
-
-    def list_persistent_volume(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='PersistentVolume', namespace=namespace)
-
-    def list_container(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='', namespace=namespace)
-
-    def list_image_registry(self, namespace=None):
-        return self.get_ocp_obj_list(resource_type='', namespace=namespace)
+    # def list_image_streams(self, namespace=None):
+    #
+    #     return self.get_ocp_obj_list(resource_type='ImageStreamList', namespace=namespace)
+    #
+    # def list_image_stream_imagess(self, namespace=None):
+    #
+    #     return self.get_ocp_obj_list(resource_type='ImageStreamImageList', namespace=namespace)
+    #
+    # def list_templates(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='Template', namespace=namespace)
+    #
+    # def list_deployment_config(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='DeploymentConfig', namespace=namespace)
+    #
+    # def list_services(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='Service', namespace=namespace)
+    #
+    # def list_replication_controller(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='ReplicationController', namespace=namespace)
+    #
+    # def list_node(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='Node', namespace=namespace)
+    #
+    # def list_persistent_volume(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='PersistentVolume', namespace=namespace)
+    #
+    # def list_container(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='', namespace=namespace)
+    #
+    # def list_image_registry(self, namespace=None):
+    #     return self.get_ocp_obj_list(resource_type='', namespace=namespace)
 
     def find_vms(self, *args, **kwargs):
         raise NotImplementedError
