@@ -201,6 +201,12 @@ class EC2Instance(Instance, _TagMixin):
             self.logger.error("Starting instance '%s' failed or timed out", self.uuid)
         return stopped and started
 
+    def change_type(self, instance_type):
+        try:
+            self.raw.modify_attribute(InstanceType={'Value': instance_type})
+            return True
+        except Exception:
+            return False
 
 class StackStates(object):
     ACTIVE = ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
