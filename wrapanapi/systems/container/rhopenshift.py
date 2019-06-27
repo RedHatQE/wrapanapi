@@ -179,11 +179,13 @@ class Openshift(System):
         self.security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
         self.batch_api = self.kclient.BatchV1Api(api_client=self.kapi_client)  # for job api
 
+    # TODO DONE
     def info(self):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
                                                port=self.port)
         return "rhopenshift {}".format(url)
 
+    # TODO DONE
     def list_route(self, namespace=None):
         """Returns list of routes"""
         if namespace:
@@ -192,6 +194,7 @@ class Openshift(System):
             routes = self.o_api.list_route_for_all_namespaces().items
         return routes
 
+    # TODO DONE
     def list_image_streams(self, namespace=None):
         """Returns list of image streams"""
         if namespace:
@@ -200,10 +203,12 @@ class Openshift(System):
             image_streams = self.o_api.list_image_stream_for_all_namespaces().items
         return image_streams
 
+    # TODO DONE
     def list_project(self):
         """Returns list of projects"""
         return self.o_api.list_project().items
 
+    # TODO DONE
     def list_template(self, namespace=None):
         """Returns list of templates"""
         if namespace:
@@ -214,11 +219,13 @@ class Openshift(System):
     # fixme: get rid of this mapping
     list_templates = list_template
 
+    # TODO DONE
     def list_image_stream_images(self):
         """Returns list of images (Docker registry only)"""
         return [item for item in self.o_api.list_image().items
                 if item.docker_image_reference is not None]
 
+    # TODO DONE
     def list_deployment_config(self, namespace=None):
         """Returns list of deployment configs"""
         if namespace:
@@ -227,6 +234,7 @@ class Openshift(System):
             dc = self.o_api.list_deployment_config_for_all_namespaces().items
         return dc
 
+    # TODO DONE
     def list_service(self, namespace=None):
         """Returns list of services."""
         if namespace:
@@ -235,6 +243,7 @@ class Openshift(System):
             svc = self.k_api.list_service_for_all_namespaces().items
         return svc
 
+    # TODO DONE
     def list_replication_controller(self, namespace=None):
         """Returns list of replication controllers"""
         if namespace:
@@ -243,11 +252,13 @@ class Openshift(System):
             rc = self.k_api.list_replication_controller_for_all_namespaces().items
         return rc
 
+    # TODO DONE
     def list_node(self):
         """Returns list of nodes"""
         nodes = self.k_api.list_node().items
         return nodes
 
+    # TODO DONE
     def cluster_info(self):
         """Returns information about the cluster - number of CPUs and memory in GB"""
         aggregate_cpu, aggregate_mem = 0, 0
@@ -258,11 +269,13 @@ class Openshift(System):
 
         return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
 
+    # TODO DONE
     def list_persistent_volume(self):
         """Returns list of persistent volumes"""
         pv = self.k_api.list_persistent_volume().items
         return pv
 
+    # TODO DONE
     def list_pods(self, namespace=None):
         """Returns list of container groups (pods).
         If project_name is passed, only the pods under the selected project will be returned"""
@@ -272,6 +285,7 @@ class Openshift(System):
             pods = self.k_api.list_pod_for_all_namespaces().items
         return pods
 
+    # TODO DONE
     def list_container(self, namespace=None):
         """Returns list of containers (derived from pods)
         If project_name is passed, only the containers under the selected project will be returned
@@ -279,6 +293,7 @@ class Openshift(System):
         pods = self.list_pods(namespace=namespace)
         return [pod.spec.containers for pod in pods]
 
+    # TODO DONE
     def list_image_id(self, namespace=None):
         """Returns list of unique image ids (derived from pods)"""
         pods = self.list_pods(namespace=namespace)
@@ -288,6 +303,7 @@ class Openshift(System):
                 statuses.append(status)
         return sorted(set([status.image_id for status in statuses]))
 
+    # TODO DONE
     def list_image_registry(self, namespace=None):
         """Returns list of image registries (derived from pods)"""
         pods = self.list_pods(namespace=namespace)
@@ -298,6 +314,7 @@ class Openshift(System):
         # returns only the image registry name, without the port number in case of local registry
         return sorted(set([status.image.split('/')[0].split(':')[0] for status in statuses]))
 
+    # TODO DONE
     def expose_db_ip(self, namespace):
         """Creates special service in appliance project (namespace) which makes internal appliance
            db be available outside.
@@ -313,6 +330,7 @@ class Openshift(System):
 
         return self.get_ip_address(namespace)
 
+    # TODO DONE
     def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
         """Deploy a VM from a template
 
@@ -453,6 +471,7 @@ class Openshift(System):
             # todo: return and print all failed pod details
             raise
 
+    # TODO DONE
     def create_template_entities(self, namespace, entities):
         """Creates entities from openshift template.
 
@@ -478,6 +497,7 @@ class Openshift(System):
             else:
                 self.logger.error("some entity %s isn't present in entity creation list", entity)
 
+    # TODO DONE
     def start_vm(self, vm_name):
         """Starts a vm.
 
@@ -492,6 +512,7 @@ class Openshift(System):
         else:
             raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
 
+    # TODO DONE
     def stop_vm(self, vm_name):
         """Stops a vm.
 
@@ -506,6 +527,7 @@ class Openshift(System):
         else:
             raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
 
+    # TODO DONE
     def delete_vm(self, vm_name):
         """Deletes a vm.
 
@@ -517,6 +539,7 @@ class Openshift(System):
         self.delete_project(name=vm_name)
         return True
 
+    # TODO DONE
     def does_vm_exist(self, vm_name):
         """Does VM exist?
 
@@ -526,6 +549,7 @@ class Openshift(System):
         """
         return self.does_project_exist(vm_name)
 
+    # TODO DONE
     @staticmethod
     def _update_template_parameters(template, **params):
         """Updates openshift template parameters.
@@ -553,6 +577,7 @@ class Openshift(System):
                         template.parameters = new_parameters
         return template
 
+    # TODO DONE
     def process_template(self, name, namespace, parameters=None):
         """Implements template processing mechanism similar to `oc process`.
 
@@ -569,6 +594,7 @@ class Openshift(System):
 
         return self.process_raw_template(body=raw_data, namespace=namespace, parameters=parameters)
 
+    # TODO DONE
     def process_raw_template(self, body, namespace, parameters=None):
         """Implements template processing mechanism similar to `oc process`.
         It does two functions
@@ -597,6 +623,7 @@ class Openshift(System):
         processed_template = self.ociclient.V1Template(**updated_data)
         return processed_template.objects
 
+    # TODO DONE
     def rename_structure(self, struct):
         """Fixes inconsistency in input/output data of openshift python client methods
 
@@ -626,6 +653,7 @@ class Openshift(System):
         else:
             return struct
 
+    # TODO DONE
     def create_config_map(self, namespace, **kwargs):
         """Creates ConfigMap entity using REST API.
 
@@ -641,6 +669,7 @@ class Openshift(System):
         self.wait_config_map_exist(namespace=namespace, name=conf_map_name)
         return output
 
+    # TODO DONE
     def replace_config_map(self, namespace, **kwargs):
         """Replace ConfigMap entity using REST API.
 
@@ -657,6 +686,7 @@ class Openshift(System):
                                                           body=conf_map)
         return output
 
+    # TODO DONE
     def create_stateful_set(self, namespace, **kwargs):
         """Creates StatefulSet entity using REST API.
 
@@ -673,6 +703,8 @@ class Openshift(System):
         self.wait_stateful_set_exist(namespace=namespace, name=st_name)
         return output
 
+
+    # TODO DONE
     def create_service(self, namespace, **kwargs):
         """Creates Service entity using REST API.
 
@@ -688,6 +720,7 @@ class Openshift(System):
         self.wait_service_exist(namespace=namespace, name=service_name)
         return output
 
+    # TODO DONE
     def create_endpoints(self, namespace, **kwargs):
         """Creates Endpoints entity using REST API.
 
@@ -703,6 +736,7 @@ class Openshift(System):
         self.wait_endpoints_exist(namespace=namespace, name=endpoints_name)
         return output
 
+    # TODO DONE
     def create_route(self, namespace, **kwargs):
         """Creates Route entity using REST API.
 
@@ -718,6 +752,7 @@ class Openshift(System):
         self.wait_route_exist(namespace=namespace, name=route_name)
         return output
 
+    # TODO DONE
     def create_service_account(self, namespace, **kwargs):
         """Creates Service Account entity using REST API.
 
@@ -733,6 +768,7 @@ class Openshift(System):
         self.wait_service_account_exist(namespace=namespace, name=sa_name)
         return output
 
+    # TODO DONE
     def create_role_binding(self, namespace, **kwargs):
         """Creates RoleBinding entity using REST API.
 
@@ -758,6 +794,7 @@ class Openshift(System):
         self.wait_role_binding_exist(namespace=namespace, name=role_binding_name)
         return output
 
+    # TODO DONE
     def create_image_stream(self, namespace, **kwargs):
         """Creates Image Stream entity using REST API.
 
@@ -773,6 +810,7 @@ class Openshift(System):
         self.wait_image_stream_exist(namespace=namespace, name=is_name)
         return output
 
+    # TODO DONE
     def create_secret(self, namespace, **kwargs):
         """Creates Secret entity using REST API.
 
@@ -788,6 +826,7 @@ class Openshift(System):
         self.wait_secret_exist(namespace=namespace, name=secret_name)
         return output
 
+    # TODO DONE
     def create_deployment_config(self, namespace, **kwargs):
         """Creates Deployment Config entity using REST API.
 
@@ -804,6 +843,7 @@ class Openshift(System):
                                           name=dc_name)
         return output
 
+    # TODO DONE
     def create_persistent_volume_claim(self, namespace, **kwargs):
         """Creates Persistent Volume Claim entity using REST API.
 
@@ -821,6 +861,7 @@ class Openshift(System):
                                                 name=pv_claim_name)
         return output
 
+    # TODO DONE
     def create_project(self, name, description=None):
         """Creates Project(namespace) using REST API.
 
@@ -838,6 +879,7 @@ class Openshift(System):
         self.wait_project_exist(name=name)
         return output
 
+    # TODO DONE
     def run_job(self, namespace, body):
         """Creates job from passed template, runs it and waits for the job to be accomplished
 
@@ -852,6 +894,7 @@ class Openshift(System):
 
         return self.wait_job_finished(namespace, job_name)
 
+    # TODO DONE
     def wait_job_finished(self, namespace, name, wait='15m'):
         """Waits for job to accomplish
 
@@ -871,6 +914,7 @@ class Openshift(System):
                 return False
         return wait_for(job_wait_accomplished, num_sec=wait)[0]
 
+    # TODO DONE
     def wait_persistent_volume_claim_status(self, namespace, name, status, wait='1m'):
         """Waits until pvc gets some particular status.
            For example: Bound.
@@ -892,6 +936,7 @@ class Openshift(System):
 
         return wait_for(pvc_wait_status, num_sec=wait)[0]
 
+    # TODO DONE
     def wait_project_exist(self, name, wait=60):
         """Checks whether Project exists within some time.
 
@@ -903,6 +948,7 @@ class Openshift(System):
         return wait_for(self._does_exist, num_sec=wait,
                         func_kwargs={'func': self.o_api.read_project, 'name': name})[0]
 
+    # TODO DONE
     def wait_config_map_exist(self, namespace, name, wait=60):
         """Checks whether Config Map exists within some time.
 
@@ -916,7 +962,7 @@ class Openshift(System):
                         func_kwargs={'func': self.k_api.read_namespaced_config_map,
                                      'name': name,
                                      'namespace': namespace})[0]
-
+    # TODO DONE
     def wait_stateful_set_exist(self, namespace, name, wait=900):
         """Checks whether StatefulSet exists within some time.
 
@@ -933,6 +979,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_service_exist(self, namespace, name, wait=60):
         """Checks whether Service exists within some time.
 
@@ -947,6 +994,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_endpoints_exist(self, namespace, name, wait=60):
         """Checks whether Endpoints exists within some time.
 
@@ -961,6 +1009,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_route_exist(self, namespace, name, wait=60):
         """Checks whether Route exists within some time.
 
@@ -975,6 +1024,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_service_account_exist(self, namespace, name, wait=60):
         """Checks whether Service Account exists within some time.
 
@@ -989,6 +1039,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_image_stream_exist(self, namespace, name, wait=60):
         """Checks whether Image Stream exists within some time.
 
@@ -1003,6 +1054,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_role_binding_exist(self, namespace, name, wait=60):
         """Checks whether RoleBinding exists within some time.
 
@@ -1018,6 +1070,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_secret_exist(self, namespace, name, wait=90):
         """Checks whether Secret exists within some time.
 
@@ -1032,6 +1085,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_persistent_volume_claim_exist(self, namespace, name, wait=60):
         """Checks whether Persistent Volume Claim exists within some time.
 
@@ -1046,6 +1100,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_deployment_config_exist(self, namespace, name, wait=600):
         """Checks whether Deployment Config exists within some time.
 
@@ -1061,6 +1116,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def wait_template_exist(self, namespace, name, wait=60):
         """Checks whether Template exists within some time.
 
@@ -1075,6 +1131,7 @@ class Openshift(System):
                                      'name': name,
                                      'namespace': namespace})[0]
 
+    # TODO DONE
     def _does_exist(self, func, **kwargs):
         try:
             func(**kwargs)
@@ -1083,6 +1140,7 @@ class Openshift(System):
             self.logger.info("ApiException occurred %s, it looks like obj doesn't exist", e)
             return False
 
+    # TODO DONE
     def _restore_missing_project_role_bindings(self, namespace):
         """Fixes one of issues in Openshift REST API
           create project doesn't add necessary roles to default sa, probably bug, this is workaround
@@ -1137,6 +1195,7 @@ class Openshift(System):
                                                            metadata=role_binding_name)
         auth_api.create_namespaced_role_binding(namespace=namespace, body=puller_role_binding)
 
+    # TODO DONE
     def delete_project(self, name, wait=300):
         """Removes project(namespace) and all entities in it.
 
@@ -1155,6 +1214,7 @@ class Openshift(System):
                 raise TimedOutError('project {n} was not removed within {w} sec'.format(n=name,
                                                                                         w=wait))
 
+    # TODO DONE
     def scale_entity(self, namespace, name, replicas, wait=60):
         """Allows to scale up/down entities.
         One of cases when this is necessary is emulation of stopping/starting appliance
@@ -1195,10 +1255,12 @@ class Openshift(System):
         self.logger.info("scaling entity %s to %s replicas", name, replicas)
         wait_for(check_scale_value, num_sec=wait, fail_condition=lambda val: val != replicas)
 
+    # TODO DONE
     def get_project_by_name(self, project_name):
         """Returns only the selected Project object"""
         return next(proj for proj in self.list_project() if proj.metadata.name == project_name)
 
+    # TODO DONE
     def get_scc(self, name):
         """Returns Security Context Constraint by name
 
@@ -1208,6 +1270,7 @@ class Openshift(System):
         """
         return self.security_api.read_security_context_constraints(name)
 
+    # TODO DONE
     def create_scc(self, body):
         """Creates Security Context Constraint from passed structure.
         Main aim is to create scc from read and parsed yaml file.
@@ -1223,6 +1286,7 @@ class Openshift(System):
         scc = self.ociclient.V1SecurityContextConstraints(**raw_scc)
         return self.security_api.create_security_context_constraints(body=scc)
 
+    # TODO DONE
     def append_sa_to_scc(self, scc_name, namespace, sa):
         """Appends Service Account to respective Security Constraint
 
@@ -1249,6 +1313,7 @@ class Openshift(System):
         return self.security_api.patch_security_context_constraints(name=scc_name,
                                                                     body=update_scc_cmd)
 
+    # TODO DONE
     def remove_sa_from_scc(self, scc_name, namespace, sa):
         """Removes Service Account from respective Security Constraint
 
@@ -1273,6 +1338,7 @@ class Openshift(System):
         return self.security_api.patch_security_context_constraints(name=scc_name,
                                                                     body=update_scc_cmd)
 
+    # TODO DONE
     def is_vm_running(self, vm_name, running_pods=()):
         """Emulates check is vm(appliance) up and running
 
@@ -1294,6 +1360,7 @@ class Openshift(System):
         # todo: check url is available + db is accessable
         return True
 
+    # TODO DONE
     def list_deployment_config_names(self, namespace):
         """Extracts and returns list of Deployment Config names
 
@@ -1304,6 +1371,7 @@ class Openshift(System):
         dcs = self.o_api.list_namespaced_deployment_config(namespace=namespace)
         return [dc.metadata.name for dc in dcs.items]
 
+    # TODO DONE
     def list_stateful_set_names(self, namespace):
         """Returns list of Stateful Set names
 
@@ -1315,6 +1383,7 @@ class Openshift(System):
         sts = st_api.list_namespaced_stateful_set(namespace=namespace)
         return [st.metadata.name for st in sts.items]
 
+    # TODO DONE
     def is_deployment_config(self, namespace, name):
         """Checks whether passed name belongs to deployment configs in appropriate namespace
 
@@ -1325,6 +1394,7 @@ class Openshift(System):
         """
         return name in self.list_deployment_config_names(namespace=namespace)
 
+    # TODO DONE
     def is_stateful_set(self, namespace, name):
         """Checks whether passed name belongs to Stateful Sets in appropriate namespace
 
@@ -1335,6 +1405,7 @@ class Openshift(System):
         """
         return name in self.list_stateful_set_names(namespace=namespace)
 
+    # TODO DONE
     def does_project_exist(self, name):
         """Checks whether Project exists.
 
@@ -1344,6 +1415,7 @@ class Openshift(System):
         """
         return self._does_exist(func=self.o_api.read_project, name=name)
 
+    # TODO DONE
     def is_vm_stopped(self, vm_name):
         """Check whether vm isn't running.
         There is no such state stopped for vm in openshift therefore
@@ -1359,6 +1431,7 @@ class Openshift(System):
                               "running: {}").format([pod.metadata.name for pod in pods]))
         return not bool(pods)
 
+    # TODO DONE
     def wait_vm_running(self, vm_name, num_sec=900):
         """Checks whether all project pods are in ready state.
 
@@ -1370,6 +1443,7 @@ class Openshift(System):
         wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
         return True
 
+    # TODO DONE
     def wait_vm_stopped(self, vm_name, num_sec=600):
         """Checks whether all project pods are stopped.
 
@@ -1381,6 +1455,7 @@ class Openshift(System):
         wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
         return True
 
+    # TODO DONE
     def current_ip_address(self, vm_name):
         """Tries to retrieve project's external ip
 
@@ -1395,6 +1470,7 @@ class Openshift(System):
         except Exception:
             return None
 
+    # TODO DONE
     def is_vm_suspended(self, vm_name):
         """There is no such state in openshift
 
@@ -1404,6 +1480,7 @@ class Openshift(System):
         """
         return False
 
+    # TODO DONE
     def in_steady_state(self, vm_name):
         """Return whether the specified virtual machine is in steady state
 
@@ -1415,10 +1492,12 @@ class Openshift(System):
                 or self.is_vm_stopped(vm_name)
                 or self.is_vm_suspended(vm_name))
 
+    # TODO DONE
     @property
     def can_rename(self):
         return hasattr(self, "rename_vm")
 
+    # TODO DONE
     def list_project_names(self):
         """Obtains project names
 
@@ -1429,6 +1508,7 @@ class Openshift(System):
 
     list_vms = list_vm = list_project_names
 
+    # TODO DONE
     def get_appliance_version(self, vm_name):
         """Returns appliance version if it is possible
 
@@ -1446,6 +1526,7 @@ class Openshift(System):
             except ValueError:
                 return None
 
+    # TODO DONE
     def delete_template(self, template_name, namespace='openshift'):
         """Deletes template
 
@@ -1458,14 +1539,17 @@ class Openshift(System):
         return self.o_api.delete_namespaced_template(name=template_name, namespace=namespace,
                                                      body=options)
 
+    # TODO DONE
     def get_meta_value(self, instance, key):
         raise NotImplementedError(
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
+    # TODO DONE
     def set_meta_value(self, instance, key):
         raise NotImplementedError(
             'Provider {} does not implement get_meta_value'.format(type(self).__name__))
 
+    # TODO DONE
     def vm_status(self, vm_name):
         """Returns current vm/appliance state
 
@@ -1477,6 +1561,7 @@ class Openshift(System):
             raise ValueError("Vm {} doesn't exist".format(vm_name))
         return 'up' if self.is_vm_running(vm_name) else 'down'
 
+    # TODO DONE
     def vm_creation_time(self, vm_name):
         """Returns time when vm/appliance was created
 
@@ -1490,11 +1575,13 @@ class Openshift(System):
         project = next(proj for proj in projects if proj.metadata.name == vm_name)
         return project.metadata.creation_timestamp
 
+    # TODO DONE
     @staticmethod
     def _progress_log_callback(logger, source, destination, progress):
         logger.info("Provisioning progress {}->{}: {}".format(
             source, destination, str(progress)))
 
+    # TODO DONE
     def vm_hardware_configuration(self, vm_name):
         """Collects project's cpu and ram usage
 
@@ -1524,6 +1611,7 @@ class Openshift(System):
                     hw_config['ram'] += ram
         return hw_config
 
+    # TODO DONE
     def usage_and_quota(self):
         installed_ram = 0
         installed_cpu = 0
@@ -1541,6 +1629,7 @@ class Openshift(System):
             'cpu_limit': None,
         }
 
+    # TODO DONE
     def get_required_pods(self, vm_name):
         """Provides list of pods which should be present in appliance
 
@@ -1554,6 +1643,7 @@ class Openshift(System):
         else:
             return self.required_project_pods
 
+    # TODO DONE
     def get_ip_address(self, vm_name, timeout=600):
         """ Returns the IP address for the selected appliance.
 
@@ -1572,9 +1662,11 @@ class Openshift(System):
             ip_address = None
         return ip_address
 
+    # TODO DONE
     def disconnect(self):
         pass
 
+    # TODO DONE
     def get_appliance_tags(self, name):
         """Returns appliance tags stored in appropriate config map if it exists.
 
@@ -1589,6 +1681,7 @@ class Openshift(System):
         except ApiException:
             return {}
 
+    # TODO DONE
     def get_appliance_url(self, name):
         """Returns appliance url assigned by Openshift
 
@@ -1602,6 +1695,7 @@ class Openshift(System):
         except (ApiException, IndexError):
             return None
 
+    # TODO DONE
     def get_appliance_uuid(self, name):
         """Returns appliance uuid assigned by Openshift
 
@@ -1611,6 +1705,7 @@ class Openshift(System):
         """
         return self.get_project_by_name(name).metadata.uid
 
+    # TODO DONE
     def is_appliance(self, name):
         """Checks whether passed vm/project is appliance
 
@@ -1620,6 +1715,7 @@ class Openshift(System):
         """
         return bool(self.get_appliance_tags(name))
 
+    # TODO DONE
     def find_job_pods(self, namespace, name):
         """Finds and returns all remaining job pods
 
@@ -1634,6 +1730,7 @@ class Openshift(System):
                 pods.append(pod)
         return pods
 
+    # TODO DONE
     def read_pod_log(self, namespace, name):
         """Reads and returns pod log
 
