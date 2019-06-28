@@ -68,7 +68,10 @@ class RedfishResource(Entity):
     @property
     def name(self):
         """Return name from most recent raw data."""
-        return self.raw.Id
+        name = "{} {}".format(self.raw.Manufacturer, self.raw.Name)
+        if "SerialNumber" in self.raw:
+            name = "{} ({})".format(name, self.raw.SerialNumber)
+        return name
 
     @property
     def description(self):
@@ -130,6 +133,15 @@ class RedfishChassis(PhysicalContainer, RedfishResource):
     def num_servers(self):
         """Retrieve the number of physical servers within this chassis."""
         return len(self.raw.Links.raw.get("ComputerSystems", []))
+
+
+class RedfishRack(RedfishChassis):
+    """API handler for this instance of the physical rack."""
+
+    @property
+    def name(self):
+        """Return name from most recent raw data."""
+        return self.raw.Id
 
 
 class RedfishSystem(System):
@@ -368,7 +380,7 @@ class RedfishSystem(System):
 
     def get_rack(self, resource_id):
         """
-        Fetch a RedfishChassis instance of the physical rack representing resource_id.
+        Fetch a RedfishRack instance of the physical rack representing resource_id.
 
         Args:
           resource_id: the Redfish @odata.id of the resource representing the
@@ -377,7 +389,12 @@ class RedfishSystem(System):
            InvalidValueException if the resource_id represents a Chassis that is
              not a rack
         """
-        return self.get_chassis(resource_id, "Rack")
+        rack_data = self.find(resource_id)
+        if rack_data.ChassisType != "Rack":
+            raise InvalidValueException("Chassis type {} does not match that of a Rack".format(
+                rack_data.ChassisType))
+
+        return RedfishRack(self, raw=rack_data)
 
     @property
     def num_servers(self):
