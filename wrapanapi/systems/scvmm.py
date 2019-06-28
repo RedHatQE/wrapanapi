@@ -594,7 +594,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """List all networks' names."""
         return self._get_names('SCLogicalNetwork')
 
-    def list_hosts(self, **kwargs):
+    def list_host(self, **kwargs):
         return self._get_names('SCVMHost')
 
     def list_vhds(self, **kwargs):

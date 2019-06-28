@@ -46,7 +46,7 @@ class OpenstackInfraSystem(System):
 
     _stats_available = {
         'num_template': lambda self: len(self.list_templates()),
-        'num_host': lambda self: len(self.list_hosts()),
+        'num_host': lambda self: len(self.list_host()),
     }
 
     def __init__(self, **kwargs):
@@ -131,7 +131,7 @@ class OpenstackInfraSystem(System):
     def list_networks(self):
         return [network.name for network in self.networks]
 
-    def list_hosts(self):
+    def list_host(self):
         return [node.name for node in self.nodes]
 
     def list_nodes(self):
