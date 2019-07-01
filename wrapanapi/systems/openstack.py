@@ -7,6 +7,7 @@ from __future__ import absolute_import
 
 import json
 import os
+import re
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -571,8 +572,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         tenant: The tenant to log in with.
         username: The username to connect with.
         password: The password to connect with.
-        auth_url: The authentication url.
-
+        auth_url: The authentication url of format (http://hostname<or IP>:port/v2 or /v3)
+        domain_id: required if using openstack auth_url version 3
     """
 
     _stats_available = {
@@ -584,7 +585,9 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     can_pause = True
 
     def __init__(self, **kwargs):
-        self.keystone_version = kwargs.get('keystone_version', 2)
+        parsed_keystone_version = re.findall(r'v[2-3]$', kwargs['auth_url'])
+        self.keystone_version = kwargs.get('keystone_version',
+                                        3 if parsed_keystone_version[0] == 'v3' else 2)
         if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
         super(OpenstackSystem, self).__init__(**kwargs)
