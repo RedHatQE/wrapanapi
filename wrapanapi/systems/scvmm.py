@@ -13,6 +13,7 @@ from textwrap import dedent
 import time
 
 import pytz
+import tzlocal
 import winrm
 from cached_property import cached_property
 from wait_for import wait_for
@@ -256,7 +257,9 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def creation_time(self):
         self.refresh()
         creation_time = convert_powershell_date(self.raw['CreationTime'])
-        return creation_time.replace(tzinfo=self.system.timezone).astimezone(pytz.UTC)
+        return creation_time.replace(
+            tzinfo=self.system.timezone or tzlocal.get_localzone()
+        ).astimezone(pytz.UTC)
 
     def _do_vm(self, action, params=""):
         cmd = (
