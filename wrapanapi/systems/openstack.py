@@ -40,6 +40,10 @@ from wrapanapi.exceptions import (
 )
 from wrapanapi.systems.base import System
 
+
+NIC_IP_TYPE_FIXED = "fixed"
+NIC_IP_TYPE_FLOATING = "floating"
+
 # TODO The following monkeypatch nonsense is criminal, and would be
 # greatly simplified if openstack made it easier to specify a custom
 # client class. This is a trivial PR that they're likely to accept.
@@ -155,7 +159,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         self.refresh()
         return self.raw.addresses
 
-    def get_ip_by_type(self, ip_type):
+    def get_ip_by_type(self, ip_type=NIC_IP_TYPE_FIXED):
         networks = self._get_networks()
         for network_nics in networks.values():
             for nic in network_nics:
@@ -172,15 +176,16 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         return [ip for nets in self.raw.networks.values() for ip in nets]
 
     @property
+    def fixed_ip(self):
+        return self.get_ip_by_type(NIC_IP_TYPE_FIXED)
+
+    @property
     def floating_ip(self):
-        return self.get_ip_by_type('floating')
+        return self.get_ip_by_type(NIC_IP_TYPE_FLOATING)
 
     @property
     def ip(self):
-        floating_ip = self.floating_ip
-        if floating_ip:
-            return floating_ip
-        return self.get_ip_by_type('fixed')
+        return self.floating_ip
 
     @property
     def flavor(self):
