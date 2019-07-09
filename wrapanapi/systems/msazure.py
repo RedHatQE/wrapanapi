@@ -859,7 +859,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         operation = container_client.copy_blob(container_name=storage_container,
                                                blob_name=vm_name + ".vhd",
                                                copy_source=src_uri)
-        wait_for(lambda: operation.status != 'pending', num_sec='10m', delay=15)
+        wait_for(lambda: operation.status != 'pending', timeout='10m', delay=15)
         # copy operation obj.status->str
         return operation.status
 
