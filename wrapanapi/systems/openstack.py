@@ -11,6 +11,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 from functools import partial
+from re import search
 
 import pytz
 import six
@@ -571,8 +572,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         tenant: The tenant to log in with.
         username: The username to connect with.
         password: The password to connect with.
-        auth_url: The authentication url.
+        auth_url: The authentication url of format (http://hostname<or IP>:port[/v2 or /v3])
 
+    Keywords:
+        domain_id: required only if using openstack auth_url version 3 (URL ending in v3)
+
+    Returns: A :py:class:`OpenstackSystem` object.
     """
 
     _stats_available = {
@@ -583,15 +588,22 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     can_suspend = True
     can_pause = True
 
-    def __init__(self, **kwargs):
-        self.keystone_version = kwargs.get('keystone_version', 2)
+    def __init__(self, tenant, username, password, auth_url, **kwargs):
+        self.keystone_version = kwargs.get("keystone_version")
+        if not self.keystone_version:
+            parsed_keystone_version = search(r'v([2-3])$', auth_url)
+            if parsed_keystone_version:
+                self.keystone_version = int(parsed_keystone_version.group(1))
+            else:
+                self.logger.warn("No keystone version was parsed from auth_url, using default '2'")
+                self.keystone_version = 2
         if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
         super(OpenstackSystem, self).__init__(**kwargs)
-        self.tenant = kwargs['tenant']
-        self.username = kwargs['username']
-        self.password = kwargs['password']
-        self.auth_url = kwargs['auth_url']
+        self.tenant = tenant
+        self.username = username
+        self.password = password
+        self.auth_url = auth_url
         self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
@@ -905,6 +917,10 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def list_flavor(self):
         flavor_list = self.api.flavors.list()
         return [flavor.name for flavor in flavor_list]
+
+    def list_keypair(self):
+        keypair_list = self.api.keypairs.list()
+        return [keypair.name for keypair in keypair_list]
 
     def list_volume(self):  # TODO: maybe names? Could not get it to work via API though ...
         volume_list = self.capi.volumes.list()
