@@ -92,6 +92,11 @@ def unauthenticated_error_handler(method):
 
 class Project(Project):
 
+    """
+    We are assuming that a Project is a VM for purposes of simplicity for CFME-QE
+
+    """
+
     def __init__(self, system, raw=None, **kwargs):
         """
         Construct a VMWareVirtualMachine instance
@@ -105,6 +110,24 @@ class Project(Project):
         self._name = raw.metadata.name if raw else kwargs.get('name')
         if not self._name:
             raise ValueError("missing required kwarg 'name'")
+
+    def _get_state(self):
+        pods = self.system.list_pods(namespace=self.name)
+        states = []
+        for pod in pods:
+             states.append(pod.state)
+
+        if len(set(states)) == 1:
+            return states[0]
+        else:
+            # TODO juwatts: what should be returned here
+            return VmState.FAILED
+
+    def _does_project_exist(self):
+        if self.raw.status.phase == 'Active':
+            return True
+        else:
+            return False
 
     @property
     def get_quota(self):
@@ -131,10 +154,26 @@ class Project(Project):
         raise NotImplementedError
 
     def start(self):
-        raise NotImplementedError
+        self.logger.info("starting vm/project %s", self.name)
+        if self._does_project_exist:
+            for pod in self.system.get_required_pods(self.name):
+                self.system.scale_entity(name=pod, namespace=self.name, replicas=1)
+        else:
+            raise ValueError("Project with name {n} doesn't exist".format(n=self.name))
 
     def stop(self):
-        raise NotImplementedError
+        """Stops a vm.
+
+            Args:
+                vm_name: name of the vm to be stopped
+            Returns: whether vm action has been initiated properly
+        """
+        self.logger.info("stopping vm/project %s", self.name)
+        if self._does_project_exist:
+            for pod in self.system.get_required_pods(self.name):
+                self.system.scale_entity(name=pod, namespace=self.name, replicas=0)
+        else:
+            raise ValueError("Project with name {n} doesn't exist".format(n=self.name))
 
     def restart(self):
         raise NotImplementedError
@@ -187,7 +226,7 @@ class Pod(Vm):
     def uuid(self):
         try:
             return str(self.raw.metadata.uid)
-        except AttributeError:
+        except (AttributeError, ApiException):
             return self.name
 
     @property
@@ -197,7 +236,7 @@ class Pod(Vm):
     @property
     def ip(self):
         ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
-        #self.refresh()
+        self.refresh()
         try:
             return self.raw.status.podIP
         except (AttributeError):
@@ -208,89 +247,11 @@ class Pod(Vm):
         self.refresh()
         return self._api_state_to_vmstate(str(self.raw.status.phase))
 
-    def is_stateful_set(self, namespace, name):
-        """Checks whether passed name belongs to Stateful Sets in appropriate namespace
-
-        Args:
-            namespace: project(namespace) name
-            name: entity name
-        Return: True/False
-        """
-        return name in self.system.list_stateful_set_names(namespace=namespace)
-
-    def is_deployment_config(self, namespace, name):
-        """Checks whether passed name belongs to deployment configs in appropriate namespace
-
-        Args:
-            namespace: project(namespace) name
-            name: entity name
-        Return: True/False
-        """
-        return name in self.system.list_deployment_config_names(namespace=namespace)
-
-
-    # JUWATTS TODO
-    def scale_entity(self, namespace, name, replicas, wait=60):
-        """Allows to scale up/down entities.
-        One of cases when this is necessary is emulation of stopping/starting appliance
-
-        Args:
-            namespace: openshift namespace
-            name: entity name. it can be either stateless Pod from DeploymentConfig or StatefulSet
-            replicas: number of replicas 0..N
-            wait: time to wait for scale up/down
-        Return: None
-        """
-        # only dc and statefulsets can be scaled
-        #st_api = self.system.kubeclient.AppsV1beta1Api(api_client=self.kapi_client)
-
-        scale_val = self.system.kubeclient.V1Scale(spec=self.kclient.V1ScaleSpec(replicas=replicas))
-        if self.is_deployment_config(name=name, namespace=namespace):
-            self.system.v1_deployment_config.scale.patch(name=name, namespace=namespace,
-                                                                body=scale_val)
-
-            def check_scale_value():
-                got_scale = \
-                    self.system.v1_deployment_config.scale.get(name=name, namespace=namespace)
-                return int(got_scale.spec.replicas or 0)
-
-        elif self.is_stateful_set(name=name, namespace=namespace):
-            # replace this code with stateful_set_scale when kubernetes shipped with openshift
-            # client gets upgraded
-            st_spec = self.systmem.kubeclient.V1beta1StatefulSetSpec
-            st = self.system.kubeclient.V1beta1StatefulSet(spec=st_spec(replicas=replicas))
-            self.system.v1_stateful_sets.patch_(name=name, namespace=namespace,body=st)
-
-            def check_scale_value():
-                got_scale = self.system.v1_stateful_sets.get(name=name, namespace=namespace)
-                return int(got_scale.spec.replicas or 0)
-        else:
-            raise ValueError("This name %s is not found among "
-                             "deployment configs or stateful sets", name)
-        self.logger.info("scaling entity %s to %s replicas", name, replicas)
-        wait_for(check_scale_value, num_sec=wait, fail_condition=lambda val: val != replicas)
-
     def start(self):
-        self.logger.info("starting vm/project %s", self.name)
-        if self.does_project_exist(self.name):
-            for pod in self.get_required_pods(self.name):
-                self.scale_entity(name=pod, namespace=self.name, replicas=1)
-        else:
-            raise ValueError("Project with name {n} doesn't exist".format(n=self.name))
+        raise NotImplementedError
 
     def stop(self):
-        """Stops a vm.
-
-                Args:
-                    vm_name: name of the vm to be stopped
-                Returns: whether vm action has been initiated properly
-        """
-        self.logger.info("stopping vm/project %s", self.name)
-        if self.does_project_exist(self.name):
-            for pod in self.get_required_pods(self.name):
-                self.scale_entity(name=pod, namespace=self.name, replicas=0)
-        else:
-            raise ValueError("Project with name {n} doesn't exist".format(n=self.name))
+        raise NotImplementedError
 
     def restart(self):
         raise NotImplementedError
@@ -316,6 +277,314 @@ class Pod(Vm):
         """
         raise NotImplementedError
 
+
+class OpenShiftTemplate(Template):
+
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Construct a VMWareVirtualMachine instance
+
+        Args:
+            system: instance of VMWareSystem
+            raw: pyVmomi.vim.VirtualMachine object
+            name: name of VM
+        """
+        super(OpenShiftTemplate, self).__init__(system, raw, **kwargs)
+        self._name = raw.metadata.name if raw else kwargs.get('name')
+        self._namespace = raw.metadata.namespace if raw else kwargs.get('namespace')
+        if not self._name:
+            raise ValueError("missing required kwarg 'name'")
+
+    @property
+    def _identifying_attrs(self):
+        return {'name': self._name}
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def namespace(self):
+        return self._namespace
+
+    @property
+    def uuid(self):
+        try:
+            return str(self.raw.metadata.uid)
+        except AttributeError:
+            return self.name
+
+    def start(self):
+        raise NotImplementedError
+
+    def stop(self):
+        raise NotImplementedError
+
+    def restart(self):
+        raise NotImplementedError
+
+    def delete(self):
+        self.system.v1_template.delete(name=self.name, namespace=self.namespace)
+
+    def refresh(self):
+        self.raw = self.system.get_template(name=self.name, namespace=self.namespace).raw
+        return self.raw
+
+    def cleanup(self):
+        return self.delete()
+
+    def wait_template_exist(self, namespace, name, wait=60):
+        """Checks whether Template exists within some time.
+
+        Args:
+            name: entity name
+            namespace: openshift namespace where entity should exist
+            wait: entity should appear for this time then - True, otherwise False
+        Return: True/False
+        """
+        return wait_for(self._does_exist, num_sec=wait,
+                        func_kwargs={'func': self.v1_template.get,
+                                     'name': name,
+                                     'namespace': namespace})[0]
+
+    @staticmethod
+    def _update_template_parameters(template, **params):
+        """Updates openshift template parameters.
+        Since Openshift REST API doesn't provide any api to change default parameter values as
+        it is implemented in `oc process`. This method implements such a parameter replacement.
+
+        Args:
+            template: Openshift's template object
+            params: bunch of key=value parameters
+        Returns: updated template
+        """
+        template = copy.deepcopy(template)
+        if template.parameters:
+            new_parameters = template.parameters
+            for new_param, new_value in params.items():
+                for index, old_param in enumerate(new_parameters):
+                    if old_param['name'] == new_param:
+                        old_param = new_parameters.pop(index)
+                        if 'generate' in old_param:
+                            old_param['generate'] = None
+                            old_param['_from'] = None
+
+                        old_param['value'] = new_value
+                        new_parameters.append(old_param)
+                        template.parameters = new_parameters
+        return template
+
+    def process_template(self, name, namespace, parameters=None):
+        """Implements template processing mechanism similar to `oc process`.
+
+        Args:
+            name: (str) template name
+            namespace: (str) openshift namespace
+            parameters: parameters and values to replace default ones
+        Return: list of objects stored in template
+        """
+        # workaround for bug https://github.com/openshift/openshift-restclient-python/issues/60
+        raw_response = self.system.v1_template.get(name=name, namespace=namespace,
+                                              _preload_content=False)
+        raw_data = json.loads(raw_response.data)
+
+        return self.process_raw_template(body=raw_data, namespace=namespace, parameters=parameters)
+
+    def process_raw_template(self, body, namespace, parameters=None):
+        """Implements template processing mechanism similar to `oc process`.
+        It does two functions
+          1. parametrized templates have to be processed in order to replace parameters with values.
+          2. templates consist of list of objects. Those objects have to be extracted
+          before creation accordingly.
+
+        Args:
+            body: (dict) template body
+            namespace: (str) openshift namespace
+            parameters: parameters and values to replace default ones
+        Return: list of objects stored in template
+        """
+        updated_data = self.system.rename_structure(body)
+        read_template = self.system.ociclient.V1Template(**updated_data)
+        if parameters:
+            updated_template = self._update_template_parameters(template=read_template,
+                                                                **parameters)
+        else:
+            updated_template = read_template
+        raw_response = self.system.v1_template.create(namespace=namespace, body=updated_template,
+                                                      preload_content=False)
+        raw_data = json.loads(raw_response.data)
+        updated_data = self.system.rename_structure(raw_data)
+        processed_template = self.system.ociclient.V1Template(**updated_data)
+        return processed_template.objects
+
+    def create_template_entities(self, namespace, entities):
+        """Creates entities from openshift template.
+
+        Since there is no methods in openshift/kubernetes rest api for app deployment from template,
+        it is necessary to create template entities one by one using respective entity api.
+
+        Args:
+            namespace: (str) openshift namespace
+            entities: (list) openshift entities
+
+        Returns: None
+        """
+        self.logger.debug("passed template entities:\n %r", entities)
+        kinds = set([e['kind'] for e in entities])
+        entity_names = {e: inflection.underscore(e) for e in kinds}
+        proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
+
+        for entity in entities:
+            if entity['kind'] in kinds:
+                procedure = getattr(self, proc_names[entity['kind']], None)
+                obtained_entity = procedure(namespace=namespace, **entity)
+                self.logger.debug(obtained_entity)
+            else:
+                self.logger.error("some entity %s isn't present in entity creation list", entity)
+
+    def deploy(self, tags=None, password='smartvm', **kwargs):
+        """Deploy a VM from a template
+
+        Args:
+            tags: (dict) dict with tags if some tag isn't passed it is set to 'latest'
+            vm_name: (str) is used as project name if passed. otherwise, name is generated (sprout)
+            progress_callback: (func) function to return current progress (sprout)
+            template_params: (dict) parameters to override during template deployment
+            running_pods: (list) checks that passed pods are running instead of default set
+            since input tags are image stream tags whereas template expects its own tags.
+            So, input tags should match stream2template_tags_mapping.
+            password: this password will be set as default everywhere
+        Returns: dict with parameters necessary for appliance setup or None if deployment failed
+        """
+        self.logger.info("starting template %s deployment", self.name)
+        self.wait_template_exist(namespace=self.system.default_namespace, name=self.name)
+
+        if not self.base_url:
+            raise ValueError("base url isn't provided")
+
+        version = Version(TemplateName.parse_template(self.name).version)
+
+        if version >= '5.9':
+            tags_mapping = self.system.stream2template_tags_mapping59
+        else:
+            tags_mapping = self.system.stream2template_tags_mapping58
+
+        prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
+        if tags:
+            not_found_tags = [t for t in tags.keys() if t not in tags_mapping.keys()]
+            if not_found_tags:
+                raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
+            for tag, value in tags.items():
+                prepared_tags[tags_mapping[tag]['url']] = value['url']
+                prepared_tags[tags_mapping[tag]['tag']] = value['tag']
+
+        # create project
+        # assuming this is cfme installation and generating project name
+        proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
+
+        # for sprout
+        if 'vm_name' in kwargs:
+            proj_name = kwargs['vm_name']
+        else:
+            proj_name = "{t}-project-{proj_id}".format(t=self.name, proj_id=proj_id)
+
+        template_params = kwargs.pop('template_params', {})
+        running_pods = kwargs.pop('running_pods', ())
+        proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
+        self.logger.info("unique id %s, project name %s", proj_id, proj_name)
+
+        default_progress_callback = partial(self._progress_log_callback, self.logger, self.name,
+                                            proj_name)
+        progress_callback = kwargs.get('progress_callback', default_progress_callback)
+
+        project = self.system.create_project(name=proj_name, description=self.name)
+        progress_callback("Created Project `{}`".format(proj_name))
+
+        # grant rights according to scc
+        self.logger.info("granting rights to project %s sa", proj_name)
+        if version >= '5.9':
+            scc_user_mapping = self.system.scc_user_mapping59
+        else:
+            scc_user_mapping = self.system.scc_user_mapping58
+
+        self.logger.info("granting required rights to project's service accounts")
+        for mapping in scc_user_mapping:
+            self.system.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name,
+                                  sa=mapping['user'])
+        progress_callback("Added service accounts to appropriate scc")
+
+        # appliances prior 5.9 don't need such rights
+        # and those rights are embedded into templates since 5.9.2.2
+        if version >= '5.9' and version < '5.9.2.2':
+            # grant roles to orchestrator
+            self.logger.info("assigning additional roles to cfme-orchestrator")
+            orchestrator_sa = self.system.kubeclient.V1ObjectReference(name='cfme-orchestrator',
+                                                                kind='ServiceAccount',
+                                                                namespace=proj_name)
+
+            view_role = self.system.kubeclient.V1ObjectReference(name='view')
+            view_role_binding_name = self.system.kubeclient.V1ObjectMeta(name='view')
+            view_role_binding = self.system.ociclient.V1RoleBinding(role_ref=view_role,
+                                                             subjects=[orchestrator_sa],
+                                                             metadata=view_role_binding_name)
+            self.logger.debug("creating 'view' role binding "
+                              "for cfme-orchestrator sa in project %s", proj_name)
+            self.system.v1_role_binding.create(namespace=proj_name, body=view_role_binding)
+
+            edit_role = self.system.kubeclient.V1ObjectReference(name='edit')
+            edit_role_binding_name = self.system.kubeclient.V1ObjectMeta(name='edit')
+            edit_role_binding = self.system.ociclient.V1RoleBinding(role_ref=edit_role,
+                                                             subjects=[orchestrator_sa],
+                                                             metadata=edit_role_binding_name)
+            self.logger.debug("creating 'edit' role binding "
+                              "for cfme-orchestrator sa in project %s", proj_name)
+            self.system.v1_role_binding.create(namespace=proj_name, body=edit_role_binding)
+
+        self.logger.info("project sa created via api have no some mandatory roles. adding them")
+        self.system._restore_missing_project_role_bindings(namespace=proj_name)
+        progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
+
+        # creating common service with external ip
+        ext_ip = self.system.expose_db_ip(proj_name)
+        progress_callback("Common Service has been added")
+
+        # adding config map with image stream urls and tags
+        image_repo_cm = image_repo_cm_template.format(tags=json.dumps(tags))
+        self.system.create_config_map(namespace=proj_name, **yaml.safe_load(image_repo_cm))
+
+        # creating pods and etc
+        processing_params = {'DATABASE_PASSWORD': password,
+                             'APPLICATION_DOMAIN': proj_url}
+        processing_params.update(prepared_tags)
+
+        # updating template parameters
+        processing_params.update(template_params)
+        self.logger.info(("processing template and passed params in order to "
+                          "prepare list of required project entities"))
+        template_entities = self.system.process_template(name=self.name,
+                                                  namespace=self.default_namespace,
+                                                  parameters=processing_params)
+        self.logger.debug("template entities:\n %r", template_entities)
+        progress_callback("Template has been processed")
+        self.create_template_entities(namespace=proj_name, entities=template_entities)
+        progress_callback("All template entities have been created")
+
+        self.logger.info("verifying that all created entities are up and running")
+        progress_callback("Waiting for all pods to be ready and running")
+        # TODO Get PROJECT
+        try:
+            wait_for(project.is_running, num_sec=600,
+                     func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
+            self.logger.info("all pods look up and running")
+            progress_callback("Everything has been deployed w/o errors")
+            return {'url': proj_url,
+                    'external_ip': ext_ip,
+                    'project': proj_name,
+                    }
+        except TimedOutError:
+            self.logger.error("deployment failed. Please check failed pods details")
+            # todo: return and print all failed pod details
+            raise
 
 @reconnect(unauthenticated_error_handler)
 class Openshift(System, VmMixin, ProjectMixin):
@@ -463,7 +732,7 @@ class Openshift(System, VmMixin, ProjectMixin):
     @cached_property
     def v1_template(self):
         return self.ocp_client.resources.get(api_version='template.openshift.io/v1',
-                                             kind='Template')
+                                             kind='Template', name='templates')
 
     @cached_property
     def v1_image_stream(self):
@@ -538,7 +807,7 @@ class Openshift(System, VmMixin, ProjectMixin):
             self.logger.info("ApiException occurred %s, it looks like obj doesn't exist", e)
             return
 
-    def _restore_missing_project_role_bindings(self, namespace):
+    def restore_missing_project_role_bindings(self, namespace):
         """Fixes one of issues in Openshift REST API
           create project doesn't add necessary roles to default sa, probably bug, this is workaround
 
@@ -737,11 +1006,32 @@ class Openshift(System, VmMixin, ProjectMixin):
 
         return self.v1_image_stream_image.get(namespace=namespace).items
 
+    def get_template(self, name, namespace):
+        template = self.v1_template.get(name=name, namespace=namespace)
+
+        return OpenShiftTemplate(system=self, name=template.metadata.name, raw=template)
+
     def list_templates(self, namespace=None):
-        return self.v1_template.get(namespace=namespace)
+        return self.v1_template.get(namespace=namespace).items
 
     def list_deployment_configs(self, namespace=None):
         return self.v1_deployment_config.get(namespace=namespace).items
+
+    def list_deployment_config_names(self , namespace=None):
+
+        deployment_configs = self.v1_deployment_config.get(namespace=namespace)
+
+        return [dc.metadata.name for dc in deployment_configs.items]
+
+    def is_deployment_config(self, namespace, name):
+        """Checks whether passed name belongs to deployment configs in appropriate namespace
+
+        Args:
+            namespace: project(namespace) name
+            name: entity name
+        Return: True/False
+        """
+        return name in self.list_deployment_config_names(namespace=namespace)
 
     def wait_service_exist(self, namespace, name, wait=60):
         """Checks whether Service exists within some time.
@@ -813,17 +1103,21 @@ class Openshift(System, VmMixin, ProjectMixin):
     def find_vms(self, *args, **kwargs):
         raise NotImplementedError
 
-    def list_deployment_config_names(self , namespace=None):
-
-        deployment_configs = self.v1_deployment_config.get(namespace=namespace)
-
-        return [dc.metadata.name for dc in deployment_configs.items]
-
     def list_stateful_set_names(self, namespace=None):
 
         stateful_sets = self.v1_stateful_sets.get(namespace=namespace)
 
         return [ss.metadata.name for ss in stateful_sets.items]
+
+    def is_stateful_set(self, namespace, name):
+        """Checks whether passed name belongs to Stateful Sets in appropriate namespace
+
+        Args:
+            namespace: project(namespace) name
+            name: entity name
+        Return: True/False
+        """
+        return name in self.list_stateful_set_names(namespace=namespace)
 
     def cluster_info(self):
         """Returns information about the cluster - number of CPUs and memory in GB"""
@@ -897,7 +1191,7 @@ class Openshift(System, VmMixin, ProjectMixin):
     def list_config_maps(self, namespace=None):
         return self.v1_config_map.get(namespace=namespace).items
 
-    def get_config_maps(self, name, namespacee):
+    def get_config_maps(self, name, namespace):
         return self.v1_config_map.get(name=name, namespace=namespace)
 
     def wait_stateful_set_exist(self, namespace, name, wait=900):
@@ -1339,15 +1633,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         """
         return name in self.list_stateful_set_names(namespace=namespace)
 
-    def does_project_exist(self, name):
-        """Checks whether Project exists.
-
-        Args:
-            name: openshift namespace name
-        Return: True/False
-        """
-        return self._does_exist(func=self.v1_project.get, name=name)
-
     def is_vm_stopped(self, vm_name):
         """Check whether vm isn't running.
         There is no such state stopped for vm in openshift therefore
@@ -1394,17 +1679,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         """
         return False
 
-    def in_steady_state(self, vm_name):
-        """Return whether the specified virtual machine is in steady state
-
-        Args:
-            vm_name: VM name
-        Returns: True/False
-        """
-        return (self.is_vm_running(vm_name)
-                or self.is_vm_stopped(vm_name)
-                or self.is_vm_suspended(vm_name))
-
     @property
     def can_rename(self):
         return hasattr(self, "rename_vm")
@@ -1425,7 +1699,6 @@ class Openshift(System, VmMixin, ProjectMixin):
                 return Version(TemplateName.parse_template(vm_name).version)
             except ValueError:
                 return None
-
 
     def get_meta_value(self, instance, key):
         raise NotImplementedError(
@@ -1611,183 +1884,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         """
         return self.v1_pod.log.get(name=name, namespace=namespace)
 
-    def wait_template_exist(self, namespace, name, wait=60):
-        """Checks whether Template exists within some time.
-
-        Args:
-            name: entity name
-            namespace: openshift namespace where entity should exist
-            wait: entity should appear for this time then - True, otherwise False
-        Return: True/False
-        """
-        return wait_for(self._does_exist, num_sec=wait,
-                        func_kwargs={'func': self.v1_template.get,
-                                     'name': name,
-                                     'namespace': namespace})[0]
-
-    def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
-        """Deploy a VM from a template
-
-        Args:
-            template: (str) The name of the template to deploy
-            tags: (dict) dict with tags if some tag isn't passed it is set to 'latest'
-            vm_name: (str) is used as project name if passed. otherwise, name is generated (sprout)
-            progress_callback: (func) function to return current progress (sprout)
-            template_params: (dict) parameters to override during template deployment
-            running_pods: (list) checks that passed pods are running instead of default set
-            since input tags are image stream tags whereas template expects its own tags.
-            So, input tags should match stream2template_tags_mapping.
-            password: this password will be set as default everywhere
-        Returns: dict with parameters necessary for appliance setup or None if deployment failed
-        """
-        self.logger.info("starting template %s deployment", template)
-        self.wait_template_exist(namespace=self.default_namespace, name=template)
-
-        if not self.base_url:
-            raise ValueError("base url isn't provided")
-
-        version = Version(TemplateName.parse_template(template).version)
-
-        if version >= '5.9':
-            tags_mapping = self.stream2template_tags_mapping59
-        else:
-            tags_mapping = self.stream2template_tags_mapping58
-
-        prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
-        if tags:
-            not_found_tags = [t for t in tags.keys() if t not in tags_mapping.keys()]
-            if not_found_tags:
-                raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
-            for tag, value in tags.items():
-                prepared_tags[tags_mapping[tag]['url']] = value['url']
-                prepared_tags[tags_mapping[tag]['tag']] = value['tag']
-
-        # create project
-        # assuming this is cfme installation and generating project name
-        proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
-
-        # for sprout
-        if 'vm_name' in kwargs:
-            proj_name = kwargs['vm_name']
-        else:
-            proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
-
-        template_params = kwargs.pop('template_params', {})
-        running_pods = kwargs.pop('running_pods', ())
-        proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
-        self.logger.info("unique id %s, project name %s", proj_id, proj_name)
-
-        default_progress_callback = partial(self._progress_log_callback, self.logger, template,
-                                            proj_name)
-        progress_callback = kwargs.get('progress_callback', default_progress_callback)
-
-        self.create_project(name=proj_name, description=template)
-        progress_callback("Created Project `{}`".format(proj_name))
-
-        # grant rights according to scc
-        self.logger.info("granting rights to project %s sa", proj_name)
-        scc_user_mapping = self.scc_user_mapping59 if version >= '5.9' else self.scc_user_mapping58
-
-        self.logger.info("granting required rights to project's service accounts")
-        for mapping in scc_user_mapping:
-            self.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name, sa=mapping['user'])
-        progress_callback("Added service accounts to appropriate scc")
-
-        # appliances prior 5.9 don't need such rights
-        # and those rights are embedded into templates since 5.9.2.2
-        if version >= '5.9' and version < '5.9.2.2':
-            # grant roles to orchestrator
-            self.logger.info("assigning additional roles to cfme-orchestrator")
-            orchestrator_sa = self.kubeclient.V1ObjectReference(name='cfme-orchestrator',
-                                                             kind='ServiceAccount',
-                                                             namespace=proj_name)
-
-            view_role = self.kubeclient.V1ObjectReference(name='view')
-            view_role_binding_name = self.kubeclient.V1ObjectMeta(name='view')
-            view_role_binding = self.ociclient.V1RoleBinding(role_ref=view_role,
-                                                             subjects=[orchestrator_sa],
-                                                             metadata=view_role_binding_name)
-            self.logger.debug("creating 'view' role binding "
-                              "for cfme-orchestrator sa in project %s", proj_name)
-            self.v1_role_binding.create(namespace=proj_name, body=view_role_binding)
-
-            edit_role = self.kubeclient.V1ObjectReference(name='edit')
-            edit_role_binding_name = self.kubeclient.V1ObjectMeta(name='edit')
-            edit_role_binding = self.ociclient.V1RoleBinding(role_ref=edit_role,
-                                                             subjects=[orchestrator_sa],
-                                                             metadata=edit_role_binding_name)
-            self.logger.debug("creating 'edit' role binding "
-                              "for cfme-orchestrator sa in project %s", proj_name)
-            self.v1_role_binding.create(namespace=proj_name, body=edit_role_binding)
-
-        self.logger.info("project sa created via api have no some mandatory roles. adding them")
-        self._restore_missing_project_role_bindings(namespace=proj_name)
-        progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
-
-        # creating common service with external ip
-        ext_ip = self.expose_db_ip(proj_name)
-        progress_callback("Common Service has been added")
-
-        # adding config map with image stream urls and tags
-        image_repo_cm = image_repo_cm_template.format(tags=json.dumps(tags))
-        self.create_config_map(namespace=proj_name, **yaml.safe_load(image_repo_cm))
-
-        # creating pods and etc
-        processing_params = {'DATABASE_PASSWORD': password,
-                             'APPLICATION_DOMAIN': proj_url}
-        processing_params.update(prepared_tags)
-
-        # updating template parameters
-        processing_params.update(template_params)
-        self.logger.info(("processing template and passed params in order to "
-                          "prepare list of required project entities"))
-        template_entities = self.process_template(name=template, namespace=self.default_namespace,
-                                                  parameters=processing_params)
-        self.logger.debug("template entities:\n %r", template_entities)
-        progress_callback("Template has been processed")
-        self.create_template_entities(namespace=proj_name, entities=template_entities)
-        progress_callback("All template entities have been created")
-
-        self.logger.info("verifying that all created entities are up and running")
-        progress_callback("Waiting for all pods to be ready and running")
-        try:
-            wait_for(self.is_vm_running, num_sec=600,
-                     func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
-            self.logger.info("all pods look up and running")
-            progress_callback("Everything has been deployed w/o errors")
-            return {'url': proj_url,
-                    'external_ip': ext_ip,
-                    'project': proj_name,
-                    }
-        except TimedOutError:
-            self.logger.error("deployment failed. Please check failed pods details")
-            # todo: return and print all failed pod details
-            raise
-
-    def create_template_entities(self, namespace, entities):
-        """Creates entities from openshift template.
-
-        Since there is no methods in openshift/kubernetes rest api for app deployment from template,
-        it is necessary to create template entities one by one using respective entity api.
-
-        Args:
-            namespace: (str) openshift namespace
-            entities: (list) openshift entities
-
-        Returns: None
-        """
-        self.logger.debug("passed template entities:\n %r", entities)
-        kinds = set([e['kind'] for e in entities])
-        entity_names = {e: inflection.underscore(e) for e in kinds}
-        proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
-
-        for entity in entities:
-            if entity['kind'] in kinds:
-                procedure = getattr(self, proc_names[entity['kind']], None)
-                obtained_entity = procedure(namespace=namespace, **entity)
-                self.logger.debug(obtained_entity)
-            else:
-                self.logger.error("some entity %s isn't present in entity creation list", entity)
 
     def start_vm(self, vm_name):
         """Starts a vm.
@@ -1837,75 +1933,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         """
         return self.does_project_exist(vm_name)
 
-    @staticmethod
-    def _update_template_parameters(template, **params):
-        """Updates openshift template parameters.
-        Since Openshift REST API doesn't provide any api to change default parameter values as
-        it is implemented in `oc process`. This method implements such a parameter replacement.
-
-        Args:
-            template: Openshift's template object
-            params: bunch of key=value parameters
-        Returns: updated template
-        """
-        template = copy.deepcopy(template)
-        if template.parameters:
-            new_parameters = template.parameters
-            for new_param, new_value in params.items():
-                for index, old_param in enumerate(new_parameters):
-                    if old_param['name'] == new_param:
-                        old_param = new_parameters.pop(index)
-                        if 'generate' in old_param:
-                            old_param['generate'] = None
-                            old_param['_from'] = None
-
-                        old_param['value'] = new_value
-                        new_parameters.append(old_param)
-                        template.parameters = new_parameters
-        return template
-
-    def process_template(self, name, namespace, parameters=None):
-        """Implements template processing mechanism similar to `oc process`.
-
-        Args:
-            name: (str) template name
-            namespace: (str) openshift namespace
-            parameters: parameters and values to replace default ones
-        Return: list of objects stored in template
-        """
-        # workaround for bug https://github.com/openshift/openshift-restclient-python/issues/60
-        raw_response = self.v1_template.get(name=name, namespace=namespace, _preload_content=False)
-        raw_data = json.loads(raw_response.data)
-
-        return self.process_raw_template(body=raw_data, namespace=namespace, parameters=parameters)
-
-    def process_raw_template(self, body, namespace, parameters=None):
-        """Implements template processing mechanism similar to `oc process`.
-        It does two functions
-          1. parametrized templates have to be processed in order to replace parameters with values.
-          2. templates consist of list of objects. Those objects have to be extracted
-          before creation accordingly.
-
-        Args:
-            body: (dict) template body
-            namespace: (str) openshift namespace
-            parameters: parameters and values to replace default ones
-        Return: list of objects stored in template
-        """
-        updated_data = self.rename_structure(body)
-        read_template = self.ociclient.V1Template(**updated_data)
-        if parameters:
-            updated_template = self._update_template_parameters(template=read_template,
-                                                                **parameters)
-        else:
-            updated_template = read_template
-        raw_response = self.v1_template.create(namespace=namespace, body=updated_template,
-                                                                       _preload_content=False)
-        raw_data = json.loads(raw_response.data)
-        updated_data = self.rename_structure(raw_data)
-        processed_template = self.ociclient.V1Template(**updated_data)
-        return processed_template.objects
-
     def rename_structure(self, struct):
         """Fixes inconsistency in input/output data of openshift python client methods
 
@@ -1946,19 +1973,60 @@ class Openshift(System, VmMixin, ProjectMixin):
         options = self.kclient.V1DeleteOptions()
         return self.v1_template.delete(name=template_name, namespace=namespace, body=options)
 
-    def run_command(self, namespace, name, cmd, **kwargs):
-        """Connects to pod and tries to run
+
+    def scale_entity(self, namespace, name, replicas, wait=60):
+        """Allows to scale up/down entities.
+        One of cases when this is necessary is emulation of stopping/starting appliance
 
         Args:
-            namespace: (str) project name
-            name: (str) pod name
-            cmd: (list) command to run
-        Return: command output
+            namespace: openshift namespace
+            name: entity name. it can be either stateless Pod from DeploymentConfig or StatefulSet
+            replicas: number of replicas 0..N
+            wait: time to wait for scale up/down
+        Return: None
         """
-        # there are some limitations and this code isn't robust enough due to
-        # https://github.com/kubernetes-client/python/issues/58
-        return self.v1_pod.exec.post(namespace=namespace, name=name,
-                                                           command=cmd,
-                                                           stdout=True,
-                                                           stderr=True,
-                                                           **kwargs)
+        # only dc and statefulsets can be scaled
+        # st_api = self.system.kubeclient.AppsV1beta1Api(api_client=self.kapi_client)
+
+        scale_val = self.system.kubeclient.V1Scale(spec=self.kclient.V1ScaleSpec(replicas=replicas))
+        if self.is_deployment_config(name=name, namespace=namespace):
+            self.system.v1_deployment_config.scale.patch(name=name, namespace=namespace,
+                                                         body=scale_val)
+
+            def check_scale_value():
+                got_scale = \
+                    self.system.v1_deployment_config.scale.get(name=name, namespace=namespace)
+                return int(got_scale.spec.replicas or 0)
+
+        elif self.is_stateful_set(name=name, namespace=namespace):
+            # replace this code with stateful_set_scale when kubernetes shipped with openshift
+            # client gets upgraded
+            st_spec = self.systmem.kubeclient.V1beta1StatefulSetSpec
+            st = self.system.kubeclient.V1beta1StatefulSet(spec=st_spec(replicas=replicas))
+            self.system.v1_stateful_sets.patch_(name=name, namespace=namespace, body=st)
+
+            def check_scale_value():
+                got_scale = self.system.v1_stateful_sets.get(name=name, namespace=namespace)
+                return int(got_scale.spec.replicas or 0)
+        else:
+            raise ValueError("This name %s is not found among "
+                             "deployment configs or stateful sets", name)
+        self.logger.info("scaling entity %s to %s replicas", name, replicas)
+        wait_for(check_scale_value, num_sec=wait, fail_condition=lambda val: val != replicas)
+
+    # def run_command(self, namespace, name, cmd, **kwargs):
+    #     """Connects to pod and tries to run
+    #
+    #     Args:
+    #         namespace: (str) project name
+    #         name: (str) pod name
+    #         cmd: (list) command to run
+    #     Return: command output
+    #     """
+    #     # there are some limitations and this code isn't robust enough due to
+    #     # https://github.com/kubernetes-client/python/issues/58
+    #     return self.v1_pod.exec.post(namespace=namespace, name=name,
+    #                                                        command=cmd,
+    #                                                        stdout=True,
+    #                                                        stderr=True,
+    #                                                        **kwargs)
