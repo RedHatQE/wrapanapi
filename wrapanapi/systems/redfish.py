@@ -196,7 +196,10 @@ class RedfishSystem(System):
         protocol = 'http' if security_protocol == 'Non-SSL' else 'https'
         self.url = '{}://{}:{}/'.format(protocol, hostname, api_port)
         self.kwargs = kwargs
-        self.api_client = redfish_client.connect(self.url, username, password)
+        if kwargs is not None and "api_client" in kwargs:
+            self.api_client = kwargs["api_client"]
+        else:
+            self.api_client = redfish_client.connect(self.url, username, password)
 
     @property
     def _identifying_attrs(self):
