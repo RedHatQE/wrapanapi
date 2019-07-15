@@ -13,9 +13,6 @@ from azure.common import AzureConflictHttpError
 from azure.common.credentials import ServicePrincipalCredentials
 from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.compute.models import (DiskCreateOptionTypes, VirtualHardDisk,
-                                       VirtualMachineCaptureParameters,
-                                       VirtualMachineSizeTypes)
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
@@ -256,17 +253,23 @@ class AzureInstance(Instance):
 
     def capture(self, container, image_name, overwrite_vhds=True):
         self.logger.info("Attempting to Capture Azure VM '%s'", self.name)
-        params = VirtualMachineCaptureParameters(vhd_prefix=image_name,
-                                                 destination_container_name=container,
-                                                 overwrite_vhds=overwrite_vhds)
+        # vm capture parameters resolved to correct class by API, url below to doc
+        # https://github.com/Azure/azure-sdk-for-python/wiki/
+        # Direct-access-to-%22models%22-is-deprecated
+        params = ComputeManagementClient.models().VirtualMachineCaptureParameters(
+            vhd_prefix=image_name,
+            destination_container_name=container,
+            overwrite_vhds=overwrite_vhds
+        )
         self.stop()
         self.logger.info("Generalizing VM '%s'", self.name)
-        operation = self._api.generalize(
-            resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.generalize(resource_group_name=self._resource_group,
+                                         vm_name=self.name)
         self._wait_on_operation(operation)
         self.logger.info("Capturing VM '%s'", self.name)
-        operation = self._api.capture(
-            resource_group_name=self._resource_group, vm_name=self.name, parameters=params)
+        operation = self._api.capture(resource_group_name=self._resource_group,
+                                      vm_name=self.name,
+                                      parameters=params)
         return self._wait_on_operation(operation)
 
     def get_vhd_uri(self):
@@ -347,7 +350,7 @@ class AzureBlobImage(Template):
         vnet_name = vm_settings['virtual_net']
 
         # checking whether passed vm size value is correct
-        vm_sizes = {t.value for t in VirtualMachineSizeTypes}
+        vm_sizes = {t.value for t in ComputeManagementClient.models().VirtualMachineSizeTypes}
         vm_size = vm_settings['vm_size']
         if vm_size not in vm_sizes:
             raise ValueError("wrong vm size %s passed. possible size: %s", vm_size,
@@ -441,8 +444,9 @@ class AzureBlobImage(Template):
                 'os_disk': {
                     'os_type': 'Linux',  # TODO: why is this hardcoded?
                     'name': vm_name,
-                    'vhd': VirtualHardDisk(uri=image_uri + ".vhd"),
-                    'create_option': DiskCreateOptionTypes.attach,
+                    'vhd': ComputeManagementClient.models().VirtualHardDisk(uri='{}.vhd'
+                                                                            .format(image_uri)),
+                    'create_option': ComputeManagementClient.models().DiskCreateOptionTypes.attach,
                 }
             },
             'network_profile': {
