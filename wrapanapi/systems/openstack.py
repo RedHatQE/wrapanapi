@@ -623,7 +623,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self.username = username
         self.password = password
         self.auth_url = auth_url
-        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self.domain_id = kwargs.get('domain_id') if self.keystone_version == 3 else None
         self.domain_name = kwargs.get('domain_name') if self.keystone_version == 3 else None
         if self.keystone_version == 3 and self.domain_id is None and self.domain_name is None:
             raise AttributeError("kwargs is missing domain_id or domain_name")
