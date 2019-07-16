@@ -14,7 +14,7 @@ from .systems.rhevm import RHEVMSystem
 from .systems.scvmm import SCVMMSystem
 from .systems.vcloud import VmwareCloudSystem
 from .systems.virtualcenter import VMWareSystem
-from .systems.container.rhopenshift import Openshift
+from .systems.openshift import OpenshiftSystem
 
 from .entities.vm import VmState
 
@@ -22,5 +22,5 @@ __all__ = [
     'EC2System', 'GoogleCloudSystem', 'HawkularSystem',
     'LenovoSystem', 'AzureSystem', 'NuageSystem', 'OpenstackSystem',
     'OpenstackInfraSystem', 'RedfishSystem', 'RHEVMSystem', 'SCVMMSystem',
-    'VmwareCloudSystem', 'VMWareSystem', 'Openshift', 'VmState'
+    'VmwareCloudSystem', 'VMWareSystem', 'OpenshiftSystem', 'VmState'
 ]

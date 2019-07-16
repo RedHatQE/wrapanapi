@@ -1,6 +1,5 @@
 from __future__ import absolute_import
 
-import re
 import copy
 import json
 import string
@@ -13,14 +12,13 @@ import inflection
 import six
 from cached_property import cached_property
 from kubernetes import client as kubeclient
-from kubernetes import config as kubeclientconfig
 from openshift.dynamic import DynamicClient
 from kubernetes.client.rest import ApiException
 from miq_version import TemplateName, Version
 from openshift import client as ociclient
 from wait_for import TimedOutError, wait_for
 
-from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin, VmState, ProjectMixin,
+from wrapanapi.entities import (Template, Vm, VmMixin, VmState, ProjectMixin,
                                 Project)
 from wrapanapi.systems.base import System
 
@@ -115,7 +113,7 @@ class Project(Project):
         pods = self.system.list_pods(namespace=self.name)
         states = []
         for pod in pods:
-             states.append(pod.state)
+            states.append(pod.state)
 
         if len(set(states)) == 1:
             return states[0]
@@ -235,10 +233,14 @@ class Pod(Vm):
 
     @property
     def ip(self):
-        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        # TODO JUWATTS
+        # ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
         self.refresh()
         try:
             return self.raw.status.podIP
+            if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
+                ip_address = None
+            return ip_address
         except (AttributeError):
             # AttributeError: vm doesn't have an ip address yet
             return None
@@ -586,8 +588,9 @@ class OpenShiftTemplate(Template):
             # todo: return and print all failed pod details
             raise
 
+
 @reconnect(unauthenticated_error_handler)
-class Openshift(System, VmMixin, ProjectMixin):
+class OpenshiftSystem(System, VmMixin, ProjectMixin):
 
     _stats_available = {
         'num_container': lambda self: len(self.list_containers()),
@@ -643,7 +646,7 @@ class Openshift(System, VmMixin, ProjectMixin):
 
     def __init__(self, hostname, protocol="https", port=8443, debug=False,
                  verify_ssl=False, **kwargs):
-        super(Openshift, self).__init__(kwargs)
+        super(OpenshiftSystem, self).__init__(kwargs)
         self.hostname = hostname
         self.protocol = protocol
         self.port = port
@@ -670,18 +673,18 @@ class Openshift(System, VmMixin, ProjectMixin):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
                                                port=self.port)
 
-        aConfiguration = kubeclient.Configuration()
+        k8_configuration = kubeclient.Configuration()
 
-        aConfiguration.host = url
+        k8_configuration.host = url
 
         # Security part.
-        aConfiguration.verify_ssl = self.verify_ssl
-        aConfiguration.ssl_ca_cert = self.ssl_ca_cert
+        k8_configuration.verify_ssl = self.verify_ssl
+        k8_configuration.ssl_ca_cert = self.ssl_ca_cert
 
-        aConfiguration.api_key = {"authorization": "Bearer " + aToken}
+        k8_configuration.api_key = {"authorization": "Bearer " + aToken}
 
         # Create a ApiClient with our config
-        return kubeclient.ApiClient(aConfiguration)
+        return kubeclient.ApiClient(k8_configuration)
 
     # def _connect(self):
     #
@@ -798,6 +801,15 @@ class Openshift(System, VmMixin, ProjectMixin):
     @property
     def can_pause(self):
         return False
+
+    @staticmethod
+    def _progress_log_callback(logger, source, destination, progress):
+        logger.info("Provisioning progress {}->{}: {}".format(
+            source, destination, str(progress)))
+
+    @property
+    def can_rename(self):
+        return hasattr(self, "rename_vm")
 
     def _does_exist(self, func, **kwargs):
         try:
@@ -923,7 +935,6 @@ class Openshift(System, VmMixin, ProjectMixin):
 
         return Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
 
-
     def create_vm(self, name, **kwargs):
         raise NotImplementedError('This function has not yet been implemented.')
 
@@ -941,7 +952,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         return [
             Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
             for pod in self.v1_pod.get(namespace=namespace).items]
-
 
     def wait_project_exist(self, name, wait=60):
         """Checks whether Project exists within some time.
@@ -1613,26 +1623,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         # todo: check url is available + db is accessable
         return True
 
-    def is_deployment_config(self, namespace, name):
-        """Checks whether passed name belongs to deployment configs in appropriate namespace
-
-        Args:
-            namespace: project(namespace) name
-            name: entity name
-        Return: True/False
-        """
-        return name in self.list_deployment_config_names(namespace=namespace)
-
-    def is_stateful_set(self, namespace, name):
-        """Checks whether passed name belongs to Stateful Sets in appropriate namespace
-
-        Args:
-            namespace: project(namespace) name
-            name: entity name
-        Return: True/False
-        """
-        return name in self.list_stateful_set_names(namespace=namespace)
-
     def is_vm_stopped(self, vm_name):
         """Check whether vm isn't running.
         There is no such state stopped for vm in openshift therefore
@@ -1678,10 +1668,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         Return: False
         """
         return False
-
-    @property
-    def can_rename(self):
-        return hasattr(self, "rename_vm")
 
     def get_appliance_version(self, vm_name):
         """Returns appliance version if it is possible
@@ -1730,11 +1716,6 @@ class Openshift(System, VmMixin, ProjectMixin):
             raise ValueError("Vm {} doesn't exist".format(vm_name))
         project = self.v1_project.get(vm_name)
         return project.raw.metadata.creation_timestamp
-
-    @staticmethod
-    def _progress_log_callback(logger, source, destination, progress):
-        logger.info("Provisioning progress {}->{}: {}".format(
-            source, destination, str(progress)))
 
     def vm_hardware_configuration(self, vm_name):
         """Collects project's cpu and ram usage
@@ -1794,24 +1775,6 @@ class Openshift(System, VmMixin, ProjectMixin):
             return self.required_project_pods58
         else:
             return self.required_project_pods
-
-    def get_ip_address(self, vm_name, timeout=600):
-        """ Returns the IP address for the selected appliance.
-
-        Args:
-            vm_name: The name of the vm to obtain the IP for.
-            timeout: The IP address wait timeout.
-        Returns: A string containing the first found IP that isn't the device.
-        """
-        try:
-            ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
-                                      fail_condition=None,
-                                      delay=5,
-                                      num_sec=timeout,
-                                      message="get_ip_address from openshift")
-        except TimedOutError:
-            ip_address = None
-        return ip_address
 
     def disconnect(self):
         pass
@@ -1973,7 +1936,6 @@ class Openshift(System, VmMixin, ProjectMixin):
         options = self.kclient.V1DeleteOptions()
         return self.v1_template.delete(name=template_name, namespace=namespace, body=options)
 
-
     def scale_entity(self, namespace, name, replicas, wait=60):
         """Allows to scale up/down entities.
         One of cases when this is necessary is emulation of stopping/starting appliance
@@ -2014,19 +1976,16 @@ class Openshift(System, VmMixin, ProjectMixin):
         self.logger.info("scaling entity %s to %s replicas", name, replicas)
         wait_for(check_scale_value, num_sec=wait, fail_condition=lambda val: val != replicas)
 
-    # def run_command(self, namespace, name, cmd, **kwargs):
-    #     """Connects to pod and tries to run
-    #
-    #     Args:
-    #         namespace: (str) project name
-    #         name: (str) pod name
-    #         cmd: (list) command to run
-    #     Return: command output
-    #     """
-    #     # there are some limitations and this code isn't robust enough due to
-    #     # https://github.com/kubernetes-client/python/issues/58
-    #     return self.v1_pod.exec.post(namespace=namespace, name=name,
-    #                                                        command=cmd,
-    #                                                        stdout=True,
-    #                                                        stderr=True,
-    #                                                        **kwargs)
+    def run_command(self, namespace, name, cmd, **kwargs):
+        """Connects to pod and tries to run
+
+        Args:
+            namespace: (str) project name
+            name: (str) pod name
+            cmd: (list) command to run
+        Return: command output
+        """
+        # there are some limitations and this code isn't robust enough due to
+        # https://github.com/kubernetes-client/python/issues/58
+        return self.v1_pod.exec.post(namespace=namespace, name=name, command=cmd, stdout=True,
+                                     stderr=True, **kwargs)
