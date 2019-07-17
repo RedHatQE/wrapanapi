@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import copy
 import json
+import re
 import string
 import yaml
 from collections import Iterable
@@ -18,8 +19,7 @@ from miq_version import TemplateName, Version
 from openshift import client as ociclient
 from wait_for import TimedOutError, wait_for
 
-from wrapanapi.entities import (Template, Vm, VmMixin, VmState, ProjectMixin,
-                                Project)
+from wrapanapi.entities import (Template, Vm, VmMixin, VmState, ProjectMixin, Project)
 from wrapanapi.systems.base import System
 
 
@@ -88,23 +88,31 @@ def unauthenticated_error_handler(method):
     return wrap
 
 
-class Project(Project):
+class RHOpenShiftProject(Project, Vm):
 
     """
     We are assuming that a Project is a VM for purposes of simplicity for CFME-QE
 
     """
 
+    state_map = {
+        'Pending': VmState.PENDING,
+        'Running': VmState.RUNNING,
+        'Succeeded': VmState.SUCCEEDED,
+        'Failed': VmState.FAILED,
+        'Unknown': VmState.UNKNOWN
+    }
+
     def __init__(self, system, raw=None, **kwargs):
         """
-        Construct a VMWareVirtualMachine instance
+        Construct a RHOpenShiftProject instance
 
         Args:
-            system: instance of VMWareSystem
-            raw: pyVmomi.vim.VirtualMachine object
-            name: name of VM
+            system: instance of OpenShiftSystem
+            raw: openshift.dynamic.client.ResourceField
+            name: name of Project
         """
-        super(Project, self).__init__(system, raw, **kwargs)
+        super(RHOpenShiftProject, self).__init__(system, raw, **kwargs)
         self._name = raw.metadata.name if raw else kwargs.get('name')
         if not self._name:
             raise ValueError("missing required kwarg 'name'")
@@ -127,7 +135,6 @@ class Project(Project):
         else:
             return False
 
-    @property
     def get_quota(self):
         return self.system.ocp_client.resources.get(api_version='v1', kind='ResourceQuota').get(
             namespace=self.name)
@@ -151,7 +158,18 @@ class Project(Project):
     def ip(self):
         raise NotImplementedError
 
+    @property
+    def creation_time(self):
+        """
+        Detect the project creation time
+
+        """
+        raise NotImplementedError
+
     def start(self):
+        """
+        Start the CFME pods
+        """
         self.logger.info("starting vm/project %s", self.name)
         if self._does_project_exist:
             for pod in self.system.get_required_pods(self.name):
@@ -160,11 +178,8 @@ class Project(Project):
             raise ValueError("Project with name {n} doesn't exist".format(n=self.name))
 
     def stop(self):
-        """Stops a vm.
-
-            Args:
-                vm_name: name of the vm to be stopped
-            Returns: whether vm action has been initiated properly
+        """
+           Stop the CFME pods
         """
         self.logger.info("stopping vm/project %s", self.name)
         if self._does_project_exist:
@@ -187,7 +202,7 @@ class Project(Project):
         return self.delete()
 
 
-class Pod(Vm):
+class RHOpenShiftPod(Vm):
     state_map = {
         'Pending': VmState.PENDING,
         'Running': VmState.RUNNING,
@@ -198,14 +213,14 @@ class Pod(Vm):
 
     def __init__(self, system, raw=None, **kwargs):
         """
-        Construct a VMWareVirtualMachine instance
+        Construct a RHOpenShiftPod instance
 
         Args:
-            system: instance of VMWareSystem
-            raw: pyVmomi.vim.VirtualMachine object
-            name: name of VM
+            system: instance of OpenShiftSystem
+            raw: openshift.dynamic.client.ResourceField
+            name: name of Pod
         """
-        super(Pod, self).__init__(system, raw, **kwargs)
+        super(RHOpenShiftPod, self).__init__(system, raw, **kwargs)
         self._name = raw.metadata.name if raw else kwargs.get('name')
         self._namespace = raw.metadata.namespace if raw else kwargs.get('namespace')
         if not self._name:
@@ -233,16 +248,15 @@ class Pod(Vm):
 
     @property
     def ip(self):
-        # TODO JUWATTS
-        # ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
         self.refresh()
         try:
-            return self.raw.status.podIP
+            ip_address=self.raw.status.podIP
             if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
                 ip_address = None
             return ip_address
         except (AttributeError):
-            # AttributeError: vm doesn't have an ip address yet
+            # AttributeError: pod doesn't have an ip address yet
             return None
 
     def _get_state(self):
@@ -270,12 +284,7 @@ class Pod(Vm):
 
     @property
     def creation_time(self):
-        """Detect the vm_creation_time either via uptime if non-zero, or by last boot time
-
-        The API provides no sensible way to actually get this value. The only way in which
-        vcenter API MAY have this is by filtering through events
-
-        Return tz-naive datetime object
+        """Detect the pods creation time
         """
         raise NotImplementedError
 
@@ -284,12 +293,12 @@ class OpenShiftTemplate(Template):
 
     def __init__(self, system, raw=None, **kwargs):
         """
-        Construct a VMWareVirtualMachine instance
+        Construct a OpenShiftTemplate instance
 
         Args:
-            system: instance of VMWareSystem
-            raw: pyVmomi.vim.VirtualMachine object
-            name: name of VM
+            system: instance of OpenShiftSystem
+            raw: openshift.dynamic.client.ResourceField
+            name: name of Template
         """
         super(OpenShiftTemplate, self).__init__(system, raw, **kwargs)
         self._name = raw.metadata.name if raw else kwargs.get('name')
@@ -686,19 +695,6 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         # Create a ApiClient with our config
         return kubeclient.ApiClient(k8_configuration)
 
-    # def _connect(self):
-    #
-    #     self.dyn_client = DynamicClient(self.k8s_client)
-
-        # self.ociclient = ociclient
-        # self.kclient = kubeclient
-        # self.oapi_client = ociclient.ApiClient(config=config)
-        # self.kapi_client = kubeclient.ApiClient(config=config)
-        # self.o_api = ociclient.OapiApi(api_client=self.oapi_client)
-        # self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
-        # self.security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
-        # self.batch_api = self.kclient.BatchV1Api(api_client=self.kapi_client)  # for job api
-
     @property
     def _identifying_attrs(self):
         """
@@ -933,7 +929,10 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         else:
             pod = self.get_ocp_obj(resource_type=self.v1_pod, name=name)
 
-        return Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
+        return RHOpenShiftPod(system=self,
+                              name=pod.metadata.name,
+                              namespace=pod.metadata.namespace,
+                              raw=pod)
 
     def create_vm(self, name, **kwargs):
         raise NotImplementedError('This function has not yet been implemented.')
@@ -950,7 +949,8 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
              list of wrapanapi.entities.Vm
         """
         return [
-            Pod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace, raw=pod)
+            RHOpenShiftPod(system=self, name=pod.metadata.name, namespace=pod.metadata.namespace,
+                           raw=pod)
             for pod in self.v1_pod.get(namespace=namespace).items]
 
     def wait_project_exist(self, name, wait=60):
@@ -976,7 +976,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
 
         project = self.v1_project.create(body=proj)
         self.wait_project_exist(name=name)
-        return Project(system=self, name=project.metadata.name, raw=project)
+        return RHOpenShiftProject(system=self, name=project.metadata.name, raw=project)
 
     def find_projects(self, *args, **kwargs):
         raise NotImplementedError
@@ -984,14 +984,14 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
     def get_project(self, name):
         project = self.v1_project.get(name=name)
 
-        return Project(system=self, name=project.metadata.name, raw=project)
+        return RHOpenShiftProject(system=self, name=project.metadata.name, raw=project)
 
     get_vm = get_project
 
     def list_project(self, namespace=None):
 
         return [
-            Project(system=self, name=project.metadata.name, raw=project)
+            RHOpenShiftProject(system=self, name=project.metadata.name, raw=project)
             for project in self.v1_project.get(namespace=namespace).items]
 
     list_vms = list_project
@@ -1847,7 +1847,6 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         """
         return self.v1_pod.log.get(name=name, namespace=namespace)
 
-
     def start_vm(self, vm_name):
         """Starts a vm.
 
@@ -1987,5 +1986,5 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         """
         # there are some limitations and this code isn't robust enough due to
         # https://github.com/kubernetes-client/python/issues/58
-        return self.v1_pod.exec.post(namespace=namespace, name=name, command=cmd, stdout=True,
+        return self.v1_pod.exec(namespace=namespace, name=name, command=cmd, stdout=True,
                                      stderr=True, **kwargs)

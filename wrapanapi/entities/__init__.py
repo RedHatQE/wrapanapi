@@ -13,5 +13,6 @@ from .server import Server, ServerState
 
 __all__ = [
     'Template', 'TemplateMixin', 'Vm', 'VmState', 'VmMixin', 'Instance',
-    'PhysicalContainer', 'Server', 'ServerState', 'Stack', 'StackMixin'
+    'PhysicalContainer', 'Server', 'ServerState', 'Stack', 'StackMixin',
+    'Project', 'ProjectMixin'
 ]
