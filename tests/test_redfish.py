@@ -99,6 +99,9 @@ class TestRedfishSystem(TestCase):
             },
             "/redfish/v1/Systems/System-1-2-1-1/Processors/CPU.Socket.1": {
                 "@odata.id": "/redfish/v1/Systems/System-1-2-1-1/Processors/CPU.Socket.1",
+                "InstructionSet": [{
+                    "Member": "x86-64"
+                }],
                 "TotalCores": 20,
             }
         })
@@ -111,6 +114,8 @@ class TestRedfishSystem(TestCase):
         self.assertFalse(rf_server.is_off)
         self.assertFalse(rf_server.is_powering_on)
         self.assertFalse(rf_server.is_powering_off)
+        self.assertEqual(rf_server.machine_type, "x86-64")
+        self.assertEqual(rf_server.product_name, "System")
 
     def test_server_power_states(self, mock_connector):
         # string,

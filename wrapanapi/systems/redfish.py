@@ -106,6 +106,16 @@ class RedfishServer(Server, RedfishResource):
         """Retrieve the current power status of the physical server."""
         return self.raw.PowerState
 
+    @property
+    def machine_type(self):
+        """Retrieve the server's machine type."""
+        return self.raw.Processors.Members[0].InstructionSet[0]["Member"]
+
+    @property
+    def product_name(self):
+        """Reurn the product name of the server"""
+        return self.raw.Name
+
     def _get_state(self):
         """
         Return ServerState object representing the server's current state.
