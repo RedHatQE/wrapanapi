@@ -88,6 +88,11 @@ def unauthenticated_error_handler(method):
     return wrap
 
 
+def progress_log_callback(logger, source, destination, progress):
+    logger.info("Provisioning progress {}->{}: {}".format(
+        source, destination, str(progress)))
+
+
 class RHOpenShiftProject(Project, Vm):
 
     """
@@ -353,8 +358,8 @@ class OpenShiftTemplate(Template):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
-                        func_kwargs={'func': self.v1_template.get,
+        return wait_for(self.system.does_exist, num_sec=wait,
+                        func_kwargs={'func': self.system.get_template,
                                      'name': name,
                                      'namespace': namespace})[0]
 
@@ -470,7 +475,7 @@ class OpenShiftTemplate(Template):
         self.logger.info("starting template %s deployment", self.name)
         self.wait_template_exist(namespace=self.system.default_namespace, name=self.name)
 
-        if not self.base_url:
+        if not self.system.base_url:
             raise ValueError("base url isn't provided")
 
         version = Version(TemplateName.parse_template(self.name).version)
@@ -487,11 +492,12 @@ class OpenShiftTemplate(Template):
                 raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
             for tag, value in tags.items():
                 prepared_tags[tags_mapping[tag]['url']] = value['url']
-                prepared_tags[tags_mapping[tag]['tag']] = value['tag']
+                if 'tag' in value.keys():
+                    prepared_tags[tags_mapping[tag]['tag']] = value['tag']
 
         # create project
         # assuming this is cfme installation and generating project name
-        proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
+        proj_id = "".join(choice(string.digits + string.ascii_lowercase) for _ in range(6))
 
         # for sprout
         if 'vm_name' in kwargs:
@@ -501,11 +507,11 @@ class OpenShiftTemplate(Template):
 
         template_params = kwargs.pop('template_params', {})
         running_pods = kwargs.pop('running_pods', ())
-        proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
+        proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.system.base_url)
         self.logger.info("unique id %s, project name %s", proj_id, proj_name)
 
-        default_progress_callback = partial(self._progress_log_callback, self.logger, self.name,
-                                            proj_name)
+        default_progress_callback = partial(progress_log_callback, self.logger,
+                                            self.name, proj_name)
         progress_callback = kwargs.get('progress_callback', default_progress_callback)
 
         project = self.system.create_project(name=proj_name, description=self.name)
@@ -521,7 +527,7 @@ class OpenShiftTemplate(Template):
         self.logger.info("granting required rights to project's service accounts")
         for mapping in scc_user_mapping:
             self.system.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name,
-                                  sa=mapping['user'])
+                                         sa=mapping['user'])
         progress_callback("Added service accounts to appropriate scc")
 
         # appliances prior 5.9 don't need such rights
@@ -552,7 +558,7 @@ class OpenShiftTemplate(Template):
             self.system.v1_role_binding.create(namespace=proj_name, body=edit_role_binding)
 
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
-        self.system._restore_missing_project_role_bindings(namespace=proj_name)
+        self.system.restore_missing_project_role_bindings(namespace=proj_name)
         progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
 
         # creating common service with external ip
@@ -582,7 +588,6 @@ class OpenShiftTemplate(Template):
 
         self.logger.info("verifying that all created entities are up and running")
         progress_callback("Waiting for all pods to be ready and running")
-        # TODO Get PROJECT
         try:
             wait_for(project.is_running, num_sec=600,
                      func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
@@ -798,16 +803,11 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
     def can_pause(self):
         return False
 
-    @staticmethod
-    def _progress_log_callback(logger, source, destination, progress):
-        logger.info("Provisioning progress {}->{}: {}".format(
-            source, destination, str(progress)))
-
     @property
     def can_rename(self):
         return hasattr(self, "rename_vm")
 
-    def _does_exist(self, func, **kwargs):
+    def does_exist(self, func, **kwargs):
         try:
             func(**kwargs)
             return True
@@ -961,8 +961,8 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
-                        func_kwargs={'func': self.get_project(),
+        return wait_for(self.does_exist, num_sec=wait,
+                        func_kwargs={'func': self.get_project,
                                      'name': name})[0]
 
     def create_project(self, name, description=None, **kwargs):
@@ -1022,7 +1022,10 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         return OpenShiftTemplate(system=self, name=template.metadata.name, raw=template)
 
     def list_templates(self, namespace=None):
-        return self.v1_template.get(namespace=namespace).items
+        return [
+            OpenShiftTemplate(system=self, name=template.metadata.name, raw=template)
+            for template in self.v1_template.get(namespace=namespace).items
+        ]
 
     def list_deployment_configs(self, namespace=None):
         return self.v1_deployment_config.get(namespace=namespace).items
@@ -1052,7 +1055,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_service.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1163,7 +1166,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_config_map.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1214,7 +1217,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         Return: True/False
         """
         read_st = self.v1_stateful_sets.get
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': read_st,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1243,7 +1246,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_endpoint.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1272,7 +1275,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_route.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1301,7 +1304,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_service_account.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1330,7 +1333,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_role_binding.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1368,7 +1371,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_image_stream.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1397,7 +1400,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_secret.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1426,7 +1429,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_deployment_config.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1476,7 +1479,7 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self.does_exist, num_sec=wait,
                         func_kwargs={'func': self.v1_persistent_volume.get,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1565,19 +1568,12 @@ class OpenshiftSystem(System, VmMixin, ProjectMixin):
         """
         user = 'system:serviceaccount:{proj}:{usr}'.format(proj=namespace,
                                                            usr=sa)
-        if self.get_scc(name=scc_name).users is None:
-            # ocp 3.6 has None for users if there is no sa in it
-            update_scc_cmd = [
-                {"op": "add",
-                 "path": "/users",
-                 "value": [user]}]
-        else:
-            update_scc_cmd = [
-                {"op": "add",
-                 "path": "/users/-",
-                 "value": user}]
+        body = self.get_scc(name=scc_name)
+        body.users.append(user)
         self.logger.debug("adding user %r to scc %r", user, scc_name)
-        return self.v1_scc.patch(name=scc_name, body=update_scc_cmd, namespace=namespace)
+        #return self.v1_scc.patch(name=scc_name, body=update_scc_cmd, namespace=namespace)
+
+        return self.v1_scc.patch(name=scc_name, body=body)
 
     def remove_sa_from_scc(self, scc_name, namespace, sa):
         """Removes Service Account from respective Security Constraint
