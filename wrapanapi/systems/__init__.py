@@ -13,9 +13,10 @@ from .rhevm import RHEVMSystem
 from .scvmm import SCVMMSystem
 from .vcloud import VmwareCloudSystem
 from .virtualcenter import VMWareSystem
+from .openshift import OpenshiftSystem
 
 __all__ = [
     'EC2System', 'GoogleCloudSystem', 'HawkularSystem', 'LenovoSystem',
-    'AzureSystem', 'NuageSystem', 'OpenstackSystem', 'OpenstackInfraSystem', 'RedfishSystem',
-    'RHEVMSystem', 'SCVMMSystem', 'VmwareCloudSystem', 'VMWareSystem'
+    'AzureSystem', 'NuageSystem', 'OpenshiftSystem', 'OpenstackSystem', 'OpenstackInfraSystem',
+    'RedfishSystem', 'RHEVMSystem', 'SCVMMSystem', 'VmwareCloudSystem', 'VMWareSystem'
 ]
