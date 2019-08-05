@@ -246,7 +246,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
             "ft -HideTableHeaders".format(self._id))
         table = str.maketrans(dict.fromkeys("{}"))
-        ip = data.decode("utf-8").translate(table)
+        ip = data.translate(table)
         return ip if ip else None
 
     @property
@@ -566,7 +566,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     def timezone(self):
         windows_tz = self.run_script(
             "[System.TimeZoneInfo]::Local | Select-Object -expandproperty Id"
-        ).decode("UTF-8")
+        )
         tz = None
         try:
             tz = pytz.timezone(WINDOWS_TZ_INFO[windows_tz])
@@ -605,7 +605,11 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             else:
                 _raise_for_result(result)
 
-        return result.std_out.strip()
+        try:
+            # try to decode bytes string if we can
+            return result.std_out.strip().decode("utf-8")
+        except AttributeError:
+            return result.std_out.strip()
 
     def get_json(self, script, depth=2):
         """
