@@ -397,7 +397,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         num_removed_line = [line for line in output if "number_dvds_disconnected:" in line]
         if num_removed_line:
             number_dvds_disconnected = int(
-                num_removed_line[0].split('number_dvds_disconnected:')[1].strip()
+                num_removed_line[0].split('number_dvds_disconnected:')[1].replace(" ", "")
             )
         return number_dvds_disconnected
 
