@@ -6,7 +6,7 @@ boto
 cached_property
 dateparser
 enum34; python_version == '2.7'
-fauxfactory>=2.0.7
+fauxfactory==3.0.2
 google-api-python-client
 google-compute-engine
 inflection
