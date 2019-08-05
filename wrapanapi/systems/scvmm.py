@@ -245,7 +245,8 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             "Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server |"
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
             "ft -HideTableHeaders".format(self._id))
-        ip = data.translate(None, '{}')
+        table = str.maketrans(dict.fromkeys("{}"))
+        ip = data.decode("utf-8").translate(table)
         return ip if ip else None
 
     @property
