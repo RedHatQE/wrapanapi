@@ -9,7 +9,6 @@ from functools import partial, wraps
 from random import choice
 
 import inflection
-import six
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
 from miq_version import TemplateName, Version
@@ -604,9 +603,9 @@ class Openshift(System):
             struct: data to process and rename
         Return: updated data
         """
-        if not isinstance(struct, six.string_types) and isinstance(struct, Iterable):
+        if not isinstance(struct, str) and isinstance(struct, Iterable):
             if isinstance(struct, dict):
-                for key in struct.keys():
+                for key in list(struct.keys()):
                     # we shouldn't rename something under data or spec
                     if key == 'stringData':
                         # this key has to be renamed but its contents should be left intact
