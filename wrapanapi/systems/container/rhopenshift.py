@@ -352,7 +352,7 @@ class Openshift(System):
 
         # create project
         # assuming this is cfme installation and generating project name
-        proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
+        proj_id = "".join(choice(string.digits + string.ascii_lowercase) for _ in range(6))
 
         # for sprout
         if 'vm_name' in kwargs:
