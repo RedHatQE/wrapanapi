@@ -581,7 +581,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             message="template is OK",
             delay=10)
 
-    def deploy(self, vm_name, cluster, timeout=900, power_on=True, **kwargs):
+    def deploy(self, vm_name, cluster, timeout=900, power_on=True, initialization=None, **kwargs):
         """
         Deploy a VM using this template
 
@@ -597,6 +597,9 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             ram (optional) -- memory in GB
             storage_domain (optional) -- storage domain name to which VM should be deployed
             clone (optional) -- If set to True, use "Clone" for resource allocation, else "Thin"
+            initialization (optional) -- initialization values. Defined for example in
+            https://access.redhat.com/documentation/en-us/red_hat_virtualization/4.2/
+            html-single/python_sdk_guide/index#Starting_a_Virtual_Machine_with_Cloud-Init
 
         Returns:
             wrapanapi.systems.rhevm.RHEVMVirtualMachine
@@ -643,6 +646,8 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
         if 'ram' in kwargs:
             vm_kwargs['memory'] = int(kwargs['ram'])  # in Bytes
         vms_service = self.system.api.system_service().vms_service()
+        if initialization:
+            vm_kwargs['initialization'] = types.Initialization(**initialization)
         vms_service.add(types.Vm(**vm_kwargs), clone=clone)
         vm = self.system.get_vm(vm_name)
         vm.wait_for_state(VmState.STOPPED, timeout=timeout)
