@@ -1086,8 +1086,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                     " in any pool", pool_name
                 )
         try:
-            fip = (ip for ip in self.api.floating_ips.list()
-                   if ip.instance_id is None).next()
+            fip = next(ip for ip in self.api.floating_ips.list()
+                   if ip.instance_id is None)
         except StopIteration:
             self.logger.error('No more Floating IPs available')
             return None
