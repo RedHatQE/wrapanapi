@@ -388,7 +388,7 @@ class EC2Vpc(Network, _TagMixin):
         return self.raw
 
     def refresh(self):
-        vpc = self.system.get_network(self.raw.id).raw
+        vpc = self.system.get_network(id=self.raw.id).raw
         if not vpc:
             raise NetworkNotFoundError(self._uuid)
         self.raw = vpc
@@ -1261,8 +1261,11 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         except Exception:
             return False
 
-    def get_network(self, name_or_id):
-        networks = self.find_networks(name_or_id)
+    def get_network(self, name=None, id=None):
+        if not name and not id or name and id:
+            raise ValueError("Either name or id must be set and not both!")
+        networks = self.find_networks(name=name, id=id)
+        name_or_id = name if name else id
         if not networks:
             raise NotFoundError("Network with name {} not found".format(name_or_id))
         elif len(networks) > 1:
@@ -1279,18 +1282,21 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         ]
         return network_list
 
-    def find_networks(self, name_or_id):
+    def find_networks(self, name=None, id=None):
         """
         Return list of all networks with given name or id
         Args:
-            name_or_id: name or id to search for if starts with vpc- then it's evaluated as id
+            name: name to search
+            id: id to search
         Returns:
             List of EC2Vpc objects
         """
-        if name_or_id.startswith('vpc-'):
-            vpcs = self.ec2_connection.describe_vpcs(VpcIds=[name_or_id])
+        if not name and not id or name and id:
+            raise ValueError("Either name or id must be set and not both!")
+        if id:
+            vpcs = self.ec2_connection.describe_vpcs(VpcIds=[id])
         else:
             vpcs = self.ec2_connection.describe_vpcs(Filters=[{'Name': 'tag:Name',
-                                                              'Values': [name_or_id]}])
+                                                              'Values': [name]}])
         return [EC2Vpc(system=self, raw=self.ec2_resource.Vpc(vpc['VpcId']))
                 for vpc in vpcs.get('Vpcs')]
