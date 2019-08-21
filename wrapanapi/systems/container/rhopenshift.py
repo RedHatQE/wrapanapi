@@ -6,10 +6,10 @@ import string
 import yaml
 from collections import Iterable
 from functools import partial, wraps
+from past.builtins import basestring
 from random import choice
 
 import inflection
-import six
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
 from miq_version import TemplateName, Version
@@ -82,6 +82,29 @@ def unauthenticated_error_handler(method):
                     raise e
         return method(*args, **kwargs)
     return wrap
+
+
+def is_iterable(item):
+    return not isinstance(item, basestring) and isinstance(item, Iterable)
+
+
+def drop_item(struct, key):
+    """ It's needed to workaround one bug in processing openshift template.
+    It just recursively drops passed key from passed struct
+
+    :param struct: dict or dicts with lists and etc
+    :param key: str, dict key
+    :return: dict
+    """
+    if is_iterable(struct):
+        if isinstance(struct, dict):
+            struct.pop(key, None)
+            for _, value in struct.items():
+                drop_item(value, key)
+        else:
+            for value in struct:
+                drop_item(value, key)
+    return struct
 
 
 @reconnect(unauthenticated_error_handler)
@@ -352,7 +375,7 @@ class Openshift(System):
 
         # create project
         # assuming this is cfme installation and generating project name
-        proj_id = "".join(choice(string.digits + string.lowercase) for _ in range(6))
+        proj_id = "".join(choice(string.digits + string.ascii_lowercase) for _ in range(6))
 
         # for sprout
         if 'vm_name' in kwargs:
@@ -593,7 +616,8 @@ class Openshift(System):
                                                                        body=updated_template,
                                                                        _preload_content=False)
         raw_data = json.loads(raw_response.data)
-        updated_data = self.rename_structure(raw_data)
+        # above api call started adding wrong apiVersion to template what entails deployment errors
+        updated_data = drop_item(raw_data, 'apiVersion')
         processed_template = self.ociclient.V1Template(**updated_data)
         return processed_template.objects
 
@@ -604,10 +628,10 @@ class Openshift(System):
             struct: data to process and rename
         Return: updated data
         """
-        if not isinstance(struct, six.string_types) and isinstance(struct, Iterable):
+        if is_iterable(struct):
             if isinstance(struct, dict):
-                for key in struct.keys():
-                    # we shouldn't rename something under data or spec
+                # we shouldn't rename something under data or spec
+                for key, value in list(struct.items()):
                     if key == 'stringData':
                         # this key has to be renamed but its contents should be left intact
                         struct[inflection.underscore(key)] = struct.pop(key)
@@ -618,13 +642,11 @@ class Openshift(System):
                         # all this data should be processed and updated
                         val = self.rename_structure(struct.pop(key))
                         struct[inflection.underscore(key)] = val
-                return struct
             else:
-                for index, item in enumerate(struct):
-                    struct[index] = self.rename_structure(item)
-                return struct
-        else:
-            return struct
+                for item in struct:
+                    self.rename_structure(item)
+
+        return struct
 
     def create_config_map(self, namespace, **kwargs):
         """Creates ConfigMap entity using REST API.
