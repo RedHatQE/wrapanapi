@@ -956,15 +956,25 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         return vm
 
     def create_folder(self, folder_name):
-        """Create a Vm folder under Datacenter"""
+        """Create a Vm folder under Datacenter
+
+        Args:
+            folder_name: Name of Vm Folder
+            return: vim.Folder
+        """
         dc = self.get_obj(vim.Datacenter, "Datacenter")
         folder = dc.vmFolder.CreateFolder(folder_name)
         return folder
 
     def destroy_folder(self, folder_name):
-        """Delete a Vm folder under Datacenter"""
+        """Delete a Vm folder under Datacenter
+
+        Args:
+            folder_name: Name of Vm Folder
+            return: vim.Task
+        """
         folder = self._search_folders_for_vm(folder_name)
-        folder.Destroy()
+        return folder.Destroy()
 
     def _build_filter_spec(self, begin_entity, property_spec):
         """Build a search spec for full inventory traversal, adapted from psphere"""
