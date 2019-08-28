@@ -347,7 +347,7 @@ class RedfishSystem(System):
         try:
             return self.api_client.find(resource_id)
         except Exception as e:
-            raise RedfishItemNotFound(resource_id, "Redfish item", e.message)
+            raise RedfishItemNotFound(resource_id, "Redfish item", e)
 
     def get_server(self, resource_id):
         """
