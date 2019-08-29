@@ -228,6 +228,111 @@ class TestRedfishSystem(RedfishTestCase):
                 msg="Chassis type Sled does not match that of a Rack"):
             rf.get_rack("/redfish/v1/Chassis/Sled-1-2-1")
 
+    def test_server_stats_inventory(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Systems/System-1-2-1-1": {
+                "@odata.id": "/redfish/v1/Systems/System-1-2-1-1",
+                "Description": "A server",
+                "Id": "System-1-2-1-1",
+                "Manufacturer": "Dell Inc.",
+                "MemorySummary": {
+                    "TotalSystemMemoryGiB": 32,
+                },
+                "Name": "System",
+                "PowerState": "On",
+                "Processors": {
+                    "@odata.id": "/redfish/v1/Systems/System-1-2-1-1/Processors"
+                },
+                "SerialNumber": "945hjf0927mf",
+            },
+            "/redfish/v1/Systems/System-1-2-1-1/Processors": {
+                "@odata.id": "/redfish/v1/Systems/System-1-2-1-1/Processors",
+                "Members": [{
+                    "@odata.id": "/redfish/v1/Systems/System-1-2-1-1/Processors/CPU.Socket.1"
+                }],
+            },
+            "/redfish/v1/Systems/System-1-2-1-1/Processors/CPU.Socket.1": {
+                "@odata.id": "/redfish/v1/Systems/System-1-2-1-1/Processors/CPU.Socket.1",
+                "InstructionSet": [{
+                    "Member": "x86-64"
+                }],
+                "TotalCores": 20,
+            }
+        })
+        physical_server = mock.Mock()
+        physical_server.ems_ref = "/redfish/v1/Systems/System-1-2-1-1"
+        requested_stats = ["cores_capacity", "memory_capacity",
+                           #  "num_network_devices", "num_storage_devices"
+                           ]
+        requested_inventory = ["power_state"]
+        self.assertEqual(rf.server_stats(physical_server, requested_stats),
+            {"cores_capacity": 20, "memory_capacity": 32768})
+        self.assertEqual(rf.server_inventory(physical_server, requested_inventory),
+            {"power_state": "on"})
+
+    def test_rack_stats_inventory(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Chassis/Rack-1": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-1",
+                "ChassisType": "Rack",
+                "Description": "Redfish Rack",
+                "Id": "Rack-1",
+                "IndicatorLED": "Blinking",
+                "Links": {
+                    "ComputerSystems": [
+                        {
+                            "@odata.id": "/redfish/v1/Systems/System-1-2-1-1"
+                        }
+                    ]
+                },
+                "Manufacturer": "Dell",
+                "Name": "G5_Rack",
+                "SerialNumber": "1ABC",
+            }
+        })
+        physical_rack = mock.Mock()
+        physical_rack.ems_ref = "/redfish/v1/Chassis/Rack-1"
+        requested_stats = []
+        requested_inventory = ["rack_name"]
+        self.assertEqual(rf.rack_stats(physical_rack, requested_stats),
+            {})
+        self.assertEqual(rf.rack_inventory(physical_rack, requested_inventory),
+            {"rack_name": "Rack-1"})
+
+    def test_chassis_stats_inventory(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Chassis/Sled-1-2-1": {
+                "@odata.id": "/redfish/v1/Chassis/Sled-1-2-1",
+                "ChassisType": "Sled",
+                "Description": "G5 Sled-Level Enclosure",
+                "Id": "Sled-1-2-1",
+                "IndicatorLED": "Blinking",
+                "Links": {
+                    "ComputerSystems": [
+                        {
+                            "@odata.id": "/redfish/v1/Systems/System-1-2-1-1"
+                        },
+                        {
+                            "@odata.id": "/redfish/v1/Systems/System-1-1-2-2"
+                        }
+                    ]
+                },
+                "Manufacturer": "Dell",
+                "Name": "G5_Sled",
+                "SerialNumber": "5555A",
+            }
+        })
+        phsyical_chassis = mock.Mock()
+        phsyical_chassis.ems_ref = "/redfish/v1/Chassis/Sled-1-2-1"
+        requested_stats = ["num_physical_servers"]
+        requested_inventory = ["chassis_name", "description", "identify_led_state"]
+        self.assertEqual(rf.chassis_stats(phsyical_chassis, requested_stats),
+            {"num_physical_servers": 2})
+        self.assertEqual(rf.chassis_inventory(phsyical_chassis, requested_inventory),
+            {"chassis_name": "Dell G5_Sled (5555A)",
+             "description": "G5 Sled-Level Enclosure",
+             "identify_led_state": "Blinking"})
+
 
 @mock.patch("redfish_client.Connector")
 class TestRedfishServer(RedfishTestCase):
