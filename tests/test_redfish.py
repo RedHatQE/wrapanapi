@@ -20,8 +20,7 @@ class TestRedfishSystemSetup:
         mock_connector.assert_called_with("https://dummy:443/", "user", "pass")
 
 
-@mock.patch("redfish_client.Connector")
-class TestRedfishSystem(TestCase):
+class RedfishTestCase(TestCase):
     def mock_redfish_system(self, mock_connector, data):
         def mock_get(url):
             res = mock.Mock()
@@ -31,11 +30,15 @@ class TestRedfishSystem(TestCase):
 
         mock_connector.get.side_effect = mock_get
         api_client = Root(mock_connector)
+        api_client._content = data.get("/redfish/v1", None)
 
         rf = RedfishSystem("dummy", "user", "pass", "Non-SSL", "8000",
             api_client=api_client)
         return rf
 
+
+@mock.patch("redfish_client.Connector")
+class TestRedfishSystem(RedfishTestCase):
     def test_find_resource(self, mock_connector):
         rf = self.mock_redfish_system(mock_connector, data={
             "/redfish/v1/BlankResource": {
@@ -44,6 +47,147 @@ class TestRedfishSystem(TestCase):
         })
         resource = rf.find("/redfish/v1/BlankResource")
         self.assertEqual(resource.raw, {"@odata.id": "id"})
+
+    def test_redfish_system(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/BlankResource": {
+                "@odata.id": "id"
+            }
+        })
+        self.assertEqual(rf._identifying_attrs,
+                         {"url": "http://dummy:8000/"})
+        self.assertEqual(rf.info(),
+                         "RedfishSystem url=http://dummy:8000/")
+
+    def test_num_servers(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1": {
+                "Systems": {
+                    "@odata.id": "/redfish/v1/Systems"
+                }
+            },
+            "/redfish/v1/Systems": {
+                "@odata.id": "/redfish/v1/Systems/",
+                "Members@odata.count": 4,
+                "@odata.context":
+                    "/redfish/v1/$metadata#ComputerSystemCollection.ComputerSystemCollection",
+                "Members": [
+                    {"@odata.id": "/redfish/v1/Systems/1"},
+                    {"@odata.id": "/redfish/v1/Systems/2"},
+                    {"@odata.id": "/redfish/v1/Systems/3"},
+                    {"@odata.id": "/redfish/v1/Systems/4"},
+                ],
+                "@odata.type": "#ComputerSystemCollection.ComputerSystemCollection",
+                "Members@odata.navigationLink": "/redfish/v1/Systems/Members",
+                "@odata.etag": "W/\"e48557da1bf040a5d45d1e5aa726bf3a\"",
+                "Name": "ComputerSystemCollection",
+                "Description": "A Collection of ComputerSystem resource instances."}
+        })
+        self.assertEqual(rf.num_servers, 4)
+
+    def test_num_chassis(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1": {
+                "Chassis": {
+                    "@odata.id": "/redfish/v1/Chassis"
+                }
+            },
+            "/redfish/v1/Chassis": {
+                "@odata.id": "/redfish/v1/Chassis/",
+                "Members@odata.count": 6,
+                "@odata.context": "/redfish/v1/$metadata#ChassisCollection.ChassisCollection",
+                "Members": [
+                    {"@odata.id": "/redfish/v1/Chassis/Block-1"},
+                    {"@odata.id": "/redfish/v1/Chassis/Block-2"},
+                    {"@odata.id": "/redfish/v1/Chassis/Block-3"},
+                    {"@odata.id": "/redfish/v1/Chassis/Rack-4"},
+                    {"@odata.id": "/redfish/v1/Chassis/Rack-5"},
+                    {"@odata.id": "/redfish/v1/Chassis/Sled-6"},
+                ],
+                "@odata.type": "#ChassisCollection.ChassisCollection",
+                "Members@odata.navigationLink": "/redfish/v1/Chassis/Members",
+                "@odata.etag": "W/\"aef74912345d8e2ae00d008591fc5d85\"",
+                "Name": "ChassisCollection",
+                "Description": "A Collection of Chassis resource instances."
+            },
+            "/redfish/v1/Chassis/Block-1": {
+                "@odata.id": "/redfish/v1/Chassis/Block-1",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Block-2": {
+                "@odata.id": "/redfish/v1/Chassis/Block-2",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Block-3": {
+                "@odata.id": "/redfish/v1/Chassis/Block-3",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Rack-4": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-4",
+                "ChassisType": "Rack",
+            },
+            "/redfish/v1/Chassis/Rack-5": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-5",
+                "ChassisType": "Rack",
+            },
+            "/redfish/v1/Chassis/Sled-6": {
+                "@odata.id": "/redfish/v1/Chassis/Sled-6",
+                "ChassisType": "Sled",
+            },
+        })
+        self.assertEqual(rf.num_chassis, 4)
+
+    def test_num_racks(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1": {
+                "Chassis": {
+                    "@odata.id": "/redfish/v1/Chassis"
+                }
+            },
+            "/redfish/v1/Chassis": {
+                "@odata.id": "/redfish/v1/Chassis/",
+                "Members@odata.count": 6,
+                "@odata.context": "/redfish/v1/$metadata#ChassisCollection.ChassisCollection",
+                "Members": [
+                    {"@odata.id": "/redfish/v1/Chassis/Block-1"},
+                    {"@odata.id": "/redfish/v1/Chassis/Block-2"},
+                    {"@odata.id": "/redfish/v1/Chassis/Block-3"},
+                    {"@odata.id": "/redfish/v1/Chassis/Rack-4"},
+                    {"@odata.id": "/redfish/v1/Chassis/Rack-5"},
+                    {"@odata.id": "/redfish/v1/Chassis/Sled-6"},
+                ],
+                "@odata.type": "#ChassisCollection.ChassisCollection",
+                "Members@odata.navigationLink": "/redfish/v1/Chassis/Members",
+                "@odata.etag": "W/\"aef74912345d8e2ae00d008591fc5d85\"",
+                "Name": "ChassisCollection",
+                "Description": "A Collection of Chassis resource instances."
+            },
+            "/redfish/v1/Chassis/Block-1": {
+                "@odata.id": "/redfish/v1/Chassis/Block-1",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Block-2": {
+                "@odata.id": "/redfish/v1/Chassis/Block-2",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Block-3": {
+                "@odata.id": "/redfish/v1/Chassis/Block-3",
+                "ChassisType": "Enclosure",
+            },
+            "/redfish/v1/Chassis/Rack-4": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-4",
+                "ChassisType": "Rack",
+            },
+            "/redfish/v1/Chassis/Rack-5": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-5",
+                "ChassisType": "Rack",
+            },
+            "/redfish/v1/Chassis/Sled-6": {
+                "@odata.id": "/redfish/v1/Chassis/Sled-6",
+                "ChassisType": "Sled",
+            },
+        })
+        self.assertEqual(rf.num_racks, 2)
 
     def test_get_server(self, mock_connector):
         rf = self.mock_redfish_system(mock_connector, data={
@@ -54,6 +198,39 @@ class TestRedfishSystem(TestCase):
         rf_server = rf.get_server("/redfish/v1/Systems/System-1-2-1-1")
         self.assertEqual(type(rf_server), RedfishServer)
 
+    def test_get_chassis(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Chassis/Sled-1-2-1": {
+                "@odata.id": "/redfish/v1/Chassis/Sled-1-2-1",
+            }
+        })
+        rf_chassis = rf.get_chassis("/redfish/v1/Chassis/Sled-1-2-1")
+        self.assertEqual(type(rf_chassis), RedfishChassis)
+
+    def test_get_rack(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Chassis/Rack-1": {
+                "@odata.id": "/redfish/v1/Chassis/Rack-1",
+                "ChassisType": "Rack",
+            }
+        })
+        rf_rack = rf.get_rack("/redfish/v1/Chassis/Rack-1")
+        self.assertEqual(type(rf_rack), RedfishRack)
+
+    def test_get_rack_bad(self, mock_connector):
+        rf = self.mock_redfish_system(mock_connector, data={
+            "/redfish/v1/Chassis/Sled-1-2-1": {
+                "@odata.id": "/redfish/v1/Chassis/Sled-1-2-1",
+                "ChassisType": "Sled",
+            }
+        })
+        with self.assertRaises(InvalidValueException,
+                msg="Chassis type Sled does not match that of a Rack"):
+            rf.get_rack("/redfish/v1/Chassis/Sled-1-2-1")
+
+
+@mock.patch("redfish_client.Connector")
+class TestRedfishServer(RedfishTestCase):
     def test_server_simple_properties(self, mock_connector):
         rf = self.mock_redfish_system(mock_connector, data={
             "/redfish/v1/Systems/System-1-2-1-1": {
@@ -157,15 +334,9 @@ class TestRedfishSystem(TestCase):
         rf_server = rf.get_server("/redfish/v1/Systems/System-1-2-1-1")
         self.assertEqual(rf_server.name, "Dell Inc. System")
 
-    def test_get_chassis(self, mock_connector):
-        rf = self.mock_redfish_system(mock_connector, data={
-            "/redfish/v1/Chassis/Sled-1-2-1": {
-                "@odata.id": "/redfish/v1/Chassis/Sled-1-2-1",
-            }
-        })
-        rf_chassis = rf.get_chassis("/redfish/v1/Chassis/Sled-1-2-1")
-        self.assertEqual(type(rf_chassis), RedfishChassis)
 
+@mock.patch("redfish_client.Connector")
+class TestRedfishChassis(RedfishTestCase):
     def test_get_chassis_properties(self, mock_connector):
         rf = self.mock_redfish_system(mock_connector, data={
             "/redfish/v1/Chassis/Sled-1-2-1": {
@@ -198,27 +369,6 @@ class TestRedfishSystem(TestCase):
             {"odata_id": "/redfish/v1/Chassis/Sled-1-2-1"})
         self.assertEqual(rf_chassis.uuid(), "Sled-1-2-1")
         self.assertEqual(rf_chassis.num_servers, 2)
-
-    def test_get_rack(self, mock_connector):
-        rf = self.mock_redfish_system(mock_connector, data={
-            "/redfish/v1/Chassis/Rack-1": {
-                "@odata.id": "/redfish/v1/Chassis/Rack-1",
-                "ChassisType": "Rack",
-            }
-        })
-        rf_rack = rf.get_rack("/redfish/v1/Chassis/Rack-1")
-        self.assertEqual(type(rf_rack), RedfishRack)
-
-    def test_get_rack_bad(self, mock_connector):
-        rf = self.mock_redfish_system(mock_connector, data={
-            "/redfish/v1/Chassis/Sled-1-2-1": {
-                "@odata.id": "/redfish/v1/Chassis/Sled-1-2-1",
-                "ChassisType": "Sled",
-            }
-        })
-        with self.assertRaises(InvalidValueException,
-                msg="Chassis type Sled does not match that of a Rack"):
-            rf.get_rack("/redfish/v1/Chassis/Sled-1-2-1")
 
     def test_get_rack_properties(self, mock_connector):
         rf = self.mock_redfish_system(mock_connector, data={
