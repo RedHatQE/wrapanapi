@@ -264,10 +264,15 @@ class VMWareVMOrTemplate(Entity):
         Returns:
              pyVmomi.vim.StoragePod: The managed object of the datastore cluster.
         """
-        possible_datastore_clusters = [dsc for dsc in self.system.get_obj_list(vim.StoragePod)
-                                       if dsc.overallStatus != "red"]
+        # avoid datastore clusters with no datastores in them and that are in a 'red' status
+        possible_datastore_clusters = [
+            dsc for dsc in self.system.get_obj_list(vim.StoragePod)
+            if dsc.overallStatus != "red" and bool(dsc.childEntity)
+        ]
+
         if not possible_datastore_clusters:
             raise DatastoreNotFoundError(item_type='datastore clusters')
+        # choose the datastore cluster with the most freespace
         possible_datastore_clusters.sort(
             key=lambda dsc: float(dsc.summary.freeSpace) / float(dsc.summary.capacity),
             reverse=True)
