@@ -106,6 +106,16 @@ class RedfishServer(Server, RedfishResource):
         """Retrieve the current power status of the physical server."""
         return self.raw.PowerState
 
+    @property
+    def machine_type(self):
+        """Retrieve the server's machine type."""
+        return self.raw.Processors.Members[0].InstructionSet[0]["Member"]
+
+    @property
+    def product_name(self):
+        """Reurn the product name of the server"""
+        return self.raw.Name
+
     def _get_state(self):
         """
         Return ServerState object representing the server's current state.
@@ -196,7 +206,10 @@ class RedfishSystem(System):
         protocol = 'http' if security_protocol == 'Non-SSL' else 'https'
         self.url = '{}://{}:{}/'.format(protocol, hostname, api_port)
         self.kwargs = kwargs
-        self.api_client = redfish_client.connect(self.url, username, password)
+        if kwargs is not None and "api_client" in kwargs:
+            self.api_client = kwargs["api_client"]
+        else:
+            self.api_client = redfish_client.connect(self.url, username, password)
 
     @property
     def _identifying_attrs(self):
@@ -334,7 +347,7 @@ class RedfishSystem(System):
         try:
             return self.api_client.find(resource_id)
         except Exception as e:
-            raise RedfishItemNotFound(resource_id, "Redfish item", e.message)
+            raise RedfishItemNotFound(resource_id, "Redfish item", e)
 
     def get_server(self, resource_id):
         """

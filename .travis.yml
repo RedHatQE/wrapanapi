@@ -29,6 +29,7 @@ matrix:
     python: "2.7"
     dist: trusty  # trusty required for 2.7
 install:
+  - bash ./kill_python3_tests.sh
   - pip install -U pip setuptools
   - pip install -Ur requirements-test.txt --upgrade-strategy eager
 script: py.test tests/ -v --cov wrapanapi
