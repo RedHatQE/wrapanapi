@@ -70,6 +70,10 @@ class DatastoreNotFoundError(NotFoundError):
             self.item_type)
 
 
+class NetworkNotFoundError(NotFoundError):
+    pass
+
+
 class NetworkNameNotFound(NotFoundError):
     pass
 
