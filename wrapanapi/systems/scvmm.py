@@ -739,7 +739,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """.format(path=path)
         self.run_script(script)
 
-    def download_file(self, url, name, dest="L:\\Library\\VHDs\\"):
+    def download_file(self, url, name, dest="L:\\Library\\VHDs\\", unzip=False):
         """ Downloads a file given a URL into the SCVMM library (or any dest) """
         self.logger.info("Downloading file {} from url into: {}".format(name, dest))
         script = """
@@ -748,6 +748,10 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             $wc = New-Object System.Net.WebClient
             $wc.DownloadFile($url, $output)
         """.format(url=url, name=name, dest=dest)
+        if unzip:
+            script += "Expand-Archive -LiteralPath $output -DestinationPath {dest}".format(
+                dest=dest
+            )
         self.run_script(script)
         # refresh the library so it's available for SCVMM to use
         self.update_scvmm_library(dest)
@@ -761,6 +765,14 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """.format(name=name, dest=dest)
         self.run_script(script)
         self.update_scvmm_library(dest)
+
+    def delete_app_package(self, name):
+        self.logger.info("Deleting application package: {}".format(name))
+        script = """
+            $app_package = Get-SCApplicationPackage -Name "{}"
+            Remove-SCApplicationPackage -ApplicationPackage $app_package
+        """.format(name)
+        self.run_script(script)
 
     def delete_vhd(self, name):
         """ Deletes a vhd or vhdx file """
