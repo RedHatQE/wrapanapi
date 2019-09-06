@@ -3,8 +3,6 @@ wrapanapi.entities.network
 
 Networks
 """
-from __future__ import absolute_import
-import six
 
 from abc import ABCMeta, abstractmethod
 
@@ -12,7 +10,7 @@ from wrapanapi.entities.base import Entity, EntityMixin
 from wrapanapi.exceptions import MultipleItemsError, NotFoundError
 
 
-class Network(six.with_metaclass(ABCMeta, Entity)):
+class Network(Entity, metaclass=ABCMeta):
     """
     Defines methods/properties pertaining to networks
     """
@@ -30,7 +28,7 @@ class Network(six.with_metaclass(ABCMeta, Entity)):
         """
 
 
-class NetworkMixin(six.with_metaclass(ABCMeta, EntityMixin)):
+class NetworkMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods for systems that support networks
     """

@@ -2,7 +2,7 @@
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
+
 import json
 import requests
 from requests.exceptions import Timeout

@@ -3,12 +3,10 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
 
 import json
 import re
 from datetime import datetime
-import six
 from textwrap import dedent
 import time
 
@@ -380,7 +378,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         self.refresh(read_from_hyperv=True)
         data = {'mem': self.raw['Memory'], 'cpu': self.raw['CPUCount']}
         return {
-            key: str(val) if isinstance(val, six.string_types) else val
+            key: str(val) if isinstance(val, str) else val
             for key, val in data.items()
         }
 

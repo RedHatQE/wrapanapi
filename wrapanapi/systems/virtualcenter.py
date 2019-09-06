@@ -3,7 +3,6 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
 
 import atexit
 import operator
@@ -16,7 +15,6 @@ from distutils.version import LooseVersion
 from functools import partial
 
 import pytz
-import six
 from cached_property import threaded_cached_property
 from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim, vmodl
@@ -468,7 +466,7 @@ class VMWareVMOrTemplate(Entity):
         source_template = self.raw
 
         # DATASTORE
-        if isinstance(datastore, six.string_types):
+        if isinstance(datastore, str):
             picked_datastore = self.system.get_datastore(name=datastore)
         elif isinstance(datastore, (vim.Datastore, vim.StoragePod)):
             picked_datastore = datastore
@@ -1152,7 +1150,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
                 except Exception:
                     pass
         if boot_times:
-            newest_boot_time = sorted(boot_times.items(), key=operator.itemgetter(1),
+            newest_boot_time = sorted(list(boot_times.items()), key=operator.itemgetter(1),
                                       reverse=True)[0]
             newest_vm = newest_boot_time[0]
             return VMWareVirtualMachine(system=self, name=newest_vm.name, raw=newest_vm)

@@ -5,7 +5,6 @@ Methods/classes pertaining to performing actions on a VM/instance
 """
 import time
 from abc import ABCMeta, abstractmethod, abstractproperty
-from six import string_types, with_metaclass
 
 from cached_property import cached_property_with_ttl
 from wait_for import wait_for, TimedOutError
@@ -36,12 +35,12 @@ class VmState(object):
     @classmethod
     def valid_states(cls):
         return [
-            var_val for _, var_val in vars(cls).items()
-            if isinstance(var_val, string_types) and var_val.startswith('VmState.')
+            var_val for var_val in vars(cls).values()
+            if isinstance(var_val, str) and var_val.startswith('VmState.')
         ]
 
 
-class Vm(with_metaclass(ABCMeta, Entity)):
+class Vm(Entity, metaclass=ABCMeta):
     """
     Represents a single VM/instance on a management system.
     """
@@ -184,7 +183,7 @@ class Vm(with_metaclass(ABCMeta, Entity)):
             timeout: wait_for timeout value
             delay: delay when looping to check for updated state
         """
-        valid_states = self.state_map.values()
+        valid_states = list(self.state_map.values())
         if state not in valid_states:
             self.logger.error(
                 "Invalid desired state. Valid states for %s: %s",
@@ -263,7 +262,7 @@ class Vm(with_metaclass(ABCMeta, Entity)):
             timeout: wait_for timeout value
             delay: delay when looping to check for new state
         """
-        valid_states = self.state_map.values()
+        valid_states = list(self.state_map.values())
         if state not in valid_states:
             self.logger.error(
                 "Invalid desired state. Valid states for %s: %s",
@@ -416,7 +415,7 @@ class Vm(with_metaclass(ABCMeta, Entity)):
         )
 
 
-class VmMixin(with_metaclass(ABCMeta, EntityMixin)):
+class VmMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods or properties a wrapanapi.systems.System that manages Vm's should have
     """

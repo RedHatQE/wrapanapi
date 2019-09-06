@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+
 
 import base64
 import gzip
@@ -7,11 +7,10 @@ import re
 import sys
 from collections import namedtuple
 from enum import Enum
+from urllib.parse import quote as urlquote
+from urllib.parse import unquote as urlunquote
 
 from packaging import version
-
-from six.moves.urllib.parse import quote as urlquote
-from six.moves.urllib.parse import unquote as urlunquote
 
 from wrapanapi.clients import ContainerClient, HawkularWebsocketClient
 from wrapanapi.systems.base import System

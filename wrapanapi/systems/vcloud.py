@@ -1,5 +1,5 @@
 # coding: utf-8
-from __future__ import absolute_import
+
 from pyvcloud.vcd.client import Client, BasicLoginCredentials
 from pyvcloud.vcd.org import Org
 from pyvcloud.vcd.vdc import VDC

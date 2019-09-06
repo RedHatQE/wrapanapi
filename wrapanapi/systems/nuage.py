@@ -2,7 +2,6 @@
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
 
 from wrapanapi.systems.base import System
 from wrapanapi.utils.random import random_name

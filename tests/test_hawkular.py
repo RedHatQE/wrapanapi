@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """Unit tests for Hawkular client."""
-from __future__ import absolute_import
-
 import json
 import os
 from random import sample
+from urllib.parse import urlparse
 
 import pytest
 from mock import patch
 
-from six.moves.urllib.parse import urlparse
 from wrapanapi.systems import HawkularSystem
 from wrapanapi.systems.hawkular import (CanonicalPath, Resource, ResourceData,
                                         ResourceType)

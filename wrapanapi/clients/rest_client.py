@@ -1,8 +1,6 @@
-from __future__ import absolute_import
 import requests
 import os
 import json
-import six
 import logging
 
 from wrapanapi.exceptions import RestClientException
@@ -38,7 +36,7 @@ class ContainerClient(object):
         self.verify = verify
         if type(auth) in (list, set, tuple):
             self.auth = auth
-        elif isinstance(auth, six.string_types):
+        elif isinstance(auth, str):
             self.auth = BearerTokenAuth(auth)
         else:
             raise RestClientException('Invalid auth object')
