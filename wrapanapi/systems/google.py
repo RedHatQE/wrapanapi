@@ -420,6 +420,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                 service_account: service_account_content
 
                 scope: compute engine, container engine, sqlservice end etc
+                cache_discovery: turn on cache discovery default off
                 file_path: path to json or p12 file
                 file_type: p12 or json
                 client_email: Require for p12 file
@@ -431,6 +432,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         self._zone = zone
         self._region = kwargs.get('region')
         scope = kwargs.get('scope', self.default_scope)
+        cache_discovery = kwargs.get("cache_discovery", False)
 
         if 'service_account' in kwargs:
             service_account = dict(kwargs.get('service_account').items())
@@ -449,8 +451,8 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                                                                      file_path,
                                                                      scopes=scope)
         http_auth = credentials.authorize(httplib2.Http())
-        self._compute = build('compute', 'v1', http=http_auth)
-        self._storage = build('storage', 'v1', http=http_auth)
+        self._compute = build('compute', 'v1', http=http_auth, cache_discovery=cache_discovery)
+        self._storage = build('storage', 'v1', http=http_auth, cache_discovery=cache_discovery)
         self._instances = self._compute.instances()
         self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
