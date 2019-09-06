@@ -9,9 +9,10 @@ from .physical_container import PhysicalContainer
 from .stack import Stack, StackMixin
 from .server import Server, ServerState
 from .network import Network, NetworkMixin
+from .volume import Volume, VolumeMixin
 
 __all__ = [
     'Template', 'TemplateMixin', 'Vm', 'VmState', 'VmMixin', 'Instance',
     'PhysicalContainer', 'Server', 'ServerState', 'Stack', 'StackMixin',
-    'Network', 'NetworkMixin'
+    'Network', 'NetworkMixin', 'Volume', 'VolumeMixin'
 ]
