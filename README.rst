@@ -13,6 +13,12 @@
    :alt: Build Status
    :align: left
    :target: https://travis-ci.org/ManageIQ/wrapanapi
+.. image:: https://img.shields.io/pypi/pyversions/wrapanapi.svg
+   :scale: 50 %
+   :alt: Python Supported Versions
+   :align: left
+   :target: https://pypi.org/project/wrapanapi/
+
 
 wrapanapi
 ==========
@@ -42,6 +48,26 @@ It can be used to control virtualization clients and offers operations such as
 Though conceptually names differ between cloud and infrastructure virtualization technologies (e.g. instance/vm)
 it was decided to stick to one representation in the codebase and interface to give a singlar API across
 all systems.
+
+Installation
+------------
+
+Wrapanapi can be installed via `pip` as `pip install wrapanapi`
+It is always a good idea to use virtualenv to install pip packages.
+
+For Linux Users, Depending on the distribution you are using, you may need to install following packages
+(or similar for your distribution of linux):
+
+* libcurl-devel
+* openssl-devel
+* libxml2-devel
+* libxml2-static
+* gcc
+
+If you are in doubt if you really need these packages, you will hit errors during installation that will make it
+apparent for you to figure out that you need it.
+Pycurl is a one such package that requires you to install packages like ones listed above, you can read more about it at
+http://pycurl.io/docs/latest/install.html
 
 Usage
 -----
