@@ -3,7 +3,7 @@ wrapanapi.entities.server
 
 Implements classes and methods related to actions performed on (physical) servers
 """
-import six
+
 from abc import ABCMeta, abstractmethod
 
 from wrapanapi.entities.base import Entity
@@ -24,12 +24,12 @@ class ServerState(object):
     @classmethod
     def valid_states(cls):
         return [
-            var_val for _, var_val in vars(cls).items()
-            if isinstance(var_val, six.string_types) and var_val.startswith('ServerState.')
+            var_val for var_val in vars(cls).values()
+            if isinstance(var_val, str) and var_val.startswith('ServerState.')
         ]
 
 
-class Server(six.with_metaclass(ABCMeta, Entity)):
+class Server(Entity, metaclass=ABCMeta):
     """
     Represents a single server on a management system.
     """

@@ -1,5 +1,4 @@
 # Imports for convenience
-from __future__ import absolute_import
 
 from .systems.ec2 import EC2System
 from .systems.google import GoogleCloudSystem

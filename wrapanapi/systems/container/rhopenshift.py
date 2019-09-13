@@ -1,12 +1,9 @@
-from __future__ import absolute_import
-
 import copy
 import json
 import string
 import yaml
 from collections import Iterable
 from functools import partial, wraps
-from past.builtins import basestring
 from random import choice
 
 import inflection
@@ -85,7 +82,7 @@ def unauthenticated_error_handler(method):
 
 
 def is_iterable(item):
-    return not isinstance(item, basestring) and isinstance(item, Iterable)
+    return not isinstance(item, str) and isinstance(item, Iterable)
 
 
 def drop_item(struct, key):
@@ -99,7 +96,7 @@ def drop_item(struct, key):
     if is_iterable(struct):
         if isinstance(struct, dict):
             struct.pop(key, None)
-            for _, value in struct.items():
+            for value in struct.values():
                 drop_item(value, key)
         else:
             for value in struct:
@@ -366,7 +363,7 @@ class Openshift(System):
 
         prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
         if tags:
-            not_found_tags = [t for t in tags.keys() if t not in tags_mapping.keys()]
+            not_found_tags = [t for t in tags.keys() if t not in list(tags_mapping.keys())]
             if not_found_tags:
                 raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
             for tag, value in tags.items():
@@ -631,7 +628,7 @@ class Openshift(System):
         if is_iterable(struct):
             if isinstance(struct, dict):
                 # we shouldn't rename something under data or spec
-                for key, value in list(struct.items()):
+                for key, value in struct.items():
                     if key == 'stringData':
                         # this key has to be renamed but its contents should be left intact
                         struct[inflection.underscore(key)] = struct.pop(key)

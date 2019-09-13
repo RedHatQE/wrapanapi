@@ -1,5 +1,4 @@
 # coding: utf-8
-from __future__ import absolute_import
 
 import base64
 import boto3
@@ -1183,7 +1182,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         for subnet in subnets:
             if 'Tags' in subnet and subnet['Tags']:
                 for tag in subnet['Tags']:
-                    if 'Name' in tag.values():
+                    if 'Name' in list(tag.values()):
                         subnets_names.append(tag['Value'])
             else:
                 subnets_names.append(subnet['SubnetId'])
@@ -1204,7 +1203,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         for route in route_tables:
             if route['Tags']:
                 for tag in route['Tags']:
-                    if 'Name' in tag.values():
+                    if 'Name' in list(tag.values()):
                         routers_names.append(tag['Value'])
             else:
                 routers_names.append(route['RouteTableId'])

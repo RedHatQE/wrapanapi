@@ -1,7 +1,6 @@
 """
 wrapanapi.entities
 """
-from __future__ import absolute_import
 
 from .template import Template, TemplateMixin
 from .vm import Vm, VmState, VmMixin

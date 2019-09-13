@@ -2,7 +2,6 @@
 """
 Defines System and Entity classes related to the Google Cloud platform
 """
-from __future__ import absolute_import
 
 import os
 import random
@@ -435,7 +434,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         cache_discovery = kwargs.get("cache_discovery", False)
 
         if 'service_account' in kwargs:
-            service_account = dict(kwargs.get('service_account').items())
+            service_account = kwargs.get('service_account').copy()
             service_account['private_key'] = service_account['private_key'].replace('\\n', '\n')
             service_account['type'] = service_account.get('type', 'service_account')  # default it
             credentials = ServiceAccountCredentials.from_json_keyfile_dict(service_account,

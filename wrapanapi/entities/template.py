@@ -3,7 +3,6 @@ wrapanapi.entities.template
 
 Methods/classes pertaining to performing actions on a template
 """
-import six
 
 from abc import ABCMeta, abstractmethod
 
@@ -11,7 +10,7 @@ from wrapanapi.entities.base import Entity, EntityMixin
 from wrapanapi.exceptions import MultipleItemsError, NotFoundError
 
 
-class Template(six.with_metaclass(ABCMeta, Entity)):
+class Template(Entity, metaclass=ABCMeta):
     """
     Represents a template on a system
     """
@@ -24,7 +23,7 @@ class Template(six.with_metaclass(ABCMeta, Entity)):
         """
 
 
-class TemplateMixin(six.with_metaclass(ABCMeta, EntityMixin)):
+class TemplateMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods a wrapanapi.systems.System that manages Templates should have
     """

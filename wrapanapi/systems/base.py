@@ -3,14 +3,12 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
-import six
 from abc import ABCMeta, abstractmethod, abstractproperty
 
 from wrapanapi.utils import LoggerMixin
 
 
-class System(six.with_metaclass(ABCMeta, LoggerMixin)):
+class System(LoggerMixin, metaclass=ABCMeta):
     """Represents any system that wrapanapi interacts with."""
     # This should be defined by implementors of System
     _stats_available = {}
@@ -71,8 +69,8 @@ class System(six.with_metaclass(ABCMeta, LoggerMixin)):
             raise Exception('{} has empty self._stats_available dictionary'.format(
                 self.__class__.__name__))
 
-        requested_stats = requested_stats or self._stats_available.keys()
-        return {stat: self._stats_available[stat](self) for stat in requested_stats}
+        return {stat: self._stats_available[stat](self)
+                for stat in requested_stats or self._status_available.keys()}
 
     def disconnect(self):
         """Disconnects the API from mgmt system"""

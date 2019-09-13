@@ -3,17 +3,14 @@ wrapanapi.entities.base
 
 Provides method/class definitions for handling any entity on a provider
 """
-from __future__ import absolute_import
-
 from abc import ABCMeta, abstractmethod, abstractproperty
-import six
-from six.moves import reprlib
+from reprlib import aRepr
 
 from wrapanapi.utils import LoggerMixin
 from wrapanapi.exceptions import NotFoundError
 
 
-class Entity(six.with_metaclass(ABCMeta, LoggerMixin)):
+class Entity(LoggerMixin, metaclass=ABCMeta):
     """
     Base class to represent any object on a provider system as well
     as methods for manipulating that entity (deleting, renaming, etc.)
@@ -118,7 +115,7 @@ class Entity(six.with_metaclass(ABCMeta, LoggerMixin)):
         )
 
         # Show kwarg key/value for each unique kwarg
-        a_repr = reprlib.aRepr
+        a_repr = aRepr
         a_repr.maxstring = 100
         a_repr.maxother = 100
         for key, val in self._identifying_attrs.items():

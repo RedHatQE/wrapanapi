@@ -3,7 +3,6 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from __future__ import absolute_import
 
 import json
 import os
@@ -14,7 +13,6 @@ from functools import partial
 from re import search
 
 import pytz
-import six
 from cinderclient import exceptions as cinder_exceptions
 from cinderclient.v2 import client as cinderclient
 from glanceclient import Client as gClient
@@ -384,7 +382,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
 
     def set_meta_value(self, key, value):
         return self.raw.manager.set_meta_item(
-            self.raw, key, value if isinstance(value, six.string_types) else json.dumps(value))
+            self.raw, key, value if isinstance(value, str) else json.dumps(value))
 
     def get_meta_value(self, key):
         instance = self.raw
@@ -947,7 +945,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             return
         # Wait for them
         wait_for(
-            lambda: all(map(lambda id: not self.volume_exists(id), ids)),
+            lambda: all([not self.volume_exists(id) for id in ids]),
             delay=0.5, num_sec=timeout)
 
     def volume_exists(self, id):

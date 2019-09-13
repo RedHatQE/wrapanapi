@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-
 import json
-import six
 
 from ast import literal_eval
 
@@ -24,7 +21,7 @@ def json_loads_byteified(json_text):
 
 def _byteify(data, ignore_dicts=False):
     # if this is a unicode string, return its string representation
-    if isinstance(data, six.text_type):
+    if isinstance(data, str):
         return data.encode('utf-8')
     # if this is a list of values, return list of byteified values
     if isinstance(data, list):
@@ -34,7 +31,7 @@ def _byteify(data, ignore_dicts=False):
     if isinstance(data, dict) and not ignore_dicts:
         return {
             _byteify(key, ignore_dicts=True): _byteify(value, ignore_dicts=True)
-            for key, value in data.iteritems()
+            for key, value in data.items()
         }
     # if it's anything else, return it in its original form
     return data
@@ -73,8 +70,8 @@ def eval_strings(content):
             * content: list or tuple or any iterable array
                        representing the json content.
     """
-    for i in (content if isinstance(content, dict) else range(len(content))):
-        if isinstance(content[i], six.string_types):
+    for i in (content if isinstance(content, dict) else list(range(len(content)))):
+        if isinstance(content[i], str):
             content[i] = _eval(content[i])
         elif hasattr(content[i], '__iter__'):
             content[i] = eval_strings(content[i])

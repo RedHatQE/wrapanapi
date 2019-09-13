@@ -1,5 +1,5 @@
 # coding: utf-8
-from __future__ import absolute_import
+
 from collections import namedtuple
 from ironicclient import client as iclient
 from keystoneauth1.identity import Password
