@@ -460,7 +460,7 @@ class Openshift(System):
         self.logger.info("verifying that all created entities are up and running")
         progress_callback("Waiting for all pods to be ready and running")
         try:
-            wait_for(self.is_vm_running, num_sec=600,
+            wait_for(self.is_vm_running, timeout=600,
                      func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
             self.logger.info("all pods look up and running")
             progress_callback("Everything has been deployed w/o errors")
@@ -888,7 +888,7 @@ class Openshift(System):
                 return bool(job.status.succeeded)
             except KeyError:
                 return False
-        return wait_for(job_wait_accomplished, num_sec=wait)[0]
+        return wait_for(job_wait_accomplished, timeout=wait)[0]
 
     def wait_persistent_volume_claim_status(self, namespace, name, status, wait='1m'):
         """Waits until pvc gets some particular status.
@@ -909,7 +909,7 @@ class Openshift(System):
             except KeyError:
                 return False
 
-        return wait_for(pvc_wait_status, num_sec=wait)[0]
+        return wait_for(pvc_wait_status, timeout=wait)[0]
 
     def wait_project_exist(self, name, wait=60):
         """Checks whether Project exists within some time.
@@ -919,7 +919,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.o_api.read_project, 'name': name})[0]
 
     def wait_config_map_exist(self, namespace, name, wait=60):
@@ -931,7 +931,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_config_map,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -947,7 +947,7 @@ class Openshift(System):
         """
         api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
         read_st = api.read_namespaced_stateful_set
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': read_st,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -961,7 +961,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_service,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -975,7 +975,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_endpoints,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -989,7 +989,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.o_api.read_namespaced_route,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1003,7 +1003,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_service_account,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1017,7 +1017,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.o_api.read_namespaced_image_stream,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1032,7 +1032,7 @@ class Openshift(System):
         Return: True/False
         """
         auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': auth_api.read_namespaced_role_binding,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1046,7 +1046,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_secret,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1060,7 +1060,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.k_api.read_namespaced_persistent_volume_claim,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1075,7 +1075,7 @@ class Openshift(System):
         Return: True/False
         """
         read_dc = self.o_api.read_namespaced_deployment_config
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': read_dc,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1089,7 +1089,7 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, num_sec=wait,
+        return wait_for(self._does_exist, timeout=wait,
                         func_kwargs={'func': self.o_api.read_namespaced_template,
                                      'name': name,
                                      'namespace': namespace})[0]
@@ -1168,7 +1168,7 @@ class Openshift(System):
         if self.does_project_exist(name=name):
             self.o_api.delete_project(name=name)
             try:
-                wait_for(lambda name: not self.does_project_exist(name=name), num_sec=wait,
+                wait_for(lambda name: not self.does_project_exist(name=name), timeout=wait,
                          func_kwargs={'name': name})
             except TimedOutError:
                 raise TimedOutError('project {n} was not removed within {w} sec'.format(n=name,
@@ -1212,7 +1212,7 @@ class Openshift(System):
             raise ValueError("This name %s is not found among "
                              "deployment configs or stateful sets", name)
         self.logger.info("scaling entity %s to %s replicas", name, replicas)
-        wait_for(check_scale_value, num_sec=wait, fail_condition=lambda val: val != replicas)
+        wait_for(check_scale_value, timeout=wait, fail_condition=lambda val: val != replicas)
 
     def get_project_by_name(self, project_name):
         """Returns only the selected Project object"""
@@ -1386,7 +1386,7 @@ class Openshift(System):
             num_sec: all pods should get ready for this time then - True, otherwise False
         Return: True/False
         """
-        wait_for(self.is_vm_running, [vm_name], num_sec=num_sec)
+        wait_for(self.is_vm_running, [vm_name], timeout=num_sec)
         return True
 
     def wait_vm_stopped(self, vm_name, num_sec=600):
@@ -1397,7 +1397,7 @@ class Openshift(System):
             num_sec: all pods should not be ready for this time then - True, otherwise False
         Return: True/False
         """
-        wait_for(self.is_vm_stopped, [vm_name], num_sec=num_sec)
+        wait_for(self.is_vm_stopped, [vm_name], timeout=num_sec)
         return True
 
     def current_ip_address(self, vm_name):
@@ -1585,7 +1585,7 @@ class Openshift(System):
             ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
                                       fail_condition=None,
                                       delay=5,
-                                      num_sec=timeout,
+                                      timeout=timeout,
                                       message="get_ip_address from openshift")
         except TimedOutError:
             ip_address = None
@@ -1712,7 +1712,7 @@ class Openshift(System):
             num_sec: all pods should get ready for this time then - True, otherwise TimeoutError
         Return: True/False
         """
-        wait_for(self.is_pod_running, [namespace, name], fail_condition=False, num_sec=num_sec)
+        wait_for(self.is_pod_running, [namespace, name], fail_condition=False, timeout=num_sec)
         return True
 
     def is_pod_stopped(self, namespace, name):
@@ -1735,7 +1735,7 @@ class Openshift(System):
             num_sec: all pods should disappear - True, otherwise TimeoutError
         Return: True/False
         """
-        wait_for(self.is_pod_stopped, [namespace, name], num_sec=num_sec)
+        wait_for(self.is_pod_stopped, [namespace, name], timeout=num_sec)
         return True
 
     def run_command(self, namespace, name, cmd, **kwargs):
