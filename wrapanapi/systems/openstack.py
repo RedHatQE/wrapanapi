@@ -721,6 +721,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return real_tenants
 
     def _get_tenant(self, **kwargs):
+        if not kwargs:
+            kwargs = {'name': self.tenant}
         return self.tenant_api.find(**kwargs).id
 
     def _get_user(self, **kwargs):
@@ -1253,3 +1255,32 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         with open(path, "wb") as obj:
             obj.write(obj_contents)
+
+    def get_quota(self, quota='all'):
+        """Get quota details.
+
+        Examples:
+            By default it gives the quota details of the project set in self.tenant property.
+            >>> obj.get_quota()
+            >>> obj.get_quota(quota='compute') #'volume' or 'network' filters can also be used
+            To get the quota details of any specific project, update the self.tenant property.
+            >>> self.tenant = 'project-name'
+        Args:
+            quota: quota type ("all" or "compute" or "volume" or "network"). Default set to "all".
+        Return: dict of quotas in below form.
+            {
+                'compute': {<compute quota key/value},
+                'network': {<network quota key/value},
+                'volume': {<volume key/value>}
+            }
+        """
+        quota = str(quota).lower()
+        project_id = self._get_tenant(name=self.tenant)
+        quota_values = {}
+        if quota in ['all', 'compute']:
+            quota_values.update({'compute': self.api.quotas.get(project_id).to_dict()})
+        if quota in ['all', 'volume']:
+            quota_values.update({'volume': self.capi.quotas.get(project_id).to_dict()})
+        if quota in ['all', 'network']:
+            quota_values.update({'network': self.napi.show_quota(project_id)['quota']})
+        return quota_values
