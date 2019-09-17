@@ -78,7 +78,7 @@ class _TagMixin(object):
                                                Tags=[{"Key": key, "Value": value}])
 
 
-class EC2Instance(_SharedMethodsMixin, Instance, _TagMixin):
+class EC2Instance(_TagMixin, _SharedMethodsMixin, Instance):
     state_map = {
         'pending': VmState.STARTING,
         'stopping': VmState.STOPPING,
@@ -240,7 +240,7 @@ class StackStates(object):
            'REVIEW_IN_PROGRESS']
 
 
-class CloudFormationStack(_SharedMethodsMixin, Stack, _TagMixin):
+class CloudFormationStack(_TagMixin, _SharedMethodsMixin, Stack):
     def __init__(self, system, raw=None, **kwargs):
         """
         Represents a CloudFormation stack
@@ -291,7 +291,7 @@ class CloudFormationStack(_SharedMethodsMixin, Stack, _TagMixin):
         raise NotImplementedError
 
 
-class EC2Image(_SharedMethodsMixin, Template, _TagMixin):
+class EC2Image(_TagMixin, _SharedMethodsMixin, Template):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an EC2Image tied to a specific system.
@@ -336,7 +336,7 @@ class EC2Image(_SharedMethodsMixin, Template, _TagMixin):
         return self.system.create_vm(image_id=self.uuid, *args, **kwargs)
 
 
-class EC2Vpc(_SharedMethodsMixin, Network, _TagMixin):
+class EC2Vpc(_TagMixin, _SharedMethodsMixin, Network):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an EC2Network tied to a specific system.
@@ -613,7 +613,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             self.logger.exception("Unable to parse all InstanceId's from response json")
             raise
 
-        instances = [EC2Instance(system=self, uuid=uuid) for uuid in instance_ids]
+        instances = [EC2Instance(system=self, raw=self.ec2_resource.Instance(uuid), uuid=uuid)
+                     for uuid in instance_ids]
         for instance in instances:
             self.logger.info(
                 "Waiting for instance '%s' to reach steady state", instance.uuid)
