@@ -28,6 +28,38 @@ def _regions(regionmodule, regionname):
     return None
 
 
+class _SharedMethodsMixin(object):
+    """
+        Mixin class that holds properties/methods EC2Entities share.
+        This should be listed first in the child class inheritance to satisfy
+        the methods required by the Entity abstract base class
+    """
+    @property
+    def _identifying_attrs(self):
+        return {'uuid': self._uuid}
+
+    @property
+    def uuid(self):
+        return self._uuid
+
+    def refresh(self):
+        try:
+            self.raw.reload()
+            return True
+        except Exception:
+            return False
+
+    def get_details(self):
+        return self.raw
+
+    def rename(self, new_name):
+        self.logger.info("setting name of %s %s to %s", self.__class__.__name__, self.uuid,
+                         new_name)
+        self.raw.create_tags(Tags=[{'Key': 'Name', 'Value': new_name}])
+        self.refresh()  # update raw
+        return new_name
+
+
 class _TagMixin(object):
     def set_tag(self, key, value):
         self.system.ec2_connection.create_tags(Resources=[self.uuid],
@@ -46,7 +78,7 @@ class _TagMixin(object):
                                                Tags=[{"Key": key, "Value": value}])
 
 
-class EC2Instance(Instance, _TagMixin):
+class EC2Instance(_SharedMethodsMixin, Instance, _TagMixin):
     state_map = {
         'pending': VmState.STARTING,
         'stopping': VmState.STOPPING,
@@ -75,21 +107,9 @@ class EC2Instance(Instance, _TagMixin):
         self._api = self.system.ec2_connection
 
     @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
     def name(self):
         tag_value = self.get_tag_value('Name')
         return getattr(self.raw, 'name', None) or tag_value if tag_value else self.raw.id
-
-    @property
-    def uuid(self):
-        return self._uuid
-
-    def refresh(self):
-        self.raw = self.system.get_vm(self._uuid, hide_deleted=False).raw
-        return self.raw
 
     def _get_state(self):
         self.refresh()
@@ -117,12 +137,6 @@ class EC2Instance(Instance, _TagMixin):
         self.refresh()
         # Example instance.launch_time: datetime.datetime(2019, 3, 13, 14, 45, 33, tzinfo=tzutc())
         return self.raw.launch_time
-
-    def rename(self, new_name):
-        self.logger.info("setting name of EC2 instance %s to %s", self.uuid, new_name)
-        self.raw.create_tags(Tags=[{'Key': 'Name', 'Value': new_name}])
-        self.refresh()  # update raw
-        return new_name
 
     def delete(self, timeout=240):
         """
@@ -226,7 +240,7 @@ class StackStates(object):
            'REVIEW_IN_PROGRESS']
 
 
-class CloudFormationStack(Stack):
+class CloudFormationStack(_SharedMethodsMixin, Stack, _TagMixin):
     def __init__(self, system, raw=None, **kwargs):
         """
         Represents a CloudFormation stack
@@ -244,31 +258,13 @@ class CloudFormationStack(Stack):
         self._api = self.system.cloudformation_connection
 
     @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
     def name(self):
         return self.raw.name
-
-    @property
-    def uuid(self):
-        return self._uuid
 
     @property
     def creation_time(self):
         self.refresh()
         return self.raw.creation_time
-
-    def get_details(self):
-        return self.raw
-
-    def refresh(self):
-        """
-        Re-pull the data for this stack
-        """
-        self.raw = self.system.get_stack(self.uuid).raw
-        return self.raw
 
     def delete(self):
         """
@@ -291,8 +287,11 @@ class CloudFormationStack(Stack):
         """
         return self.delete()
 
+    def rename(self, new_name):
+        raise NotImplementedError
 
-class EC2Image(Template, _TagMixin):
+
+class EC2Image(_SharedMethodsMixin, Template, _TagMixin):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an EC2Image tied to a specific system.
@@ -311,24 +310,9 @@ class EC2Image(Template, _TagMixin):
         self._api = self.system.ec2_connection
 
     @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
     def name(self):
         tag_value = self.get_tag_value('Name')
         return tag_value if tag_value else self.raw.name
-
-    @property
-    def uuid(self):
-        return self._uuid
-
-    def refresh(self):
-        image = self.system.get_template(self.raw.id).raw
-        if not image:
-            raise ImageNotFoundError(self._uuid)
-        self.raw = image
-        return self.raw
 
     def delete(self):
         """
@@ -352,7 +336,7 @@ class EC2Image(Template, _TagMixin):
         return self.system.create_vm(image_id=self.uuid, *args, **kwargs)
 
 
-class EC2Vpc(Network, _TagMixin):
+class EC2Vpc(_SharedMethodsMixin, Network, _TagMixin):
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an EC2Network tied to a specific system.
@@ -371,27 +355,9 @@ class EC2Vpc(Network, _TagMixin):
         self._api = self.system.ec2_connection
 
     @property
-    def _identifying_attrs(self):
-        return {'uuid': self._uuid}
-
-    @property
     def name(self):
         tag_value = self.get_tag_value('Name')
         return tag_value if tag_value else self.raw.id
-
-    @property
-    def uuid(self):
-        return self._uuid
-
-    def get_details(self):
-        return self.raw
-
-    def refresh(self):
-        vpc = self.system.get_network(id=self.raw.id).raw
-        if not vpc:
-            raise NetworkNotFoundError(self._uuid)
-        self.raw = vpc
-        return self.raw
 
     def delete(self):
         """
