@@ -737,6 +737,17 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """.format(path=path)
         self.run_script(script)
 
+    def unzip_archive(self, path, dest):
+        """ Unzips an archive file (Expand-Archive doesn't work for PowerShell < 5)"""
+        self.logger.info(f"Unzipping {path} into {dest}")
+        script = """
+            $path = "{path}"
+            $dest = "{dest}"
+            Add-Type -assembly "system.io.compression.filesystem"
+            [io.compression.zipfile]::ExtractToDirectory($path, $dest)
+        """.format(path=path, dest=dest)
+        self.run_script(script)
+
     def download_file(self, url, name, dest="L:\\Library\\VHDs\\", unzip=False):
         """ Downloads a file given a URL into the SCVMM library (or any dest) """
         self.logger.info("Downloading file {} from url into: {}".format(name, dest))
@@ -746,11 +757,9 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             $wc = New-Object System.Net.WebClient
             $wc.DownloadFile($url, $output)
         """.format(url=url, name=name, dest=dest)
-        if unzip:
-            script += "Expand-Archive -LiteralPath $output -DestinationPath {dest}".format(
-                dest=dest
-            )
         self.run_script(script)
+        if unzip:
+            self.unzip_archive(f"{dest}{name}", dest)
         # refresh the library so it's available for SCVMM to use
         self.update_scvmm_library(dest)
 
