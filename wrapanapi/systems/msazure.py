@@ -12,6 +12,7 @@ from azure.common import AzureConflictHttpError
 from azure.common.credentials import ServicePrincipalCredentials
 from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
@@ -512,7 +513,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def __setattr__(self, key, value):
         """If the subscription_id is changed, invalidate client caches"""
         if key in ['credentials', 'subscription_id']:
-            for client in ['compute_client', 'resource_client', 'network_client',
+            for client in ['compute_client', 'iot_client', 'resource_client', 'network_client',
                            'subscription_client', 'storage_client']:
                 if getattr(self, client, False):
                     del self.__dict__[client]
@@ -524,6 +525,10 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     @cached_property
     def compute_client(self):
         return ComputeManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def iot_client(self):
+        return IotHubClient(self.credentials, self.subscription_id)
 
     @cached_property
     def resource_client(self):
