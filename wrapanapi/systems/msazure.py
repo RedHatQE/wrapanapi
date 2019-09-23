@@ -483,12 +483,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.client_secret = kwargs.get("password")
         self.tenant = kwargs.get("tenant_id")
         self.subscription_id = kwargs.get("subscription_id")
-        self.resource_group = kwargs['provisioning']['resource_group']  # default resource group
-        self.storage_account = kwargs.get("storage_account")
-        self.storage_key = kwargs.get("storage_key")
-        self.template_container = kwargs['provisioning']['template_container']
-        self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
-        self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
+        self.resource_group = kwargs.get('resource_group')  # default resource group
+        #self.resource_group = kwargs['provisioning']['resource_group']  # default resource group
+        #self.storage_account = kwargs.get("storage_account")
+        #self.storage_key = kwargs.get("storage_key")
+        #self.template_container = kwargs['provisioning']['template_container']
+        #self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
+        #self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
 
         self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
                                                        secret=self.client_secret,
@@ -556,6 +557,33 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def create_vm(self, vm_name, *args, **kwargs):
         raise NotImplementedError
+
+    def create_iothub(self, name, sku_name='F1', sku_capacity=1):
+        """
+        :param name: iothub name
+        :param sku_name: IotHubSkuInfo.name
+        :param sku_capacity: IotHubSkuInfo.capacity
+        :return:
+        """
+        async_iot_hub = self.iot_client.iot_hub_resource.create_or_update(
+            self.resource_group,
+            name,
+            {'location': "East US 2",
+             'subscriptionid': self.subscription_id,
+             'resourcegroup': self.resource_group,
+             'sku': {
+                 'name': sku_name,
+                 'capacity': sku_capacity
+             },
+             'features': 'None'}
+        )
+        return async_iot_hub.result()
+
+    def delete_iothub(self, name):
+        self.iot_client.iot_hub_resource.delete(self.resource_group, name)
+
+    def has_iothub(self):
+        return any(True for _ in self.iot_client.iot_hub_resource.list_by_subscription())
 
     def find_vms(self, name=None, resource_group=None):
         """
