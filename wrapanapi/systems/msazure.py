@@ -483,13 +483,12 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.client_secret = kwargs.get("password")
         self.tenant = kwargs.get("tenant_id")
         self.subscription_id = kwargs.get("subscription_id")
-        self.resource_group = kwargs.get('resource_group')  # default resource group
-        #self.resource_group = kwargs['provisioning']['resource_group']  # default resource group
-        #self.storage_account = kwargs.get("storage_account")
-        #self.storage_key = kwargs.get("storage_key")
-        #self.template_container = kwargs['provisioning']['template_container']
-        #self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
-        #self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
+        self.resource_group = kwargs['provisioning']['resource_group']  # default resource group
+        self.storage_account = kwargs.get("storage_account")
+        self.storage_key = kwargs.get("storage_key")
+        self.template_container = kwargs['provisioning']['template_container']
+        self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
+        self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
 
         self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
                                                        secret=self.client_secret,
@@ -560,15 +559,17 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def create_iothub(self, name, sku_name='F1', sku_capacity=1):
         """
-        :param name: iothub name
-        :param sku_name: IotHubSkuInfo.name
-        :param sku_capacity: IotHubSkuInfo.capacity
-        :return:
+        create iothub with specified name
+        sku_name: IotHubSkuInfo.name
+        The name of the SKU. Possible values include: 'F1', 'S1', 'S2', 'S3', 'B1', 'B2', 'B3'
+        Free/Standard/Basic.. defaults to F1
+        sku_capacity: The number of provisioned IoT Hub units.
+
         """
         async_iot_hub = self.iot_client.iot_hub_resource.create_or_update(
             self.resource_group,
             name,
-            {'location': "East US 2",
+            {'location': self.region,
              'subscriptionid': self.subscription_id,
              'resourcegroup': self.resource_group,
              'sku': {
