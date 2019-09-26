@@ -559,12 +559,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def create_iothub(self, name, sku_name='F1', sku_capacity=1):
         """
-        create iothub with specified name
-        sku_name: IotHubSkuInfo.name
-        The name of the SKU. Possible values include: 'F1', 'S1', 'S2', 'S3', 'B1', 'B2', 'B3'
-        Free/Standard/Basic.. defaults to F1
-        sku_capacity: The number of provisioned IoT Hub units.
-
+        Create an iothub in Azure with the specified name.
+        sku_name and sku_capacity are required for the creation
+        and defaults to 'F1' and '1' for free pricing.
         """
         async_iot_hub = self.iot_client.iot_hub_resource.create_or_update(
             self.resource_group,
