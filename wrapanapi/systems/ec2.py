@@ -15,9 +15,8 @@ from boto3 import (
 from wrapanapi.entities import (Instance, Network, NetworkMixin, Stack, StackMixin,
                                 Template, TemplateMixin, VmMixin, VmState)
 from wrapanapi.exceptions import (ActionTimedOutError, ImageNotFoundError,
-                                  MultipleImagesError, MultipleInstancesError,
                                   MultipleItemsError, NetworkNotFoundError,
-                                  NotFoundError, VMInstanceNotFound)
+                                  NotFoundError)
 from wrapanapi.systems.base import System
 
 
@@ -220,6 +219,7 @@ class EC2Instance(_TagMixin, _SharedMethodsMixin, Instance):
             return True
         except Exception:
             return False
+
 
 class StackStates(object):
     ACTIVE = ['CREATE_COMPLETE', 'ROLLBACK_COMPLETE', 'CREATE_FAILED',
@@ -460,6 +460,37 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         """Returns the current versions of boto3"""
         return boto3.__version__
 
+    def _get_resource(self, resource, find_method, name=None, id=None):
+        """
+        Get a single resource with name equal to 'name' or id equal to 'id'
+
+        Must be a unique name or id
+
+        Args:
+            resource: Class of entity to get
+            find_method: Find method of entity get will use
+            name: name of resource
+            id: id of resource
+        Returns:
+            resource object
+        Raises:
+            NotFoundError if no resource exists with this name/id
+            MultipleItemsError if name/id is not unique
+        """
+        resource_name = resource.__name__
+        if not name and not id or name and id:
+            raise ValueError("Either name or id must be set and not both!")
+        resources = find_method(name=name, id=id)
+        name_or_id = name if name else id
+        if not resources:
+            raise NotFoundError("{} with {} {} not found".format(resource_name,
+                                                                 'name' if name else 'id',
+                                                                 name_or_id))
+        elif len(resources) > 1:
+            raise MultipleItemsError("Multiple {}s with {} {} found".format(
+                resource_name, 'name' if name else 'id', name_or_id))
+        return resources[0]
+
     def _get_instances(self, **kwargs):
         """
         Gets instance reservations and parses instance objects
@@ -533,7 +564,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
 
         return instances
 
-    def get_vm(self, name, hide_deleted=True):
+    def get_vm(self, name=None, id=None):
         """
         Get a single EC2Instance with name or id equal to 'name'
 
@@ -544,15 +575,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         Returns:
             EC2Instance object
         Raises:
-            VMInstanceNotFound if no instance exists with this name/id
-            MultipleInstancesError if name is not unique
+            NotFoundError if no instance exists with this name/id
+            MultipleItemsError if name is not unique
         """
-        instances = self.find_vms(name=name, hide_deleted=hide_deleted)
-        if not instances:
-            raise VMInstanceNotFound(name)
-        elif len(instances) > 1:
-            raise MultipleInstancesError('Instance name "%s" is not unique' % name)
-        return instances[0]
+        return self._get_resource(name=name, id=id, resource=EC2Instance, find_method=self.find_vms)
 
     def list_vms(self, hide_deleted=True):
         """
@@ -700,12 +726,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         Returns:
             CloudFormationStack object
         """
-        stacks = self.find_stacks(name)
-        if not stacks:
-            raise NotFoundError("Stack with name {} not found".format(name))
-        elif len(stacks) > 1:
-            raise MultipleItemsError("Multiple stacks with name {} found".format(name))
-        return stacks[0]
+        return self._get_resource(name=name, resource=CloudFormationStack,
+                                  find_method=self.find_stacks)
 
     def list_templates(self, executable_by_me=True, owned_by_me=True, public=False):
         """
@@ -797,14 +819,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
                 for image in images]
 
     def get_template(self, name_or_id):
-        matches = self.find_templates(name=name_or_id)
-        if not matches:
-            raise ImageNotFoundError('Unable to find image {}'.format(name_or_id))
-        elif len(matches) > 1:
-            raise MultipleImagesError(
-                'Image name {} returned more than one image '
-                'Use the ami-ID or remove duplicates from EC2'.format(name_or_id))
-        return matches[0]
+        return self._get_resource(name=name_or_id, resource=EC2Image,
+                                  find_method=self.find_templates)
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
@@ -1228,15 +1244,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             return False
 
     def get_network(self, name=None, id=None):
-        if not name and not id or name and id:
-            raise ValueError("Either name or id must be set and not both!")
-        networks = self.find_networks(name=name, id=id)
-        name_or_id = name if name else id
-        if not networks:
-            raise NotFoundError("Network with name {} not found".format(name_or_id))
-        elif len(networks) > 1:
-            raise MultipleItemsError("Multiple networks with name {} found".format(name_or_id))
-        return networks[0]
+        return self._get_resource(EC2Vpc, self.find_networks, name=name, id=id)
 
     def list_networks(self):
         """
