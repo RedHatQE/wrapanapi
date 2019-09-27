@@ -12,6 +12,7 @@ from azure.common import AzureConflictHttpError
 from azure.common.credentials import ServicePrincipalCredentials
 from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
@@ -512,7 +513,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def __setattr__(self, key, value):
         """If the subscription_id is changed, invalidate client caches"""
         if key in ['credentials', 'subscription_id']:
-            for client in ['compute_client', 'resource_client', 'network_client',
+            for client in ['compute_client', 'iot_client', 'resource_client', 'network_client',
                            'subscription_client', 'storage_client']:
                 if getattr(self, client, False):
                     del self.__dict__[client]
@@ -524,6 +525,10 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     @cached_property
     def compute_client(self):
         return ComputeManagementClient(self.credentials, self.subscription_id)
+
+    @cached_property
+    def iot_client(self):
+        return IotHubClient(self.credentials, self.subscription_id)
 
     @cached_property
     def resource_client(self):
@@ -551,6 +556,32 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def create_vm(self, vm_name, *args, **kwargs):
         raise NotImplementedError
+
+    def create_iothub(self, name, sku_name='F1', sku_capacity=1):
+        """
+        Create an iothub in Azure with the specified name.
+        sku_name and sku_capacity are required for the creation
+        and defaults to 'F1' and '1' for free pricing.
+        """
+        async_iot_hub = self.iot_client.iot_hub_resource.create_or_update(
+            self.resource_group,
+            name,
+            {'location': self.region,
+             'subscriptionid': self.subscription_id,
+             'resourcegroup': self.resource_group,
+             'sku': {
+                 'name': sku_name,
+                 'capacity': sku_capacity
+             },
+             'features': 'None'}
+        )
+        return async_iot_hub.result()
+
+    def delete_iothub(self, name):
+        self.iot_client.iot_hub_resource.delete(self.resource_group, name)
+
+    def has_iothub(self):
+        return any(True for _ in self.iot_client.iot_hub_resource.list_by_subscription())
 
     def find_vms(self, name=None, resource_group=None):
         """
