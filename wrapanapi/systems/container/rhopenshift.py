@@ -121,7 +121,21 @@ class Openshift(System):
         'num_template': lambda self: len(self.list_template())
     }
 
-    stream2template_tags_mapping59 = {
+    stream2template_tags_mapping51012 = {
+        'cloudforms47-cfme-openshift-httpd': {'tag': 'HTTPD_IMG_TAG', 'url': 'HTTPD_IMG_NAME'},
+        'cloudforms47-cfme-openshift-app': {'tag': 'BACKEND_APPLICATION_IMG_TAG',
+                               'url': 'BACKEND_APPLICATION_IMG_NAME'},
+        'cloudforms47-cfme-openshift-app-ui': {'tag': 'FRONTEND_APPLICATION_IMG_TAG',
+                                  'url': 'FRONTEND_APPLICATION_IMG_NAME'},
+        'cloudforms47-cfme-openshift-embedded-ansible': {'tag': 'ANSIBLE_IMG_TAG',
+                                                         'url': 'ANSIBLE_IMG_NAME'},
+        'cloudforms47-cfme-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG',
+                                                  'url': 'MEMCACHED_IMG_NAME'},
+        'cloudforms47-cfme-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG',
+                                                   'url': 'POSTGRESQL_IMG_NAME'},
+    }
+
+    stream2template_tags_mapping_rest = {
         'cfme-openshift-httpd': {'tag': 'HTTPD_IMG_TAG', 'url': 'HTTPD_IMG_NAME'},
         'cfme-openshift-app': {'tag': 'BACKEND_APPLICATION_IMG_TAG',
                                'url': 'BACKEND_APPLICATION_IMG_NAME'},
@@ -132,28 +146,16 @@ class Openshift(System):
         'cfme-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG', 'url': 'POSTGRESQL_IMG_NAME'},
     }
 
-    stream2template_tags_mapping58 = {
-        'cfme58-openshift-app': {'tag': 'APPLICATION_IMG_TAG', 'url': 'APPLICATION_IMG_NAME'},
-        'cfme58-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG', 'url': 'MEMCACHED_IMG_NAME'},
-        'cfme58-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG', 'url': 'POSTGRESQL_IMG_NAME'},
-    }
-
-    scc_user_mapping59 = (
+    scc_user_mapping = (
         {'scc': 'anyuid', 'user': 'cfme-anyuid'},
         {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
         {'scc': 'anyuid', 'user': 'cfme-httpd'},
         {'scc': 'privileged', 'user': 'cfme-privileged'},
     )
 
-    scc_user_mapping58 = (
-        {'scc': 'anyuid', 'user': 'cfme-anyuid'},
-        {'scc': 'privileged', 'user': 'default'},
-    )
-
     default_namespace = 'openshift'
     required_project_pods = ('httpd', 'memcached', 'postgresql',
                              'cloudforms', 'cloudforms-backend')
-    required_project_pods58 = ('memcached', 'postgresql', 'cloudforms')
     not_required_project_pods = ('cloudforms-backend', 'ansible')
 
     def __init__(self, hostname, protocol="https", port=8443, debug=False,
@@ -356,10 +358,10 @@ class Openshift(System):
 
         version = Version(TemplateName.parse_template(template).version)
 
-        if version >= '5.9':
-            tags_mapping = self.stream2template_tags_mapping59
+        if version >= '5.10.12':
+            tags_mapping = self.stream2template_tags_mapping51012
         else:
-            tags_mapping = self.stream2template_tags_mapping58
+            tags_mapping = self.stream2template_tags_mapping_rest
 
         prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
         if tags:
@@ -394,40 +396,12 @@ class Openshift(System):
 
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
-        scc_user_mapping = self.scc_user_mapping59 if version >= '5.9' else self.scc_user_mapping58
+        scc_user_mapping = self.scc_user_mapping
 
         self.logger.info("granting required rights to project's service accounts")
         for mapping in scc_user_mapping:
             self.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name, sa=mapping['user'])
         progress_callback("Added service accounts to appropriate scc")
-
-        # appliances prior 5.9 don't need such rights
-        # and those rights are embedded into templates since 5.9.2.2
-        if version >= '5.9' and version < '5.9.2.2':
-            # grant roles to orchestrator
-            self.logger.info("assigning additional roles to cfme-orchestrator")
-            auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
-            orchestrator_sa = self.kclient.V1ObjectReference(name='cfme-orchestrator',
-                                                             kind='ServiceAccount',
-                                                             namespace=proj_name)
-
-            view_role = self.kclient.V1ObjectReference(name='view')
-            view_role_binding_name = self.kclient.V1ObjectMeta(name='view')
-            view_role_binding = self.ociclient.V1RoleBinding(role_ref=view_role,
-                                                             subjects=[orchestrator_sa],
-                                                             metadata=view_role_binding_name)
-            self.logger.debug("creating 'view' role binding "
-                              "for cfme-orchestrator sa in project %s", proj_name)
-            auth_api.create_namespaced_role_binding(namespace=proj_name, body=view_role_binding)
-
-            edit_role = self.kclient.V1ObjectReference(name='edit')
-            edit_role_binding_name = self.kclient.V1ObjectMeta(name='edit')
-            edit_role_binding = self.ociclient.V1RoleBinding(role_ref=edit_role,
-                                                             subjects=[orchestrator_sa],
-                                                             metadata=edit_role_binding_name)
-            self.logger.debug("creating 'edit' role binding "
-                              "for cfme-orchestrator sa in project %s", proj_name)
-            auth_api.create_namespaced_role_binding(namespace=proj_name, body=edit_role_binding)
 
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
         self._restore_missing_project_role_bindings(namespace=proj_name)
@@ -1567,11 +1541,7 @@ class Openshift(System):
             vm_name: openshift project name
         Returns: list
         """
-        version = self.get_appliance_version(vm_name)
-        if version and version < '5.9':
-            return self.required_project_pods58
-        else:
-            return self.required_project_pods
+        return self.required_project_pods
 
     def get_ip_address(self, vm_name, timeout=600):
         """ Returns the IP address for the selected appliance.
