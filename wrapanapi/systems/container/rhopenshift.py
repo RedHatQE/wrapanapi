@@ -595,28 +595,30 @@ class Openshift(System):
     def rename_structure(self, struct):
         """Fixes inconsistency in input/output data of openshift python client methods
 
-        Args:
-            struct: data to process and rename
-        Return: updated data
+                Args:
+                    struct: data to process and rename
+                Return: updated data
         """
         if is_iterable(struct):
+            new_struct = {}
             if isinstance(struct, dict):
                 # we shouldn't rename something under data or spec
                 for key, value in struct.items():
-                    if key == 'stringData':
-                        # this key has to be renamed but its contents should be left intact
-                        struct[inflection.underscore(key)] = struct.pop(key)
-                    elif key in ('spec', 'data', 'string_data', 'annotations'):
+                    if key in ('spec', 'data', 'string_data', 'annotations'):
                         # these keys and data should be left intact
-                        pass
+                        new_struct[key] = value
+                        continue
                     else:
-                        # all this data should be processed and updated
-                        val = self.rename_structure(struct.pop(key))
-                        struct[inflection.underscore(key)] = val
+                        val = struct.get(key)
+                        if key != 'stringData':
+                            # all this data should be processed and updated
+                            # except stringData. this key has to be renamed but its contents
+                            # should be left intact
+                            val = self.rename_structure(val)
+                        new_struct[inflection.underscore(key)] = val
+                return new_struct
             else:
-                for item in struct:
-                    self.rename_structure(item)
-
+                return [self.rename_structure(item) for item in struct]
         return struct
 
     def create_config_map(self, namespace, **kwargs):
