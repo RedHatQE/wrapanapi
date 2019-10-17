@@ -850,8 +850,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
         parameters = NetworkSecurityGroup(location=self.region)
         parameters.security_rules = [
-            SecurityRule(protocol, source_address_prefix, destination_address_prefix,
-                access, direction, **kwargs)]
+            SecurityRule(protocol=protocol, source_address_prefix=source_address_prefix,
+                         destination_address_prefix=destination_address_prefix,
+                         access=access, direction=direction, **kwargs)]
         nsg = self.network_client.network_security_groups
         operation = nsg.create_or_update(resource_group, secgroup_name, parameters)
         operation.wait()
