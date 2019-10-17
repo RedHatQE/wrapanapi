@@ -1228,7 +1228,8 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
 
         try:
             first_registry = data['authorizationData'][0]
-            username, password = base64.b64decode(first_registry['authorizationToken']).split(':')
+            encoded_data = base64.b64decode(first_registry['authorizationToken'].encode('utf-8'))
+            username, password = encoded_data.decode('utf-8').split(':')
             return {'username': username,
                     'password': password,
                     'registry': first_registry['proxyEndpoint']}
