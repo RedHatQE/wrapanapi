@@ -595,11 +595,15 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             sockets (optional) -- numbner of cpu sockets
             ram (optional) -- memory in GB
             storage_domain (optional) -- storage domain name to which VM should be deployed
+            disk_attachments (optional) -- list of dicts defining (name (partial), format, sparse)
+                                           name of template disks will be partial matched
+                                           format defaults to COW
+                                           sparse defaults to True (thin provisioning)
 
         Returns:
             wrapanapi.systems.rhevm.RHEVMVirtualMachine
         """
-        self.logger.debug(' Deploying RHEV template %s to VM %s', self.name, vm_name)
+        self.logger.debug('Deploying RHEV template %s to VM %s', self.name, vm_name)
         vm_kwargs = {
             'name': vm_name,
             'cluster': self.system.get_cluster(cluster),
@@ -608,22 +612,32 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
         clone = None
         domain_name = kwargs.get('storage_domain')
         if domain_name:
+            target_attachments = kwargs.get('disk_attachments', [])
             # need to specify storage domain, if its different than the template's disks location
             # then additional options required. disk allocation mode in UI required to be clone
             clone = True
             target_storage_domain = self.system.get_storage_domain(domain_name)
             disk_attachments = []
-            for template_attachment in self.api.disk_attachments_service().list():
-                new_attachment = types.DiskAttachment(
-                    disk=types.Disk(
-                        id=template_attachment.id,
-                        format=types.DiskFormat.COW,
-                        storage_domains=[target_storage_domain]
-                    )
-                )
-                disk_attachments.append(new_attachment)
+            for template_attachment in self.api.disk_attachments_service().list(follow='disk'):
+                disk_kwargs = dict(id=template_attachment.id,
+                                   storage_domains=[target_storage_domain])
+                for target_disk in target_attachments:
+                    target_name = target_disk.get('name')
+                    if target_name in template_attachment.disk.name:
+                        self.logger.debug('Matched partial disk from template: %s', target_name)
+                        disk_kwargs.update(
+                            dict(
+                                format=types.DiskFormat(target_disk.get('format', 'raw').lower()),
+                                sparse=bool(target_disk.get('sparse', True))
+                            )
+                        )
+                else:
+                    self.logger.info('Template disk name not matching any disk_attachment names')
 
-            vm_kwargs['disk_attachments'] = disk_attachments
+                disk_attachments.append(disk_kwargs)
+
+        vm_kwargs['disk_attachments'] = [types.DiskAttachment(disk=types.Disk(**dkwargs))
+                                         for dkwargs in disk_attachments]
 
         # Placement requires two args
         if 'placement_policy_host' in kwargs and 'placement_policy_affinity' in kwargs:
