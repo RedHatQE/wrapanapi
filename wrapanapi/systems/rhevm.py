@@ -649,6 +649,17 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             vm.start()
         return vm
 
+    def list_disks(self, disk_id=None):
+        """Return a list of disks in the template
+
+        Args:
+            disk_id (bool) -- if True, returns ids of the disks, else returns disk names
+        """
+        return [
+            disk.id if disk_id is True else disk.name
+            for disk in self.api.disk_attachments_service().list()
+        ]
+
 
 class RHEVMSystem(System, VmMixin, TemplateMixin):
     """
@@ -855,23 +866,33 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def get_disks(self, name):
         return self.api.system_service().disks_service().list(search=name)
 
-    def list_disks(self, status=None, **kwargs):
+    def list_disks(self, status=None, sparse=None, disk_id=None, **kwargs):
         """
         List all of the disks present on RHV
 
         Keywords:
             status (optional) -- status of the disk.One of OK, LOCKED, ILLEGAL.
+            sparse (bool, optional) -- disk allocation. Sparse is a thin disk.
+                if set to True, returns only thin disks;
+                if set to False, returns only preallocated disks
 
         Returns:
-            list of disk names(str)
+            list of disk names(str) or disk ids(str) if disk_id=True
         """
         disks_list = self.api.system_service().disks_service().list()
+        if sparse and status is None:
+            return [
+                disk.id if disk_id is True else disk.name
+                for disk in disks_list if disk.sparse is sparse
+            ]
+
         if status is None:
-            return [disk.name for disk in disks_list]
+            return [disk.id if disk_id is True else disk.name for disk in disks_list]
         try:
             return [
-                disk.name for disk in disks_list
+                disk.id if disk_id is True else disk.name for disk in disks_list
                 if disk.status == types.DiskStatus.__members__[status.upper()]
+                and disk.sparse is sparse if sparse is not None
             ]
 
         except (KeyError, AttributeError):  # catches the __members__ lookup on first loop iteration
