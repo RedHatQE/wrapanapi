@@ -595,6 +595,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             sockets (optional) -- numbner of cpu sockets
             ram (optional) -- memory in GB
             storage_domain (optional) -- storage domain name to which VM should be deployed
+            clone (optional) -- If set to True, use "Clone" for resource allocation, else "Thin"
 
         Returns:
             wrapanapi.systems.rhevm.RHEVMVirtualMachine
@@ -605,12 +606,11 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             'cluster': self.system.get_cluster(cluster),
             'template': self.raw,
         }
-        clone = None
+        clone = kwargs.get('clone')
         domain_name = kwargs.get('storage_domain')
         if domain_name:
             # need to specify storage domain, if its different than the template's disks location
             # then additional options required. disk allocation mode in UI required to be clone
-            clone = True
             target_storage_domain = self.system.get_storage_domain(domain_name)
             disk_attachments = []
             for template_attachment in self.api.disk_attachments_service().list():
