@@ -78,6 +78,10 @@ class NetworkNameNotFound(NotFoundError):
     pass
 
 
+class VolumeNotFoundError(NotFoundError):
+    pass
+
+
 class InvalidValueException(ValueError):
     """Raises when invalid value provided. E.g. invalid OpenShift project name"""
     pass

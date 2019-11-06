@@ -13,10 +13,8 @@ from boto3 import (
 )
 
 from wrapanapi.entities import (Instance, Network, NetworkMixin, Stack, StackMixin,
-                                Template, TemplateMixin, VmMixin, VmState)
-from wrapanapi.exceptions import (ActionTimedOutError, ImageNotFoundError,
-                                  MultipleItemsError, NetworkNotFoundError,
-                                  NotFoundError)
+                                Template, TemplateMixin, VmMixin, VmState, Volume)
+from wrapanapi.exceptions import (ActionTimedOutError, MultipleItemsError, NotFoundError)
 from wrapanapi.systems.base import System
 
 
@@ -373,6 +371,71 @@ class EC2Vpc(_TagMixin, _SharedMethodsMixin, Network):
     def cleanup(self):
         """
         Cleanup Network
+        """
+        return self.delete()
+
+
+class EBSVolume(_TagMixin, _SharedMethodsMixin, Volume):
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Constructor for an EBSVolume tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the boto.ec2.volume.Volume object if already obtained, or None
+            uuid: unique ID of the volume
+        """
+        self._uuid = raw.id if raw else kwargs.get('uuid')
+        if not self._uuid:
+            raise ValueError("missing required kwarg: 'uuid'")
+
+        super(EBSVolume, self).__init__(system, raw, **kwargs)
+
+        self._api = self.system.ec2_connection
+
+    @property
+    def name(self):
+        tag_value = self.get_tag_value('Name')
+        return tag_value if tag_value else self.raw.id
+
+    def resize(self, new_size):
+        try:
+            self._api.modify_volume(VolumeId=self.uuid, Size=new_size)
+            self.refresh()
+            return new_size
+        except Exception:
+            return False
+
+    def attach(self, instance_id, device='/dev/sdh'):
+        try:
+            self.raw.attach_to_instance(Device=device, InstanceId=instance_id)
+            self.refresh()
+            return True
+        except Exception:
+            return False
+
+    def detach(self, instance_id, device='/dev/sdh', force=False):
+        try:
+            self.raw.detach_from_instance(Device=device, InstanceId=instance_id, Force=force)
+            self.refresh()
+            return True
+        except Exception:
+            return False
+
+    def delete(self):
+        """
+        Delete Volume
+        """
+        self.logger.info("Deleting EBSVolume '%s', id: '%s'", self.name, self.uuid)
+        try:
+            self.raw.delete()
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def cleanup(self):
+        """
+        Cleanup Volume
         """
         return self.delete()
 
@@ -1275,3 +1338,72 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
                                                               'Values': [name]}])
         return [EC2Vpc(system=self, raw=self.ec2_resource.Vpc(vpc['VpcId']))
                 for vpc in vpcs.get('Vpcs')]
+
+    def create_volume(self, az, iops=None, encrypted=False, size=10, type='gp2', name=None):
+        """
+        Creates volume
+        Args:
+            az: rquired field availability zone where to create volume in
+            iops: iops value for io1 volume type
+            encrypted: whether volume should be encrypted - default is False
+            size: size of volume - default is 10GB
+            type: type of volume 'standard'|'io1'|'gp2'|'sc1'|'st1' - default is gp2
+            name: name of volume, default is None
+        Returns:
+            Created Volume object
+        """
+        attributes = {
+            'AvailabilityZone': az,
+            'Size': size,
+            'VolumeType': type,
+            'Encrypted': encrypted
+        }
+        if type not in ('standard', 'io1', 'gp2', 'sc1', 'st1'):
+            raise ValueError("One of 'standard'|'io1'|'gp2'|'sc1'|'st1' volume types must be set!")
+        if type == 'io1':
+            if not iops:
+                raise ValueError("iops parameter must be set when creating io1 volume type!")
+            else:
+                attributes["Iops"] = iops
+        if name:
+            attributes["TagSpecifications"] = [{'Tags': [{'Key': 'Name', 'Value': name}],
+                                               'ResourceType': 'volume'}]
+        try:
+            response = self.ec2_connection.create_volume(**attributes)
+            volume_id = response.get('VolumeId')
+            return EBSVolume(system=self, uuid=volume_id, raw=self.ec2_resource.Volume(volume_id))
+        except Exception:
+            return False
+
+    def get_volume(self, name=None, id=None):
+        return self._get_resource(EBSVolume, self.find_volumes, name=name, id=id)
+
+    def list_volumes(self):
+        """
+        Returns a list of Volumes objects
+        """
+        volume_list = [
+            EBSVolume(system=self, uuid=volume['VolumeId'], raw=self.ec2_resource.Volume(
+                volume['VolumeId']))
+            for volume in self.ec2_connection.describe_volumes().get('Volumes')
+        ]
+        return volume_list
+
+    def find_volumes(self, name=None, id=None):
+        """
+        Return list of all volumes with given name or id
+        Args:
+            name: name to search
+            id: id to search
+        Returns:
+            List of EBSVolume objects
+        """
+        if not name and not id or name and id:
+            raise ValueError("Either name or id must be set and not both!")
+        if id:
+            volumes = self.ec2_connection.describe_volumes(VolumeIds=[id])
+        else:
+            volumes = self.ec2_connection.describe_volumes(Filters=[{'Name': 'tag:Name',
+                                                              'Values': [name]}])
+        return [EBSVolume(system=self, raw=self.ec2_resource.Volume(volume['VolumeId']))
+                for volume in volumes.get('Volumes')]

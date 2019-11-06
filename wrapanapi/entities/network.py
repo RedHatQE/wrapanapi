@@ -61,7 +61,7 @@ class NetworkMixin(EntityMixin, metaclass=ABCMeta):
     @abstractmethod
     def get_network(self, name, **kwargs):
         """
-        Get stack based on name or other kwargs
+        Get a network based on name or other kwargs
 
         Returns: Network object
         Raises:
