@@ -166,6 +166,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         'down': VmState.STOPPED,
         'powering_up': VmState.STARTING,
         'suspended': VmState.SUSPENDED,
+        'reboot_in_progress': VmState.STARTING,
     }
 
     def __init__(self, system, raw=None, **kwargs):
