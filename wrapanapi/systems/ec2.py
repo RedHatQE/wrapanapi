@@ -268,6 +268,11 @@ class CloudFormationStack(_TagMixin, _SharedMethodsMixin, Stack):
         self.refresh()
         return self.raw.creation_time
 
+    @property
+    def status_active(self):
+        self.refresh()
+        return self.raw.stack_status in StackStates.ACTIVE
+
     def delete(self):
         """
         Removes the stack on the provider
@@ -1425,3 +1430,24 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             ssm_response = self.ssm_connection.get_parameter(Name=tmp)
             verbose_region_names.append(ssm_response['Parameter']['Value'])
         return verbose_region_names
+
+    def create_stack(self, name, template_url=None, template_body=None, parameters=None,
+                     capabilities=None):
+        if (not template_body and not template_url) or (template_body and template_url):
+            raise ValueError("Either template_body or template_url must be set and not both!")
+        stack_kwargs = {
+            'StackName': name,
+        }
+        if template_body:
+            stack_kwargs['TemplateBody'] = template_body
+        else:
+            stack_kwargs['TemplateURL'] = template_url
+        if parameters:
+            stack_kwargs['Parameters'] = parameters
+        if capabilities:
+            stack_kwargs['Capabilities'] = capabilities
+
+        response = self.cloudformation_connection.create_stack(**stack_kwargs)
+        stack_id = response.get('StackId')
+        return CloudFormationStack(system=self, uuid=stack_id,
+                                   raw=self.cloudformation_resource.Stack(stack_id))
