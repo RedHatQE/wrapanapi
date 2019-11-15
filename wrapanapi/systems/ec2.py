@@ -495,6 +495,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.cloudformation_connection = boto3client('cloudformation', **connection_kwargs)
         self.cloudformation_resource = boto3resource('cloudformation', **connection_kwargs)
         self.sns_connection = boto3client('sns', region_name=self._region_name)
+        self.ssm_connection = boto3client('ssm', **connection_kwargs)
 
         self.kwargs = kwargs
 
@@ -1407,3 +1408,16 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
                                                               'Values': [name]}])
         return [EBSVolume(system=self, raw=self.ec2_resource.Volume(volume['VolumeId']))
                 for volume in volumes.get('Volumes')]
+
+    def list_regions(self, verbose=False):
+        regions = self.ec2_connection.describe_regions().get('Regions')
+        region_names = [r.get('RegionName') for r in regions]
+        if not verbose:
+            return region_names
+
+        verbose_region_names = []
+        for region in region_names:
+            tmp = '/aws/service/global-infrastructure/regions/{}/longName'.format(region)
+            ssm_response = self.ssm_connection.get_parameter(Name=tmp)
+            verbose_region_names.append(ssm_response['Parameter']['Value'])
+        return verbose_region_names
