@@ -2,7 +2,7 @@ import copy
 import json
 import string
 import yaml
-from collections import Iterable
+from collections.abc import Iterable
 from functools import partial, wraps
 from random import choice
 
