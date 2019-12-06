@@ -135,6 +135,10 @@ class EC2Instance(_TagMixin, _SharedMethodsMixin, Instance):
         # Example instance.launch_time: datetime.datetime(2019, 3, 13, 14, 45, 33, tzinfo=tzutc())
         return self.raw.launch_time
 
+    @property
+    def az(self):
+        return self.raw.placement["AvailabilityZone"]
+
     def delete(self, timeout=240):
         """
         Delete instance. Wait for it to move to 'deleted' state
