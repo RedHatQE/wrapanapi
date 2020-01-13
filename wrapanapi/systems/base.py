@@ -70,7 +70,7 @@ class System(LoggerMixin, metaclass=ABCMeta):
                 self.__class__.__name__))
 
         return {stat: self._stats_available[stat](self)
-                for stat in requested_stats or self._status_available.keys()}
+                for stat in requested_stats or self._stats_available.keys()}
 
     def disconnect(self):
         """Disconnects the API from mgmt system"""
