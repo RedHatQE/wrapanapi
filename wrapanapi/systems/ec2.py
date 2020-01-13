@@ -469,7 +469,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms(hide_deleted=False)),
+        'num_vm': lambda self: len(self.list_vms()),
         'num_template': lambda self: len(self.list_templates()),
     }
 
