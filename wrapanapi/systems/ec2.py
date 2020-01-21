@@ -503,8 +503,9 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.ecr_connection = boto3client('ecr', **connection_kwargs)
         self.cloudformation_connection = boto3client('cloudformation', **connection_kwargs)
         self.cloudformation_resource = boto3resource('cloudformation', **connection_kwargs)
-        self.sns_connection = boto3client('sns', region_name=self._region_name)
         self.ssm_connection = boto3client('ssm', **connection_kwargs)
+        self.sns_connection = boto3client('sns', **connection_kwargs)
+        self.cw_events_connection = boto3client('events', **connection_kwargs)
 
         self.kwargs = kwargs
 
@@ -1451,3 +1452,22 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         stack_id = response.get('StackId')
         return CloudFormationStack(system=self, uuid=stack_id,
                                    raw=self.cloudformation_resource.Stack(stack_id))
+
+    def set_sns_topic_target_for_all_cw_rules(self, topic_arn):
+        # After recreating sns topic cloudwatch rule targets are not set so we need to set them back
+        try:
+            # Get all enabled rules
+            rules = self.cw_events_connection.list_rules().get('Rules')
+            enabled_rules = []
+            for rule in rules:
+                if rule.get('State') == "ENABLED":
+                    enabled_rules.append(rule.get('Name'))
+            # Set targets to rules again
+            for enabled_rule in enabled_rules:
+                target = self.cw_events_connection.list_targets_by_rule(
+                    Rule=enabled_rule).get('Targets')[0]
+                target['Arn'] = topic_arn
+                self.cw_events_connection.put_targets(Rule=enabled_rule, Targets=[target])
+            return True
+        except Exception:
+            return False
