@@ -1471,3 +1471,39 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             return True
         except Exception:
             return False
+
+    def import_snapshot(self, s3bucket, s3key, format="vhd", description=None):
+        self.logger.info(
+            " Importing snapshot %s from %s bucket with description %s in %s started successfully.",
+            s3key, s3bucket, description, format
+        )
+        try:
+            result = self.ec2_connection.import_snapshot(
+                DiskContainer={
+                    'Description': description if description is not None else s3key,
+                    'Format': format,
+                    'UserBucket': {
+                        'S3Bucket': s3bucket,
+                        'S3Key': s3key
+                    }
+                }
+            )
+            task_id = result.get("ImportTaskId")
+            return task_id
+
+        except Exception:
+            self.logger.exception("Import of snapshot '%s' failed.", s3key)
+            return False
+
+    def get_import_snapshot_task(self, task_id):
+        result = self.ec2_connection.describe_import_snapshot_tasks(ImportTaskIds=[task_id])
+        result_task = result.get("ImportSnapshotTasks")
+        return result_task[0]
+
+    def get_snapshot_id_if_import_completed(self, task_id):
+        result = self.get_import_snapshot_task(task_id).get('SnapshotTaskDetail')
+        result_status = result.get("Status")
+        if result_status == 'completed':
+            return result.get("SnapshotId")
+        else:
+            return False
