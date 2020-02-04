@@ -192,7 +192,7 @@ class VMWareVMOrTemplate(Entity):
         return vm_clone_spec
 
     def delete(self):
-        self.logger.info(" Deleting vSphere VM/template %s", self.name)
+        self.logger.info("Deleting vSphere VM/template %s", self.name)
 
         task = self.raw.Destroy_Task()
 
@@ -203,6 +203,12 @@ class VMWareVMOrTemplate(Entity):
             if self.exists:
                 return False
         return True
+
+    def unregister(self):
+        """Method to remove VM from inventory aka Unregister."""
+        self.logger.info("Unregistering vSphere VM/template %s", self.name)
+        self.ensure_state(VmState.STOPPED)
+        self.raw.UnregisterVM()
 
     def cleanup(self):
         return self.delete()
