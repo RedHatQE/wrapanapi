@@ -1237,12 +1237,15 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         # Subnets are not having mandatory tags names. They can have multiple tags, but only the tag
         # 'Name' will be taken as the subnet name. If not tag is given, CFME displays the SubnetId
         for subnet in subnets:
+            subnet_name = None
             if 'Tags' in subnet and subnet['Tags']:
                 for tag in subnet['Tags']:
                     if 'Name' in list(tag.values()):
-                        subnets_names.append(tag['Value'])
-            else:
-                subnets_names.append(subnet['SubnetId'])
+                        subnet_name = tag['Value']
+                        break
+            if not subnet_name:
+                subnet_name = subnet['SubnetId']
+            subnets_names.append(subnet_name)
         return subnets_names
 
     def list_security_group(self):
@@ -1258,13 +1261,15 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         # used to name the router. If no tag name is provided, the routerTableId will be
         # displayed as name in CFME.
         for route in route_tables:
+            router_name = None
             if route['Tags']:
                 for tag in route['Tags']:
                     if 'Name' in list(tag.values()):
-                        routers_names.append(tag['Value'])
-            else:
-                routers_names.append(route['RouteTableId'])
-
+                        router_name = tag['Value']
+                        break
+            if not router_name:
+                router_name = route['RouteTableId']
+            routers_names.append(router_name)
         return routers_names
 
     def list_own_snapshots(self):
