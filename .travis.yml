@@ -40,5 +40,5 @@ deploy:
   on:
     tags: true
     distributions: sdist bdist_wheel
-    repo: ManageIQ/wrapanapi
+    repo: RedhatQE/wrapanapi
 
