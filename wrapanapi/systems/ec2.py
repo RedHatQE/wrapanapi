@@ -893,8 +893,13 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
                 for image in images]
 
     def get_template(self, name_or_id):
-        return self._get_resource(name=name_or_id, resource=EC2Image,
-                                  find_method=self.find_templates, public=True)
+        try:
+            template = self._get_resource(name=name_or_id, resource=EC2Image,
+                                      find_method=self.find_templates)
+        except Exception:
+            template = self._get_resource(name=name_or_id, resource=EC2Image,
+                                          find_method=self.find_templates, public=True)
+        return template
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
