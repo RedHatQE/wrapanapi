@@ -1517,3 +1517,26 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             return result.get("SnapshotId")
         else:
             return False
+
+    def create_image_from_snapshot(self, name, snapshot_id, architecture='x86_64', ena_support=True,
+                                   virtualization_type='hvm', device_name='/dev/sda1'):
+        try:
+            ami_id = self.ec2_connection.register_image(Name=name,
+                                                        Architecture=architecture,
+                                                        VirtualizationType=virtualization_type,
+                                                        RootDeviceName=device_name,
+                                                        EnaSupport=ena_support,
+                                                        BlockDeviceMappings=[
+                                                            {
+                                                                'DeviceName': device_name,
+                                                                'Ebs':
+                                                                    {
+                                                                        'SnapshotId': snapshot_id,
+                                                                        'DeleteOnTermination': True
+                                                                    }
+                                                            }
+                                                        ])
+            return ami_id
+        except Exception:
+            self.logger.exception("Creation of image from snapshot '%s' failed.", snapshot_id)
+            return False
