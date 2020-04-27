@@ -534,7 +534,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         """Returns the current versions of boto3"""
         return boto3.__version__
 
-    def _get_resource(self, resource, find_method, name=None, id=None):
+    def _get_resource(self, resource, find_method, name=None, id=None, **kwargs):
         """
         Get a single resource with name equal to 'name' or id equal to 'id'
 
@@ -554,7 +554,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         resource_name = resource.__name__
         if not name and not id or name and id:
             raise ValueError("Either name or id must be set and not both!")
-        resources = find_method(name=name, id=id)
+        resources = find_method(name=name, id=id, **kwargs)
         name_or_id = name if name else id
         if not resources:
             raise NotFoundError("{} with {} {} not found".format(resource_name,
@@ -893,8 +893,13 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
                 for image in images]
 
     def get_template(self, name_or_id):
-        return self._get_resource(name=name_or_id, resource=EC2Image,
-                                  find_method=self.find_templates)
+        try:
+            template = self._get_resource(name=name_or_id, resource=EC2Image,
+                                      find_method=self.find_templates)
+        except Exception:
+            template = self._get_resource(name=name_or_id, resource=EC2Image,
+                                          find_method=self.find_templates, public=True)
+        return template
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
