@@ -10,9 +10,11 @@ from .stack import Stack, StackMixin
 from .server import Server, ServerState
 from .network import Network, NetworkMixin
 from .volume import Volume, VolumeMixin
+from .security_group import SecurityGroup, SecurityGroupMixin
 
 __all__ = [
     'Template', 'TemplateMixin', 'Vm', 'VmState', 'VmMixin', 'Instance',
     'PhysicalContainer', 'Server', 'ServerState', 'Stack', 'StackMixin',
-    'Network', 'NetworkMixin', 'Volume', 'VolumeMixin'
+    'Network', 'NetworkMixin', 'Volume', 'VolumeMixin', 'SecurityGroup',
+    'SecurityGroupMixin'
 ]

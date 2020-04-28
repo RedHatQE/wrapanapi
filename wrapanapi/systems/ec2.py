@@ -12,8 +12,9 @@ from boto3 import (
     client as boto3client
 )
 
-from wrapanapi.entities import (Instance, Network, NetworkMixin, Stack, StackMixin,
-                                Template, TemplateMixin, VmMixin, VmState, Volume)
+from wrapanapi.entities import (Instance, Network, NetworkMixin, SecurityGroup, SecurityGroupMixin,
+                                Stack, StackMixin, Template, TemplateMixin, VmMixin, VmState,
+                                Volume)
 from wrapanapi.exceptions import (ActionTimedOutError, MultipleItemsError, NotFoundError)
 from wrapanapi.systems.base import System
 
@@ -449,7 +450,98 @@ class EBSVolume(_TagMixin, _SharedMethodsMixin, Volume):
         return self.delete()
 
 
-class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
+class SecurityGroup(_TagMixin, _SharedMethodsMixin, SecurityGroup):
+    def __init__(self, system, raw=None, **kwargs):
+        """
+        Constructor for an SecurityGroup tied to a specific system.
+
+        Args:
+            system: an EC2System object
+            raw: the boto.ec2.volume.Volume object if already obtained, or None
+            uuid: unique ID of the volume
+        """
+        self._uuid = raw.id if raw else kwargs.get('uuid')
+        if not self._uuid:
+            raise ValueError("missing required kwarg: 'uuid'")
+
+        super(SecurityGroup, self).__init__(system, raw, **kwargs)
+
+        self._api = self.system.ec2_connection
+
+    @property
+    def name(self):
+        tag_value = self.get_tag_value('Name')
+        return tag_value if tag_value else self.raw.group_name
+
+    def set_rule(self, permission_list, traffic_type='inbound'):
+        """
+
+        Args:
+            permission_list= [{
+                'FromPort': from_port(-1 - all ports),
+                'ToPort': to_port(-1 - all ports),
+                'IpProtocol': 'tcp/udp/icmp/icmpv6/-1(all protocols)',
+                'IpRanges': [{'CidrIp': '0.0.0.0/32'}]
+                }]
+            traffic_type: inbound/outbound
+
+        Returns:
+
+        """
+        try:
+            if traffic_type == 'inbound':
+                self.raw.authorize_ingress(IpPermissions=permission_list)
+            else:
+                self.raw.authorize_egress(IpPermissions=permission_list)
+            self.refresh()
+            return True
+        except Exception:
+            return False
+
+    def unset_rule(self, permission_list, traffic_type='inbound'):
+        """
+
+        Args:
+            permission_list: [
+                FromPort: from_port(-1 - all ports),
+                ToPort: to_port(-1 - all ports),
+                IpProtocol: 'tcp/udp/icmp/icmpv6/-1(all protocols)',
+                IpRanges: [CidrIp: '0.0.0.0/32']
+                ]
+            type: inbound/outbound
+
+        Returns:
+
+        """
+        try:
+            if traffic_type == 'inbound':
+                self.raw.revoke_ingress(IpPermissions=permission_list)
+            else:
+                self.raw.revoke_egress(IpPermissions=permission_list)
+            self.refresh()
+            return True
+        except Exception:
+            return False
+
+    def delete(self):
+        """
+        Delete SecurityGroup
+        """
+        self.logger.info("Deleting SecurityGroup '%s', id: '%s'", self.name, self.uuid)
+        try:
+            self.raw.delete()
+            return True
+        except ActionTimedOutError:
+            return False
+
+    def cleanup(self):
+        """
+        Cleanup SecurityGroup
+        """
+        return self.delete()
+
+
+class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin, SecurityGroupMixin):
     """EC2 Management System, powered by boto
 
     Wraps the EC2 API
@@ -1540,3 +1632,44 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         except Exception:
             self.logger.exception("Creation of image from snapshot '%s' failed.", snapshot_id)
             return False
+
+    def create_sec_group(self, group_name, desc="SG created for automated test", vpc_id=None):
+        sg_kwargs = {'Description': desc, 'GroupName': group_name}
+        if vpc_id:
+            sg_kwargs['VpcId'] = vpc_id
+        result = self.ec2_connection.create_security_group(**sg_kwargs)
+        return SecurityGroup(system=self, uuid=result['GroupId'],
+                             raw=self.ec2_resource.SecurityGroup(result['GroupId']))
+
+    def get_sec_group(self, name=None, id=None):
+        return self._get_resource(SecurityGroup, self.find_sec_groups, name=name, id=id)
+
+    def list_sec_groups(self):
+        """
+        Returns a list of SecurityGroup objects
+        """
+        sec_group_list = [
+            EBSVolume(system=self, uuid=sec_group['GroupId'], raw=self.ec2_resource.SecurityGroup(
+                sec_group['GroupId']))
+            for sec_group in self.ec2_connection.describe_security_groups().get('SecurityGroups')
+        ]
+        return sec_group_list
+
+    def find_sec_groups(self, name=None, id=None):
+        """
+        Return list of all security groups with given name or id
+        Args:
+            name: name to search
+            id: id to search
+        Returns:
+            List of SecurityFGroup objects
+        """
+        if not name and not id or name and id:
+            raise ValueError("Either name or id must be set and not both!")
+        if id:
+            sec_groups = self.ec2_connection.describe_security_groups(GroupIds=[id])
+        else:
+            sec_groups = self.ec2_connection.describe_security_groups(GroupNames=[name])
+        return [
+            SecurityGroup(system=self, raw=self.ec2_resource.SecurityGroup(sec_group['GroupId']))
+            for sec_group in sec_groups.get('SecurityGroups')]
