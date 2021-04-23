@@ -653,21 +653,39 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         return [r.name for r in self.resource_client.resource_groups.list()]
 
-    def list_free_pip(self, pip_template, resource_group=None):
+    def list_free_pip(self, pip_template=None, resource_group=None):
         """
-        List available Public IP in selected resource_group
+        List all Public IPs or specific VMs available Public IP in selected resource_group
         """
         resource_group = resource_group or self.resource_group
         ips = self.network_client.public_ip_addresses.list(resource_group_name=resource_group)
-        return [ip.name for ip in ips if not ip.ip_configuration and pip_template in ip.name]
+        all_free_pips = [ip.name for ip in ips if not ip.ip_configuration]
+        if pip_template:
+            return [ip_name for ip_name in all_free_pips if pip_template if ip_name]
+        return all_free_pips
 
-    def list_free_nics(self, nic_template, resource_group=None):
+    def list_free_nics(self, nic_template=None, resource_group=None):
         """
-        List available Network Interfaces in selected resource_group
+        List all or specific VMs available Network Interface(s) in selected resource_group
         """
         resource_group = resource_group or self.resource_group
-        ips = self.network_client.network_interfaces.list(resource_group_name=resource_group)
-        return [ip.name for ip in ips if not ip.virtual_machine and nic_template in ip.name]
+        nics = self.network_client.network_interfaces.list(resource_group_name=resource_group)
+        all_free_nics = [nic.name for nic in nics if not nic.virtual_machine]
+        if nic_template:
+            return [nic_name for nic_name in all_free_nics if nic_template in nic_name]
+        return all_free_nics
+
+    def list_free_discs(self, disc_template=None, resource_group=None):
+        """
+        List all or specific VMs attached Disc(s) in selected resource_group
+        """
+        resource_group = resource_group or self.resource_group
+        disks = self.compute_client.disks.list_by_resource_group(
+            resource_group_name=resource_group)
+        all_free_discs = [disk.name for disk in disks if not disk.disk_state == 'Attached']
+        if disc_template:
+            return [disc_name for disc_name in all_free_discs if disc_template in disc_name]
+        return all_free_discs
 
     def list_stack(self, resource_group=None, days_old=0):
         """
@@ -748,13 +766,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def disconnect(self):
         pass
 
-    def remove_nics_by_search(self, nic_template, resource_group=None):
+    def remove_nics_by_search(self, nic_template=None, resource_group=None):
         """
-        Used for clean_up jobs to remove NIC that are not attached to any test VM
+        Used for clean_up jobs to remove NIC(s) that are not attached to any test VM
         in selected resource_group.If None (default) resource_group provided, the instance's
         resource group is used instead
         """
-        self.logger.info('Attempting to List NICs with "%s" name template', nic_template)
+        self.logger.info('Attempting to List all unused NICs')
         results = []
         nic_list = self.list_free_nics(nic_template,
                                        resource_group=resource_group or self.resource_group)
@@ -772,16 +790,16 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             self.logger.info('"%s" nic removed', nic)
             results.append((nic, operation.status()))
         if not results:
-            self.logger.debug('No NICs matching "%s" template were found', nic_template)
+            self.logger.debug('No unused/unattached NIC(s) found to be removed!')
         return results
 
-    def remove_pips_by_search(self, pip_template, resource_group=None):
+    def remove_pips_by_search(self, pip_template=None, resource_group=None):
         """
-        Used for clean_up jobs to remove public IPs that are not associated to any NIC
+        Used for clean_up jobs to remove public IP(s) that are not associated to any NIC
         in selected resource_group. If None (default) resource_group provided, the instance's
         resource group is used instead
         """
-        self.logger.info('Attempting to List Public IPs with "%s" name template', pip_template)
+        self.logger.info('Attempting to list all unused Public IPs')
         results = []
         pip_list = self.list_free_pip(pip_template,
                                       resource_group=resource_group or self.resource_group)
@@ -794,24 +812,38 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             self.logger.info('"%s" pip removed', pip)
             results.append((pip, operation.status()))
         if not results:
-            self.logger.debug('No PIPs matching "%s" template were found', pip_template)
+            self.logger.debug('No unused/unattached PIPs found to be removed!')
         return results
 
-    def remove_discs_by_search(self, disc_name):
+    def remove_discs_by_search(self, disc_name=None, resource_group=None):
         """
-        Used for clean_up jobs to remove discs that are left after deleting the VM
+        Used for clean_up jobs to remove disc(s) that are left after deleting the VM
         """
-        self.logger.info('Attempting to find the disc image {}'.format(disc_name))
         results = []
-        discs = self.find_templates(container='system',
-                                    prefix='{}{}'.format(self.orphaned_discs_path, disc_name))
+        if disc_name:
+            self.logger.info('Attempting to find the disc image {}'.format(disc_name))
+            discs = self.find_templates(container='system',
+                                        prefix='{}{}'.format(self.orphaned_discs_path, disc_name))
 
-        for disc in discs:
-            disc.delete()
-            self.logger.info('disc {} removed'.format(disc_name))
-            results.append(disc_name)
-        if not results:
-            self.logger.debug('No discs matching {} were found'.format(disc_name))
+            for disc in discs:
+                disc.delete()
+                self.logger.info('disc {} removed'.format(disc_name))
+                results.append(disc_name)
+            if not results:
+                self.logger.debug('No discs matching {} were found'.format(disc_name))
+        else:
+            # Remove all discs
+            self.logger.info('Attempting to find all the unattached disks and delete.')
+            discs = self.list_free_discs(resource_group=self.resource_group)
+            for disc_name in discs:
+                operation = self.compute_client.disks.delete(
+                    resource_group_name=resource_group or self.resource_group,
+                    disk_name=disc_name)
+                operation.wait()
+                self.logger.info('"%s" disc removed', disc_name)
+                results.append((disc_name, operation.status()))
+            if not results:
+                self.logger.debug('No unused/attached discs were found to be removed!')
         return results
 
     def create_netsec_group(self, group_name, resource_group=None):
@@ -1111,3 +1143,14 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def info(self):
         pass
+
+    def cleanup_resources(self):
+        """
+        Clean up Unused Disks, Nics and Public IPs
+
+        Any exceptions raised during NIC/PIP/Disc delete attempts are logged only.
+        """
+        self.logger.info("cleanup: Removing all unused NICs/PIPs/Discs in resource group")
+        self.remove_nics_by_search()
+        self.remove_discs_by_search()
+        self.remove_pips_by_search()
