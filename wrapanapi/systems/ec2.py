@@ -1540,3 +1540,58 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         except Exception:
             self.logger.exception("Creation of image from snapshot '%s' failed.", snapshot_id)
             return False
+
+    def remove_network_interface_by_id(self, nic_id):
+        try:
+            self.ec2_connection.delete_network_interface(NetworkInterfaceId=nic_id)
+            return True
+        except Exception:
+            self.logger.exception(f"Removal of Network interface id {nic_id} failed.")
+            return False
+
+    def remove_volume_by_id(self, volume_id):
+        try:
+            self.ec2_connection.delete_volume(VolumeId=volume_id)
+            return True
+        except Exception:
+            self.logger.exception(f"Removal of Volume by id {volume_id} failed.")
+            return False
+
+    def remove_all_unused_nics(self):
+        """
+        Remove all unused Network interfaces in given region
+
+        Returns: None
+        """
+        all_unused_nics = self.get_all_unused_network_interfaces()
+        for nic in all_unused_nics:
+            self.remove_network_interface_by_id(nic_id=nic['NetworkInterfaceId'])
+
+    def remove_all_unused_volumes(self):
+        """
+        Remove all unused Volumes in given region
+
+        Returns: None
+        """
+        all_unused_volumes = self.get_all_unattached_volumes()
+        for volume in all_unused_volumes:
+            self.remove_volume_by_id(volume_id=volume['VolumeId'])
+
+    def remove_all_unused_ips(self):
+        """
+        Remove all disassociated addresses in given region
+
+        Returns: None
+        """
+        all_unused_ips = self.get_all_disassociated_addresses()
+        for ip in all_unused_ips:
+            self.release_vpc_address(alloc_id=ip['AllocationId'])
+
+    def cleanup_resources(self):
+        """
+        Removes all unused NICs, Volumes and IP addresses
+        """
+        self.logger.info("cleanup: Removing all unused NICs/Volumes/IPs in resource group")
+        self.remove_all_unused_nics()
+        self.remove_all_unused_volumes()
+        self.remove_all_unused_ips()
