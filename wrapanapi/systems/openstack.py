@@ -14,7 +14,7 @@ from re import search
 
 import pytz
 from cinderclient import exceptions as cinder_exceptions
-from cinderclient.v2 import client as cinderclient
+from cinderclient.v3 import client as cinderclient
 from glanceclient import Client as gClient
 from heatclient import client as heat_client
 from keystoneauth1.identity import Password
