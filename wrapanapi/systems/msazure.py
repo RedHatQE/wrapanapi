@@ -5,6 +5,7 @@ Used to communicate with providers without using CFME facilities
 """
 
 import os
+from dateutil import parser
 from datetime import datetime, timedelta
 
 import pytz
@@ -15,7 +16,8 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
-from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource import SubscriptionClient
+from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlockBlobService
@@ -675,6 +677,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             return [nic_name for nic_name in all_free_nics if nic_template in nic_name]
         return all_free_nics
 
+    def list_all_resources_by_resource_group(self, resource_group=None):
+        """
+        List all resources in selected resource_group
+        """
+        resource_group = resource_group or self.resource_group
+        return list(self.resource_client.resources.list_by_resource_group(resource_group, expand="changedTime,createdTime"))
+
     def list_free_discs(self, disc_template=None, resource_group=None):
         """
         List all or specific VMs attached Disc(s) in selected resource_group
@@ -765,6 +774,44 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def disconnect(self):
         pass
+
+    def _age_filter(self, resource, hours_old=0):
+        now_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        start_time = parser.parse(resource.additional_properties['createdTime'])
+        timediff = now_time - start_time
+        totalhours = timediff.total_seconds() / 3600
+
+        return totalhours > hours_old
+
+    def _list_resources(self, resource_group=None, hours_old=0):
+        """
+        Lists group resources older than hours_old
+        """
+        hours_old = float(hours_old)
+
+        resources = self.list_all_resources_by_resource_group(resource_group)
+        return filter(lambda f: self._age_filter(f, hours_old), resources) if bool(hours_old) else resources
+
+    def list_resources_from_hours_old(self, resource_group=None, hours_old=0):
+        """
+        Retrieves list of resources older than hours_old numeric value.
+        Age is calculated as difference of current time and resource creation timestamp.
+        """
+        return [r.name for r in self._list_resources(resource_group, hours_old)]
+
+    def remove_resource_group_of_old_resources(self, resource_group=None, hours_old=0):
+        """
+        Used for clean_up jobs to remove group containing resources older than hours_old numeric value.
+        Age is calculated as difference of current time and resource creation timestamp.
+        """
+
+        hours_old = float(hours_old)
+        self.logger.info('Attempting to remove all old resources')
+        resource_group = resource_group or self.resource_group
+
+        resources = self._list_resources(resource_group, hours_old)
+        if resources:
+            self.resource_client.resource_groups.delete(resource_group)
 
     def remove_nics_by_search(self, nic_template=None, resource_group=None):
         """
