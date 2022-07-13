@@ -1,0 +1,70 @@
+# CI stages to execute against Pull Requests
+name: Release to PyPi
+
+on:
+  push:
+    tags:
+      - '*'
+
+env:
+    PYCURL_SSL_LIBRARY: openssl
+
+jobs:
+  codechecks:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout WrapanAPI
+        uses: actions/checkout@v3
+
+      - name: Set Up Python3
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.9
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y libgnutls28-dev libcurl4-openssl-dev libssl-dev
+          # Uninstall pycurl - its likely not installed, but in case the ubuntu-latest packages change
+          # then compile and install it with PYCURL_SSL_LIBRARY set to openssl
+          pip install -U pip
+          pip uninstall -y pycurl
+          pip install --compile --no-cache-dir pycurl
+          pip install -Ur requirements-test.txt --upgrade-strategy eager
+
+      - name: Run Unit Tests
+        run: py.test tests/ -v --cov wrapanapi
+
+      - name: Analysis (git diff)
+        if: failure()
+        run: git diff
+
+  release_to_pypi:
+    needs: codechecks
+    name: Release to PyPi
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set Up Python3
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.9
+
+      - name: Setup and Build
+        run: |
+          sudo apt update
+          pip install -U pip
+          pip install setuptools_scm wheel twine
+          python setup.py sdist bdist_wheel
+          python -m twine check dist/*
+
+      - name: Release to PyPi
+        uses: pypa/gh-action-pypi-publish@release/v1.4.2
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip_existing: true
