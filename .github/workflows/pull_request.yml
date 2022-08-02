@@ -1,0 +1,43 @@
+# CI stages to execute against Pull Requests
+name: Pull Requests
+
+on:
+  pull_request:
+    types: ["opened", "synchronize", "reopened"]
+
+env:
+    PYCURL_SSL_LIBRARY: openssl
+
+jobs:
+  codechecks:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [3.7.13, 3.8, 3.9]
+    steps:
+      - name: Checkout WrapanAPI
+        uses: actions/checkout@v3
+
+      - name: Set Up Python-${{ matrix.python }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install -y libgnutls28-dev libcurl4-openssl-dev libssl-dev
+          # Uninstall pycurl - its likely not installed, but in case the ubuntu-latest packages change
+          # then compile and install it with PYCURL_SSL_LIBRARY set to openssl
+          pip install -U pip
+          pip uninstall -y pycurl
+          pip install --compile --no-cache-dir pycurl
+          pip install -Ur requirements-test.txt --upgrade-strategy eager
+
+      - name: Run Unit Tests
+        run: py.test tests/ -v --cov wrapanapi
+
+      - name: Analysis (git diff)
+        if: failure()
+        run: git diff
