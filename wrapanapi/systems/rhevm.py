@@ -1,32 +1,42 @@
-# coding: utf-8
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-
 import fauxfactory
 import pytz
+from ovirtsdk4 import Connection
+from ovirtsdk4 import Error
 from ovirtsdk4 import NotFoundError as OVirtNotFoundError
-from ovirtsdk4 import Connection, Error, types
-from wait_for import TimedOutError, wait_for
+from ovirtsdk4 import types
+from wait_for import TimedOutError
+from wait_for import wait_for
 
-from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
-from wrapanapi.exceptions import (
-    ItemNotFound, MultipleItemsError, NotFoundError, VMInstanceNotFound, VMInstanceNotSuspended,
-    VMNotFoundViaIP, ResourceAlreadyExistsException)
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import Vm
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
+from wrapanapi.exceptions import ItemNotFound
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import NotFoundError
+from wrapanapi.exceptions import ResourceAlreadyExistsException
+from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.exceptions import VMInstanceNotSuspended
+from wrapanapi.exceptions import VMNotFoundViaIP
 from wrapanapi.systems.base import System
 
 
-class _SharedMethodsMixin(object):
+class _SharedMethodsMixin:
     """
     Mixin class that holds properties/methods both VM's and templates share.
 
     This should be listed first in the child class inheritance to satisfy
     the methods required by the Vm/Template abstract base class
     """
+
     @property
     def _identifying_attrs(self):
-        return {'uuid': self._uuid}
+        return {"uuid": self._uuid}
 
     def refresh(self, **kwargs):
         """
@@ -70,26 +80,35 @@ class _SharedMethodsMixin(object):
             if nic.name == nic_name:
                 return self.api.nics_service().nic_service(nic.id)
         else:
-            raise NotFoundError('Unable to find NicService for nic {} on {}'.format(nic_name, self))
+            raise NotFoundError(f"Unable to find NicService for nic {nic_name} on {self}")
 
     def _get_network(self, network_name):
         """retreive a network object by name"""
-        networks = self.system.api.system_service().networks_service().list(
-            search='name={}'.format(network_name))
+        networks = (
+            self.system.api.system_service().networks_service().list(search=f"name={network_name}")
+        )
         try:
             return networks[0]
         except IndexError:
-            raise NotFoundError('No match for network by "name={}"'.format(network_name))
+            raise NotFoundError(f'No match for network by "name={network_name}"')
 
     def get_nics(self):
         return self.api.nics_service().list()
 
     def get_vnic_profiles(self):
-        """ Get vnic_profiles of the VM/template """
+        """Get vnic_profiles of the VM/template"""
         return [nic.vnic_profile for nic in self.get_nics()]
 
-    def _nic_action(self, nic, network_name, interface='VIRTIO', on_boot=True,
-                   vnic_profile=None, nic_service=None, action='add'):
+    def _nic_action(
+        self,
+        nic,
+        network_name,
+        interface="VIRTIO",
+        on_boot=True,
+        vnic_profile=None,
+        nic_service=None,
+        action="add",
+    ):
         """Call an action on nic_service, could be a vmnic or vmnics service
         example, action 'add' on vmnicsservice, or 'update' on VmNicService
         currently written for nic actions on the service, though other actions are available
@@ -113,8 +132,9 @@ class _SharedMethodsMixin(object):
         # service attribute should be method we can call and pass the nic to
         getattr(service, action)(nic)
 
-    def add_nic(self, network_name, nic_name='nic1', interface='VIRTIO', on_boot=True,
-                vnic_profile=None):
+    def add_nic(
+        self, network_name, nic_name="nic1", interface="VIRTIO", on_boot=True, vnic_profile=None
+    ):
         """Add a nic to VM/Template
 
         Args:
@@ -132,15 +152,18 @@ class _SharedMethodsMixin(object):
         except NotFoundError:
             pass
         else:
-            raise ResourceAlreadyExistsException('Nic with name {} already exists on {}'
-                                                 .format(nic_name, self.name))
+            raise ResourceAlreadyExistsException(
+                f"Nic with name {nic_name} already exists on {self.name}"
+            )
         nics_service = self.api.nics_service()
         nic = types.Nic(name=nic_name)
-        self._nic_action(nic, network_name, interface, on_boot, vnic_profile,
-                         nics_service, action='add')
+        self._nic_action(
+            nic, network_name, interface, on_boot, vnic_profile, nics_service, action="add"
+        )
 
-    def update_nic(self, network_name, nic_name='nic1', interface='VIRTIO', on_boot=True,
-                   vnic_profile=None):
+    def update_nic(
+        self, network_name, nic_name="nic1", interface="VIRTIO", on_boot=True, vnic_profile=None
+    ):
         """Update a nic on VM/Template
         Args:
             network_name: string name of the network, also default for vnic_profile name if empty
@@ -153,20 +176,28 @@ class _SharedMethodsMixin(object):
             NotFoundError: from _get_nic_service call if the name doesn't exist
         """
         nic_service = self._get_nic_service(nic_name)
-        self._nic_action(nic_service.get(), network_name, interface, on_boot, vnic_profile,
-                         nic_service, action='update')
+        self._nic_action(
+            nic_service.get(),
+            network_name,
+            interface,
+            on_boot,
+            vnic_profile,
+            nic_service,
+            action="update",
+        )
 
 
 class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
     """
     Represents a VM entity on RHEV
     """
+
     state_map = {
-        'up': VmState.RUNNING,
-        'down': VmState.STOPPED,
-        'powering_up': VmState.STARTING,
-        'suspended': VmState.SUSPENDED,
-        'reboot_in_progress': VmState.STARTING,
+        "up": VmState.RUNNING,
+        "down": VmState.STOPPED,
+        "powering_up": VmState.STARTING,
+        "suspended": VmState.SUSPENDED,
+        "reboot_in_progress": VmState.STARTING,
     }
 
     def __init__(self, system, raw=None, **kwargs):
@@ -178,8 +209,8 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             raw - raw ovirtsdk4.types.Vm object (if already obtained)
             uuid - vm ID
         """
-        super(RHEVMVirtualMachine, self).__init__(system, raw, **kwargs)
-        self._uuid = raw.id if raw else kwargs.get('uuid')
+        super().__init__(system, raw, **kwargs)
+        self._uuid = raw.id if raw else kwargs.get("uuid")
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
         self.api = system.api.system_service().vms_service().vm_service(self._uuid)
@@ -205,14 +236,14 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         Removes the entity on the provider
         """
         self.ensure_state(VmState.STOPPED)
-        self.logger.debug(' Deleting RHEV VM %s/%s', self.name, self.uuid)
+        self.logger.debug(" Deleting RHEV VM %s/%s", self.name, self.uuid)
 
         self.api.remove()
 
         wait_for(
             lambda: not self.exists,
-            message="wait for RHEV VM '{}' deleted".format(self.uuid),
-            num_sec=300
+            message=f"wait for RHEV VM '{self.uuid}' deleted",
+            num_sec=300,
         )
         return True
 
@@ -234,8 +265,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             self.logger.exception("Failed to rename VM %s to %s", self.name, new_name)
             return False
         else:
-            self.logger.info(
-                "RHEVM VM '%s' renamed to '%s', now restarting", self.name, new_name)
+            self.logger.info("RHEVM VM '%s' renamed to '%s', now restarting", self.name, new_name)
             self.restart()  # Restart is required for a rename in RHEV
             self.refresh()  # Update raw so we pick up the new name
             return True
@@ -258,13 +288,13 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         """
         potentials = []
         for ip in self.all_ips:
-            if not ip.startswith('fe80::'):
+            if not ip.startswith("fe80::"):
                 potentials.append(ip)
         return potentials[0] if potentials else None
 
     @property
     def all_ips(self):
-        """ Return all of the IPs
+        """Return all of the IPs
 
         Returns: (list) the addresses assigned to the machine
         """
@@ -282,9 +312,9 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         Returns: True if vm action has been initiated properly
         """
         self.wait_for_steady_state()
-        self.logger.info(' Starting RHEV VM %s', self.name)
+        self.logger.info(" Starting RHEV VM %s", self.name)
         if self.is_running:
-            self.logger.info(' RHEV VM %s is already running.', self.name)
+            self.logger.info(" RHEV VM %s is already running.", self.name)
             return True
         else:
             self.api.start()
@@ -298,9 +328,9 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         Returns: True if vm action has been initiated properly
         """
         self.wait_for_steady_state()
-        self.logger.info(' Stopping RHEV VM %s', self.name)
+        self.logger.info(" Stopping RHEV VM %s", self.name)
         if self.is_stopped:
-            self.logger.info(' RHEV VM %s is already stopped.', self.name)
+            self.logger.info(" RHEV VM %s is already stopped.", self.name)
             return True
         else:
             self.api.stop()
@@ -313,7 +343,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
 
         Returns: True if vm action has been initiated properly
         """
-        self.logger.debug(' Restarting RHEV VM %s', self.name)
+        self.logger.debug(" Restarting RHEV VM %s", self.name)
         return self.stop() and self.start()
 
     def suspend(self):
@@ -323,12 +353,12 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         Returns: True if vm action has been initiated properly
         """
         self.wait_for_steady_state()
-        self.logger.debug(' Suspending RHEV VM %s', self.name)
+        self.logger.debug(" Suspending RHEV VM %s", self.name)
         if self.is_stopped:
             # TODO: possibly use ensure_state(VmState.RUNNING) here?
             raise VMInstanceNotSuspended(self.name)
         elif self.is_suspended:
-            self.logger.info(' RHEV VM %s is already suspended.', self.name)
+            self.logger.info(" RHEV VM %s is already suspended.", self.name)
             return True
         else:
             self.api.suspend()
@@ -342,7 +372,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         storage_domain_name=None,
         delete=True,
         delete_on_error=True,
-        **kwargs
+        **kwargs,
     ):
         """Turns the VM off, creates template from it and deletes the original VM.
 
@@ -361,7 +391,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         Returns:
         wrapanapi.systems.rhevm.RHEVMTemplate object
         """
-        temp_template_name = template_name or "mrk_tmpl_{}".format(fauxfactory.gen_alphanumeric(8))
+        temp_template_name = template_name or f"mrk_tmpl_{fauxfactory.gen_alphanumeric(8)}"
         template = None
         try:
             # Check if this template already exists and ensure it is in an OK state...
@@ -383,7 +413,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                     template_name=temp_template_name,
                     vm_name=self.name,
                     cluster_name=cluster_name,
-                    storage_domain_name=storage_domain_name
+                    storage_domain_name=storage_domain_name,
                 )
             if delete and self.exists:
                 # Delete the original VM
@@ -405,8 +435,8 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
     def get_hardware_configuration(self):
         self.refresh()
         return {
-            'ram': self.raw.memory / 1024 / 1024,
-            'cpu': self.raw.cpu.topology.cores * self.raw.cpu.topology.sockets
+            "ram": self.raw.memory / 1024 / 1024,
+            "cpu": self.raw.cpu.topology.cores * self.raw.cpu.topology.sockets,
         }
 
     def _get_disk_attachment_service(self, disk_name):
@@ -415,7 +445,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             disk = self.system.api.follow_link(disk_attachment_service.disk)
             if disk.name == disk_name:
                 return disk_attachments_service.service(disk.id)
-        raise ItemNotFound(disk_name, 'disk')
+        raise ItemNotFound(disk_name, "disk")
 
     def is_disk_attached(self, disk_name):
         try:
@@ -427,13 +457,23 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         return len(self.api.disk_attachments_service().list())
 
     def _is_disk_ok(self, disk_id):
-        disk = [self.system.api.follow_link(disk_attach.disk)
-                for disk_attach in self.api.disk_attachments_service().list()
-                if self.system.api.follow_link(disk_attach.disk).id == disk_id].pop()
-        return getattr(disk, 'status', None) == types.DiskStatus.OK
+        disk = [
+            self.system.api.follow_link(disk_attach.disk)
+            for disk_attach in self.api.disk_attachments_service().list()
+            if self.system.api.follow_link(disk_attach.disk).id == disk_id
+        ].pop()
+        return getattr(disk, "status", None) == types.DiskStatus.OK
 
-    def add_disk(self, storage_domain=None, size=None, interface='virtio', format='cow',
-                 active=True, sparse=True, name=None):
+    def add_disk(
+        self,
+        storage_domain=None,
+        size=None,
+        interface="virtio",
+        format="cow",
+        active=True,
+        sparse=True,
+        name=None,
+    ):
         """
         Add disk to VM
 
@@ -454,20 +494,28 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         """
         disk_attachments_service = self.api.disk_attachments_service()
         disk_attach = types.DiskAttachment(
-            disk=types.Disk(name=name,
-                            format=types.DiskFormat(format.lower()),
-                            provisioned_size=size,
-                            storage_domains=[types.StorageDomain(name=storage_domain)],
-                            sparse=bool(sparse)),
+            disk=types.Disk(
+                name=name,
+                format=types.DiskFormat(format.lower()),
+                provisioned_size=size,
+                storage_domains=[types.StorageDomain(name=storage_domain)],
+                sparse=bool(sparse),
+            ),
             interface=types.DiskInterface(interface.lower()),
-            active=active
+            active=active,
         )
         disk_attachment = disk_attachments_service.add(disk_attach)
-        wait_for(self._is_disk_ok, func_args=[disk_attachment.disk.id], delay=5, num_sec=900,
-                 message="check if disk is attached")
+        wait_for(
+            self._is_disk_ok,
+            func_args=[disk_attachment.disk.id],
+            delay=5,
+            num_sec=900,
+            message="check if disk is attached",
+        )
 
-    def connect_direct_lun(self, lun_name=None, lun_ip_addr=None, lun_port=None,
-                           lun_iscsi_target=None, interface=None):
+    def connect_direct_lun(
+        self, lun_name=None, lun_ip_addr=None, lun_port=None, lun_iscsi_target=None, interface=None
+    ):
         """
         Connects a direct lun disk to the VM.
 
@@ -483,7 +531,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                 disk=types.Disk(
                     name=lun_name,
                     shareable=True,
-                    format='raw',
+                    format="raw",
                     lun_storage=types.HostStorage(
                         type=types.StorageType.ISCSI,
                         logical_units=[
@@ -492,18 +540,21 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
                                 port=lun_port,
                                 target=lun_iscsi_target,
                             )
-                        ]
-                    )
+                        ],
+                    ),
                 ),
-                interface=types.DiskInterface(getattr(types.DiskInterface, interface or 'VIRTIO')),
-                active=True
+                interface=types.DiskInterface(getattr(types.DiskInterface, interface or "VIRTIO")),
+                active=True,
             )
         else:
             disk_attachment = self._get_disk_attachment_service(lun_name).get()
         disk_attachments_service.add(disk_attachment)
         wait_for(
-            self._is_disk_ok, func_args=[disk_attachment.disk.id], delay=5, num_sec=900,
-            message="check if disk is attached"
+            self._is_disk_ok,
+            func_args=[disk_attachment.disk.id],
+            delay=5,
+            num_sec=900,
+            message="check if disk is attached",
         )
         return True
 
@@ -516,7 +567,9 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         disk_attachment_service.remove(detach_only=True, wait=True)
         wait_for(
             lambda: not self.is_disk_attached(disk_name),
-            delay=5, num_sec=900, message="disk to no longer be attached"
+            delay=5,
+            num_sec=900,
+            message="disk to no longer be attached",
         )
         return True
 
@@ -525,6 +578,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
     """
     Represents a template entity on RHEV.
     """
+
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for a RHEV template tied to a specific system
@@ -534,8 +588,8 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             raw - raw ovirtsdk4.types.Vm object (if already obtained)
             uuid - template ID
         """
-        super(RHEVMTemplate, self).__init__(system, raw=None, **kwargs)
-        self._uuid = raw.id if raw else kwargs.get('uuid')
+        super().__init__(system, raw=None, **kwargs)
+        self._uuid = raw.id if raw else kwargs.get("uuid")
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
         self.api = system.api.system_service().templates_service().template_service(self._uuid)
@@ -547,7 +601,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
         Args:
             timeout: time to wait for template to be successfully deleted
         """
-        self.logger.debug(' Deleting RHEV template %s/%s', self.name, self.uuid)
+        self.logger.debug(" Deleting RHEV template %s/%s", self.name, self.uuid)
         self.wait_for_ok_status()
         self.api.remove()
         wait_for(lambda: not self.exists, num_sec=timeout, delay=5)
@@ -579,7 +633,8 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
             lambda: self.api.get().status == types.TemplateStatus.OK,
             num_sec=timeout,
             message="template is OK",
-            delay=10)
+            delay=10,
+        )
 
     def deploy(self, vm_name, cluster, timeout=900, power_on=True, initialization=None, **kwargs):
         """
@@ -604,14 +659,14 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
         Returns:
             wrapanapi.systems.rhevm.RHEVMVirtualMachine
         """
-        self.logger.debug(' Deploying RHEV template %s to VM %s', self.name, vm_name)
+        self.logger.debug(" Deploying RHEV template %s to VM %s", self.name, vm_name)
         vm_kwargs = {
-            'name': vm_name,
-            'cluster': self.system.get_cluster(cluster),
-            'template': self.raw,
+            "name": vm_name,
+            "cluster": self.system.get_cluster(cluster),
+            "template": self.raw,
         }
-        clone = kwargs.get('clone')
-        domain_name = kwargs.get('storage_domain')
+        clone = kwargs.get("clone")
+        domain_name = kwargs.get("storage_domain")
         if domain_name:
             # need to specify storage domain, if its different than the template's disks location
             # then additional options required. disk allocation mode in UI required to be clone
@@ -622,32 +677,32 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
                     disk=types.Disk(
                         id=template_attachment.id,
                         format=types.DiskFormat.COW,
-                        storage_domains=[target_storage_domain]
+                        storage_domains=[target_storage_domain],
                     )
                 )
                 disk_attachments.append(new_attachment)
 
-            vm_kwargs['disk_attachments'] = disk_attachments
+            vm_kwargs["disk_attachments"] = disk_attachments
 
         # Placement requires two args
-        if 'placement_policy_host' in kwargs and 'placement_policy_affinity' in kwargs:
-            host = types.Host(name=kwargs['placement_policy_host'])
+        if "placement_policy_host" in kwargs and "placement_policy_affinity" in kwargs:
+            host = types.Host(name=kwargs["placement_policy_host"])
             policy = types.VmPlacementPolicy(
-                hosts=[host],
-                affinity=kwargs['placement_policy_affinity'])
-            vm_kwargs['placement_policy'] = policy
+                hosts=[host], affinity=kwargs["placement_policy_affinity"]
+            )
+            vm_kwargs["placement_policy"] = policy
 
         # if cpu is passed, also default a sockets # unless its passed
-        cpu = kwargs.get('cpu', None)  # don't set default if its not passed
+        cpu = kwargs.get("cpu", None)  # don't set default if its not passed
         if cpu:
-            vm_kwargs['cpu'] = types.Cpu(
-                topology=types.CpuTopology(cores=cpu, sockets=kwargs.get('sockets', 1))
+            vm_kwargs["cpu"] = types.Cpu(
+                topology=types.CpuTopology(cores=cpu, sockets=kwargs.get("sockets", 1))
             )
-        if 'ram' in kwargs:
-            vm_kwargs['memory'] = int(kwargs['ram'])  # in Bytes
+        if "ram" in kwargs:
+            vm_kwargs["memory"] = int(kwargs["ram"])  # in Bytes
         vms_service = self.system.api.system_service().vms_service()
         if initialization:
-            vm_kwargs['initialization'] = types.Initialization(**initialization)
+            vm_kwargs["initialization"] = types.Initialization(**initialization)
         vms_service.add(types.Vm(**vm_kwargs), clone=clone)
         vm = self.system.get_vm(vm_name)
         vm.wait_for_state(VmState.STOPPED, timeout=timeout)
@@ -657,7 +712,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
 
 
 class RHEVMSystem(System, VmMixin, TemplateMixin):
-    """
+    r"""
     Client to RHEVM API
 
     This class piggy backs off ovirtsdk.
@@ -726,11 +781,11 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms()),
-        'num_host': lambda self: len(self.list_host()),
-        'num_cluster': lambda self: len(self.list_cluster()),
-        'num_template': lambda self: len(self.list_templates()),
-        'num_datastore': lambda self: len(self.list_datastore()),
+        "num_vm": lambda self: len(self.list_vms()),
+        "num_host": lambda self: len(self.list_host()),
+        "num_cluster": lambda self: len(self.list_cluster()),
+        "num_template": lambda self: len(self.list_templates()),
+        "num_datastore": lambda self: len(self.list_datastore()),
     }
 
     can_suspend = True
@@ -740,28 +795,28 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
 
     def __init__(self, hostname, username, password, **kwargs):
         # generate URL from hostname
-        super(RHEVMSystem, self).__init__(kwargs)
-        less_than_rhv_4 = float(kwargs['version']) < 4.0
-        url_component = 'api' if less_than_rhv_4 else 'ovirt-engine/api'
-        if 'api_endpoint' in kwargs:
-            url = kwargs['api_endpoint']
-        elif 'port' in kwargs:
-            url = 'https://{}:{}/{}'.format(hostname, kwargs['port'], url_component)
+        super().__init__(kwargs)
+        less_than_rhv_4 = float(kwargs["version"]) < 4.0
+        url_component = "api" if less_than_rhv_4 else "ovirt-engine/api"
+        if "api_endpoint" in kwargs:
+            url = kwargs["api_endpoint"]
+        elif "port" in kwargs:
+            url = "https://{}:{}/{}".format(hostname, kwargs["port"], url_component)
         else:
-            url = 'https://{}/{}'.format(hostname, url_component)
+            url = f"https://{hostname}/{url_component}"
 
         self._api = None
         self._api_kwargs = {
-            'url': url,
-            'username': username,
-            'password': password,
-            'insecure': True,
+            "url": url,
+            "username": username,
+            "password": password,
+            "insecure": True,
         }
         self.kwargs = kwargs
 
     @property
     def _identifying_attrs(self):
-        return {'url': self._api_kwargs['url']}
+        return {"url": self._api_kwargs["url"]}
 
     @property
     def can_suspend(self):
@@ -790,17 +845,14 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         if not name and not uuid:
             raise ValueError("Must specify name or uuid for find_vms()")
         if name:
-            query = 'name={}'.format(name)
+            query = f"name={name}"
         elif uuid:
-            query = 'id={}'.format(uuid)
+            query = f"id={uuid}"
         query_result = self._vms_service.list(search=query)
         return [RHEVMVirtualMachine(system=self, uuid=vm.id) for vm in query_result]
 
     def list_vms(self):
-        return [
-            RHEVMVirtualMachine(system=self, uuid=vm.id)
-            for vm in self._vms_service.list()
-        ]
+        return [RHEVMVirtualMachine(system=self, uuid=vm.id) for vm in self._vms_service.list()]
 
     def get_vm(self, name=None, uuid=None):
         """
@@ -814,16 +866,13 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         """
         matches = self.find_vms(name=name, uuid=uuid)
         if not matches:
-            raise VMInstanceNotFound('name={}, id={}'.format(name, uuid))
+            raise VMInstanceNotFound(f"name={name}, id={uuid}")
         if len(matches) > 1:
-            raise MultipleItemsError(
-                'Found multiple matches for VM with name={}, id={}'
-                .format(name, uuid)
-            )
+            raise MultipleItemsError(f"Found multiple matches for VM with name={name}, id={uuid}")
         return matches[0]
 
     def create_vm(self, vm_name, **kwargs):
-        raise NotImplementedError('create_vm not implemented')
+        raise NotImplementedError("create_vm not implemented")
 
     def get_vm_from_ip(self, ip):
         """
@@ -838,7 +887,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         for vm in vms:
             if ip in vm.all_ips:
                 return vm
-        raise VMNotFoundViaIP("IP '{}' is not known as a VM".format(ip))
+        raise VMNotFoundViaIP(f"IP '{ip}' is not known as a VM")
 
     def list_host(self, **kwargs):
         host_list = self.api.system_service().hosts_service().list(**kwargs)
@@ -847,11 +896,15 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
     def list_datastore(self, sd_type=None, **kwargs):
         datastore_list = self.api.system_service().storage_domains_service().list(**kwargs)
         if sd_type:
+
             def cond(ds):
                 return ds.status is None and ds.type.value == sd_type
+
         else:
+
             def cond(ds):
                 return ds.status is None
+
         return [ds.name for ds in datastore_list if cond(ds)]
 
     def list_cluster(self, **kwargs):
@@ -876,7 +929,8 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             return [disk.name for disk in disks_list]
         try:
             return [
-                disk.name for disk in disks_list
+                disk.name
+                for disk in disks_list
                 if disk.status == types.DiskStatus.__members__[status.upper()]
             ]
 
@@ -891,15 +945,15 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         self.api.close()
 
     def remove_host_from_cluster(self, hostname):
-        raise NotImplementedError('remove_host_from_cluster not implemented')
+        raise NotImplementedError("remove_host_from_cluster not implemented")
 
     def get_cluster(self, cluster_name):
         try:
-            return self.api.system_service().clusters_service().list(
-                search='name={}'.format(cluster_name)
-            )[0]
+            return (
+                self.api.system_service().clusters_service().list(search=f"name={cluster_name}")[0]
+            )
         except IndexError:
-            raise NotFoundError('Cluster not found with name {}'.format(cluster_name))
+            raise NotFoundError(f"Cluster not found with name {cluster_name}")
 
     @property
     def _templates_service(self):
@@ -909,14 +963,11 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         if not name and not uuid:
             raise ValueError("Must specify name or uuid for find_templates()")
         if name:
-            query = 'name={}'.format(name)
+            query = f"name={name}"
         elif uuid:
-            query = 'id={}'.format(uuid)
+            query = f"id={uuid}"
         query_result = self._templates_service.list(search=query)
-        return [
-            RHEVMTemplate(system=self, uuid=template.id)
-            for template in query_result
-        ]
+        return [RHEVMTemplate(system=self, uuid=template.id) for template in query_result]
 
     def list_templates(self):
         """
@@ -924,7 +975,8 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         """
         return [
             RHEVMTemplate(system=self, uuid=template.id)
-            for template in self._templates_service.list() if template.name != "Blank"
+            for template in self._templates_service.list()
+            if template.name != "Blank"
         ]
 
     def get_template(self, name=None, uuid=None):
@@ -939,16 +991,16 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         """
         matches = self.find_templates(name=name, uuid=uuid)
         if not matches:
-            raise NotFoundError('Template with name={}, id={}'.format(name, uuid))
+            raise NotFoundError(f"Template with name={name}, id={uuid}")
         if len(matches) > 1:
             raise MultipleItemsError(
-                'Found multiple matches for template with name={}, id={}'
-                .format(name, uuid)
+                f"Found multiple matches for template with name={name}, id={uuid}"
             )
         return matches[0]
 
-    def create_template(self, template_name, vm_name, cluster_name=None, storage_domain_name=None,
-                        timeout=600):
+    def create_template(
+        self, template_name, vm_name, cluster_name=None, storage_domain_name=None, timeout=600
+    ):
         """
         Create a template based on a VM.
 
@@ -966,7 +1018,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                             total wait time for function is 2 times this value
         """
         vm = self.get_vm(vm_name)
-        vm.refresh(follow='disk_attachments')  # include disk_attachment refs
+        vm.refresh(follow="disk_attachments")  # include disk_attachment refs
 
         cluster = self.get_cluster(cluster_name) if cluster_name else vm.cluster
 
@@ -977,7 +1029,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         )
 
         if storage_domain_name:
-            template_kwargs.update({'storage_domain': self.get_storage_domain(storage_domain_name)})
+            template_kwargs.update({"storage_domain": self.get_storage_domain(storage_domain_name)})
         # FIXME: pick domain from the VM's disk storage domains
         # might not need to pass explicitly in this case anyway
         # ovirt API a bit complicated here, failing to pickup on the setting
@@ -1003,7 +1055,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             func_args=[template_name],
             num_sec=timeout,
             message="template exists",
-            delay=5
+            delay=5,
         )
         # Then the process has to finish
         template = self.get_template(template_name)
@@ -1032,13 +1084,13 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
 
         return {
             # RAM
-            'ram_used': used_ram,
-            'ram_limit': host_ram,
-            'ram_total': host_ram,
+            "ram_used": used_ram,
+            "ram_limit": host_ram,
+            "ram_total": host_ram,
             # CPU
-            'cpu_used': used_cpu,
-            'cpu_total': host_cpu,
-            'cpu_limit': None,
+            "cpu_used": used_cpu,
+            "cpu_total": host_cpu,
+            "cpu_limit": None,
         }
 
     @property
@@ -1049,7 +1101,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         for glance_server in self._glance_servers_service.list():
             if glance_server.name == name:
                 return self._glance_servers_service.provider_service(glance_server.id)
-        raise ItemNotFound(name, 'glance server')
+        raise ItemNotFound(name, "glance server")
 
     def _get_glance_server(self, name):
         return self._get_glance_server_service(name).get()
@@ -1060,10 +1112,22 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         except ItemNotFound:
             return False
 
-    def add_glance_server(self, authentication_url=None, certificates=None, comment=None,
-                          description=None, id=None, images=None, name=None, password=None,
-                          properties=None, requires_authentication=None, tenant_name=None,
-                          url=None, username=None):
+    def add_glance_server(
+        self,
+        authentication_url=None,
+        certificates=None,
+        comment=None,
+        description=None,
+        id=None,
+        images=None,
+        name=None,
+        password=None,
+        properties=None,
+        requires_authentication=None,
+        tenant_name=None,
+        url=None,
+        username=None,
+    ):
         self._glance_servers_service.add(
             types.OpenStackImageProvider(
                 name=name,
@@ -1078,7 +1142,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                 comment=comment,
                 id=id,
                 images=images,
-                properties=properties
+                properties=properties,
             )
         )
         wait_for(self.does_glance_server_exist, func_args=[name], delay=5, num_sec=240)
@@ -1088,10 +1152,10 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         return self.api.system_service().storage_domains_service()
 
     def _get_storage_domain_service(self, name):
-        query = 'name={}'.format(name)
+        query = f"name={name}"
         query_result = self._storage_domains_service.list(search=query)
         if not query_result:
-            raise ItemNotFound(name, 'storage domain')
+            raise ItemNotFound(name, "storage domain")
         else:
             storage_domain = query_result[0]
             return self._storage_domains_service.storage_domain_service(storage_domain.id)
@@ -1107,24 +1171,31 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             if image.name == image_name:
                 return self._get_images_service(storage_domain_name).image_service(image.id)
 
-    def import_glance_image(self, source_storage_domain_name, source_template_name,
-                            target_storage_domain_name, target_cluster_name, target_template_name,
-                            async_=True, import_as_template=True):
+    def import_glance_image(
+        self,
+        source_storage_domain_name,
+        source_template_name,
+        target_storage_domain_name,
+        target_cluster_name,
+        target_template_name,
+        async_=True,
+        import_as_template=True,
+    ):
         image_service = self._get_image_service(source_storage_domain_name, source_template_name)
         image_service.import_(
             async_=async_,
             import_as_template=import_as_template,
             template=types.Template(name=target_template_name),
             cluster=types.Cluster(name=target_cluster_name),
-            storage_domain=types.StorageDomain(name=target_storage_domain_name)
+            storage_domain=types.StorageDomain(name=target_storage_domain_name),
         )
         wait_for(self.does_template_exist, func_args=[target_template_name], delay=5, num_sec=240)
 
     def _get_disk_service(self, disk_name):
         disks_service = self.api.system_service().disks_service()
-        query_result = disks_service.list(search="name={}".format(disk_name))
+        query_result = disks_service.list(search=f"name={disk_name}")
         if not query_result:
-            raise ItemNotFound(disk_name, 'disk')
+            raise ItemNotFound(disk_name, "disk")
         else:
             disk = query_result[0]
             return disks_service.service(disk.id)
@@ -1140,8 +1211,11 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         return self.api.system_service().data_centers_service()
 
     def _get_attached_storage_domain_service(self, datacenter_id, storage_domain_id):
-        return (self._data_centers_service.data_center_service(datacenter_id).
-                storage_domains_service().storage_domain_service(storage_domain_id))
+        return (
+            self._data_centers_service.data_center_service(datacenter_id)
+            .storage_domains_service()
+            .storage_domain_service(storage_domain_id)
+        )
 
     def get_storage_domain_connections(self, storage_domain):
         return self._get_storage_domain_service(storage_domain).storage_connections_service().list()
@@ -1171,13 +1245,16 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         desired_state = getattr(types.StorageDomainStatus, state.upper(), None)
         active = types.StorageDomainStatus.ACTIVE
         if desired_state is None:
-            raise ValueError('Invalid state [{}] passed for setting storage domain, '
-                             'value values are {}'.format(state, list(types.StorageDomainStatus)))
+            raise ValueError(
+                "Invalid state [{}] passed for setting storage domain, "
+                "value values are {}".format(state, list(types.StorageDomainStatus))
+            )
         for datacenter in self._data_centers_service.list():
             for domain in self.api.follow_link(datacenter.storage_domains):
                 if domain.name == storage_domain_name:
-                    attached_service = self._get_attached_storage_domain_service(datacenter.id,
-                                                                                 domain.id)
+                    attached_service = self._get_attached_storage_domain_service(
+                        datacenter.id, domain.id
+                    )
                     domain_status = self.api.follow_link(domain).status
                     if domain_status == desired_state:
                         return None  # already on the state we wanted
@@ -1191,13 +1268,14 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                         lambda: self.api.follow_link(domain).status == expected_state,
                         delay=5,
                         num_sec=timeout,
-                        message='waiting for {} to reach state {}'.format(storage_domain_name,
-                                                                          expected_state)
+                        message="waiting for {} to reach state {}".format(
+                            storage_domain_name, expected_state
+                        ),
                     )
                     return True
         else:
             # domain name was never matched on any data center
-            raise ValueError('Given domain name [{}] was never matched'.format(storage_domain_name))
+            raise ValueError(f"Given domain name [{storage_domain_name}] was never matched")
 
     def get_template_from_storage_domain(
         self, template_name, storage_domain_name, unregistered=False
@@ -1216,10 +1294,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         for template in sds.templates_service().list(unregistered=unregistered):
             if template.name == template_name:
                 return RHEVMTemplate(system=self, uuid=template.id)
-        raise NotFoundError(
-            'template {} in storage domain {}'
-            .format(template_name, storage_domain_name)
-        )
+        raise NotFoundError(f"template {template_name} in storage domain {storage_domain_name}")
 
     def list_templates_from_storage_domain(self, storage_domain_name, unregistered=False):
         """list the templates on a specific given storage_domain
@@ -1242,11 +1317,12 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         target_storage_domain = self.get_storage_domain(sdomain)
         cluster_id = self.get_cluster(cluster).id
         sd_template_service = export_sd_service.templates_service().template_service(
-            export_template.id)
+            export_template.id
+        )
         sd_template_service.import_(
             storage_domain=types.StorageDomain(id=target_storage_domain.id),
             cluster=types.Cluster(id=cluster_id),
-            template=types.Template(id=export_template.id)
+            template=types.Template(id=export_template.id),
         )
 
     @property
@@ -1254,12 +1330,12 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         return self.api.system_service().vnic_profiles_service()
 
     def list_vnic_profiles(self):
-        """ List all the vnic profiles on the RHEVM system."""
+        """List all the vnic profiles on the RHEVM system."""
         return self._vnic_profile_service.list()
 
     def get_vnic_profile(self, profile_name):
-        """ The vnic_profiles that exist on the system, where the key is the vnic_profile name."""
+        """The vnic_profiles that exist on the system, where the key is the vnic_profile name."""
         try:
             return next(vnic for vnic in self.list_vnic_profiles() if vnic.name == profile_name)
         except StopIteration:
-            raise NotFoundError('Unable to find vnic_profile matching name {}'.format(profile_name))
+            raise NotFoundError(f"Unable to find vnic_profile matching name {profile_name}")

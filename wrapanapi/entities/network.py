@@ -3,17 +3,20 @@ wrapanapi.entities.network
 
 Networks
 """
+from abc import ABCMeta
+from abc import abstractmethod
 
-from abc import ABCMeta, abstractmethod
-
-from wrapanapi.entities.base import Entity, EntityMixin
-from wrapanapi.exceptions import MultipleItemsError, NotFoundError
+from wrapanapi.entities.base import Entity
+from wrapanapi.entities.base import EntityMixin
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import NotFoundError
 
 
 class Network(Entity, metaclass=ABCMeta):
     """
     Defines methods/properties pertaining to networks
     """
+
     @abstractmethod
     def get_details(self):
         """
@@ -32,6 +35,7 @@ class NetworkMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods for systems that support networks
     """
+
     @abstractmethod
     def create_network(self, **kwargs):
         """

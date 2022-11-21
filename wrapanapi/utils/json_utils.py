@@ -1,28 +1,21 @@
 import json
-
 from ast import literal_eval
 
 import dateparser
 
 
 def json_load_byteified(file_handle):
-    return _byteify(
-        json.load(file_handle, object_hook=_byteify),
-        ignore_dicts=True
-    )
+    return _byteify(json.load(file_handle, object_hook=_byteify), ignore_dicts=True)
 
 
 def json_loads_byteified(json_text):
-    return _byteify(
-        json.loads(json_text, object_hook=_byteify),
-        ignore_dicts=True
-    )
+    return _byteify(json.loads(json_text, object_hook=_byteify), ignore_dicts=True)
 
 
 def _byteify(data, ignore_dicts=False):
     # if this is a unicode string, return its string representation
     if isinstance(data, str):
-        return data.encode('utf-8')
+        return data.encode("utf-8")
     # if this is a list of values, return list of byteified values
     if isinstance(data, list):
         return [_byteify(item, ignore_dicts=True) for item in data]
@@ -43,7 +36,7 @@ def _try_parse_datetime(time_string):
     if out:
         return out
     else:
-        raise Exception('Could not parse datetime from string: {}'.format(time_string))
+        raise Exception(f"Could not parse datetime from string: {time_string}")
 
 
 def _eval(text_value):
@@ -51,7 +44,7 @@ def _eval(text_value):
     evaluators = (
         literal_eval,
         _try_parse_datetime,
-        lambda val: {'true': True, 'false': False}[val]
+        lambda val: {"true": True, "false": False}[val],
     )
     for eval_ in evaluators:
         try:
@@ -63,16 +56,16 @@ def _eval(text_value):
 
 def eval_strings(content):
     """Recursively trying to eval any string inside json content.
-        Examples:
-            * 'true' -> True
-            * '2016-04-14 22:09:48' -> datetime.datetime(2016, 4, 14, 22, 9, 48)
-        Args:
-            * content: list or tuple or any iterable array
-                       representing the json content.
+    Examples:
+        * 'true' -> True
+        * '2016-04-14 22:09:48' -> datetime.datetime(2016, 4, 14, 22, 9, 48)
+    Args:
+        * content: list or tuple or any iterable array
+                   representing the json content.
     """
-    for i in (content if isinstance(content, dict) else list(range(len(content)))):
+    for i in content if isinstance(content, dict) else list(range(len(content))):
         if isinstance(content[i], str):
             content[i] = _eval(content[i])
-        elif hasattr(content[i], '__iter__'):
+        elif hasattr(content[i], "__iter__"):
             content[i] = eval_strings(content[i])
     return content

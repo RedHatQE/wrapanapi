@@ -6,33 +6,34 @@ TODO: Possibly mock this out, remove reliance on 'cfme', etc.
 If running within a cfme venv, disable the cfme plugins like so:
    $ pytest test_vm_and_template_systems.py -p no:cfme -s
 """
-
 import datetime
 import logging
 
-import pytest
 import fauxfactory
+import pytest
 from wait_for import wait_for
 
 import wrapanapi
 from wrapanapi import VmState
 from wrapanapi.entities import StackMixin
-from wrapanapi.systems.ec2 import EC2Image, EC2Instance, StackStates
 from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.systems.ec2 import EC2Image
+from wrapanapi.systems.ec2 import EC2Instance
+from wrapanapi.systems.ec2 import StackStates
 
 
-log = logging.getLogger('wrapanapi.tests.test_vm_and_template_systems')
+log = logging.getLogger("wrapanapi.tests.test_vm_and_template_systems")
 
 logging.basicConfig(level=logging.INFO)
 
-PROVIDER_KEYS_LIST = ['ec2west']
+PROVIDER_KEYS_LIST = ["ec2west"]
 #    'rhos11', 'vsphere65-nested', 'scvmm', 'azure', 'gce_central', 'ec2west', 'rhv41'
 # TODO test against all provider keys
 
 
 @pytest.fixture(params=PROVIDER_KEYS_LIST)
 def provider_crud(request):
-    providers = pytest.importorskip('cfme.utils.providers')
+    providers = pytest.importorskip("cfme.utils.providers")
     log.info("Using provider key: %s", request.param)
     return providers.get_crud(request.param)
 
@@ -41,23 +42,26 @@ def provider_crud(request):
 def test_template(provider_crud):
     deploy_args = {}
     try:
-        template_name = provider_crud.data['templates']['small_template']['name']
-        deploy_args.update({'template': template_name})
+        template_name = provider_crud.data["templates"]["small_template"]["name"]
+        deploy_args.update({"template": template_name})
     except KeyError:
-        raise KeyError('small_template not defined for Provider {} in cfme_data.yaml'
-                       .format(provider_crud.data['name']))
+        raise KeyError(
+            "small_template not defined for Provider {} in cfme_data.yaml".format(
+                provider_crud.data["name"]
+            )
+        )
     log.info(
-        "Using template %s on provider %s",
-        deploy_args['template'], provider_crud.data['name']
+        "Using template %s on provider %s", deploy_args["template"], provider_crud.data["name"]
     )
 
-    deploy_args.update(vm_name='TBD')
+    deploy_args.update(vm_name="TBD")
     deploy_args.update(provider_crud.deployment_helper(deploy_args))
     log.debug("Deploy args: %s", deploy_args)
 
     if isinstance(provider_crud.mgmt, wrapanapi.systems.AzureSystem):
         template = provider_crud.mgmt.get_template(
-            template_name, container=deploy_args['template_container'])
+            template_name, container=deploy_args["template_container"]
+        )
     else:
         template = provider_crud.mgmt.get_template(template_name)
 
@@ -68,13 +72,16 @@ def test_template(provider_crud):
 def test_vm(provider_crud, test_template):
     deploy_args = {}
     try:
-        template_name = provider_crud.data['templates']['small_template']['name']
-        deploy_args.update({'template': template_name})
+        template_name = provider_crud.data["templates"]["small_template"]["name"]
+        deploy_args.update({"template": template_name})
     except KeyError:
-        raise KeyError('small_template not defined for Provider {} in cfme_data.yaml'
-                       .format(provider_crud.data['name']))
+        raise KeyError(
+            "small_template not defined for Provider {} in cfme_data.yaml".format(
+                provider_crud.data["name"]
+            )
+        )
 
-    vm_name = 'test-{}'.format(fauxfactory.gen_alphanumeric(6)).lower()
+    vm_name = f"test-{fauxfactory.gen_alphanumeric(6)}".lower()
     log.info("Deploying VM %s", vm_name)
 
     deploy_args.update(vm_name=vm_name)
@@ -109,17 +116,17 @@ def test_sanity(provider_crud, test_template, test_vm):
 
     if isinstance(vm, EC2Instance):
         log.info("Testing ec2 instance tags")
-        vm.set_tag('key1', 'somedata')
-        assert vm.get_tag_value('key1') == 'somedata'
-        vm.unset_tag('key1', 'somedata')
-        assert vm.get_tag_value('key1') is None
+        vm.set_tag("key1", "somedata")
+        assert vm.get_tag_value("key1") == "somedata"
+        vm.unset_tag("key1", "somedata")
+        assert vm.get_tag_value("key1") is None
 
     if isinstance(template, EC2Image):
         log.info("Testing ec2 image tags")
-        template.set_tag('key1', 'somedata')
-        assert template.get_tag_value('key1') == 'somedata'
-        template.unset_tag('key1', 'somedata')
-        assert template.get_tag_value('key1') is None
+        template.set_tag("key1", "somedata")
+        assert template.get_tag_value("key1") == "somedata"
+        template.unset_tag("key1", "somedata")
+        assert template.get_tag_value("key1") is None
 
     log.info("Listing VMs")
     vms = mgmt.list_vms()
@@ -168,7 +175,7 @@ def test_sanity(provider_crud, test_template, test_vm):
         assert not vm.ip
 
     try:
-        new_name = 'test-{}'.format(fauxfactory.gen_alphanumeric(6)).lower()
+        new_name = f"test-{fauxfactory.gen_alphanumeric(6)}".lower()
         vm.rename(new_name)
         assert vm.name == new_name
     except NotImplementedError:

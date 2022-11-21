@@ -1,15 +1,17 @@
-# coding: utf-8
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta
+from abc import abstractmethod
+from abc import abstractproperty
 
 from wrapanapi.utils import LoggerMixin
 
 
 class System(LoggerMixin, metaclass=ABCMeta):
     """Represents any system that wrapanapi interacts with."""
+
     # This should be defined by implementors of System
     _stats_available = {}
 
@@ -66,11 +68,12 @@ class System(LoggerMixin, metaclass=ABCMeta):
         Returns: A dict of stats.
         """
         if not self._stats_available:
-            raise Exception('{} has empty self._stats_available dictionary'.format(
-                self.__class__.__name__))
+            raise Exception(f"{self.__class__.__name__} has empty self._stats_available dictionary")
 
-        return {stat: self._stats_available[stat](self)
-                for stat in requested_stats or self._stats_available.keys()}
+        return {
+            stat: self._stats_available[stat](self)
+            for stat in requested_stats or self._stats_available.keys()
+        }
 
     def disconnect(self):
         """Disconnects the API from mgmt system"""
@@ -78,4 +81,5 @@ class System(LoggerMixin, metaclass=ABCMeta):
 
     def usage_and_quota(self):
         raise NotImplementedError(
-            'Provider {} does not implement usage_and_quota'.format(type(self).__name__))
+            f"Provider {type(self).__name__} does not implement usage_and_quota"
+        )

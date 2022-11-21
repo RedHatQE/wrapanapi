@@ -76,7 +76,7 @@ Each management system is invoked usually with a hostname and some credentials
 .. code-block:: python
 
   from wrapanapi.virtualcenter import VMWareSystem
-  
+
   system = VMWareSystem(hostname='10.0.0.0', username="root", password="password")
   system.list_vm()
 
@@ -90,7 +90,7 @@ it doesn't support. This behaviour may change in the future as more and more div
   from base import WrapanapiAPIBase
 
   class RHEVMSystem(WrapanapiAPIBase):
-  
+
     _stats_available = {
       'num_vm': lambda self: self.api.get_summary().get_vms().total,
       'num_host': lambda self: len(self.list_host()),
@@ -98,7 +98,7 @@ it doesn't support. This behaviour may change in the future as more and more div
       'num_template': lambda self: len(self.list_template()),
       'num_datastore': lambda self: len(self.list_datastore()),
     }
-  
+
     def __init__(self, hostname, username, password, **kwargs):
       super(RHEVMSystem, self).__init__(kwargs)
 
@@ -116,5 +116,5 @@ This module was originally developed for assisting in the ManageIQ testing team.
 
 Contributing
 ------------
-The guidelines to follow for this project can be found in the 
+The guidelines to follow for this project can be found in the
 cfme `dev_guide <http://cfme-tests.readthedocs.org/guides/dev_guide.html>`_.

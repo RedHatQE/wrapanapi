@@ -4,39 +4,46 @@ wrapanapi.entities.vm
 Methods/classes pertaining to performing actions on a VM/instance
 """
 import time
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta
+from abc import abstractmethod
+from abc import abstractproperty
 
 from cached_property import cached_property_with_ttl
-from wait_for import wait_for, TimedOutError
+from wait_for import TimedOutError
+from wait_for import wait_for
 
 from wrapanapi.const import CACHED_PROPERTY_TTL
-from wrapanapi.exceptions import MultipleItemsError, NotFoundError
-from wrapanapi.entities.base import Entity, EntityMixin
+from wrapanapi.entities.base import Entity
+from wrapanapi.entities.base import EntityMixin
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import NotFoundError
 
 
-class VmState(object):
+class VmState:
     """
     Represents a state for a VM/instance on the provider system.
 
     Implementations of ``Vm`` should map to these states
     """
-    RUNNING = 'VmState.RUNNING'
-    STOPPED = 'VmState.STOPPED'
-    PAUSED = 'VmState.PAUSED'
-    SUSPENDED = 'VmState.SUSPENDED'
-    DELETED = 'VmState.DELETED'
-    STARTING = 'VmState.STARTING'
-    STOPPING = 'VmState.STOPPING'
-    ERROR = 'VmState.ERROR'
-    UNKNOWN = 'VmState.UNKNOWN'
-    SHELVED = 'VmState.SHELVED'
-    SHELVED_OFFLOADED = 'VmState.SHELVED_OFFLOADED'
+
+    RUNNING = "VmState.RUNNING"
+    STOPPED = "VmState.STOPPED"
+    PAUSED = "VmState.PAUSED"
+    SUSPENDED = "VmState.SUSPENDED"
+    DELETED = "VmState.DELETED"
+    STARTING = "VmState.STARTING"
+    STOPPING = "VmState.STOPPING"
+    ERROR = "VmState.ERROR"
+    UNKNOWN = "VmState.UNKNOWN"
+    SHELVED = "VmState.SHELVED"
+    SHELVED_OFFLOADED = "VmState.SHELVED_OFFLOADED"
 
     @classmethod
     def valid_states(cls):
         return [
-            var_val for var_val in vars(cls).values()
-            if isinstance(var_val, str) and var_val.startswith('VmState.')
+            var_val
+            for var_val in vars(cls).values()
+            if isinstance(var_val, str) and var_val.startswith("VmState.")
         ]
 
 
@@ -44,6 +51,7 @@ class Vm(Entity, metaclass=ABCMeta):
     """
     Represents a single VM/instance on a management system.
     """
+
     # Implementations must define a dict which maps API states returned by the
     # system to a VmState. Example:
     #    {'running': VmState.RUNNING, 'shutdown': VmState.STOPPED}
@@ -55,14 +63,18 @@ class Vm(Entity, metaclass=ABCMeta):
 
         Since abc has no 'abstract class property' concept, this is the approach taken.
         """
-        state_map = getattr(self, 'state_map')
-        if (not state_map or not isinstance(state_map, dict) or
-                not all(value in VmState.valid_states() for value in state_map.values())):
+        state_map = getattr(self, "state_map")
+        if (
+            not state_map
+            or not isinstance(state_map, dict)
+            or not all(value in VmState.valid_states() for value in state_map.values())
+        ):
             raise NotImplementedError(
-                "property '{}' not properly implemented in class '{}'"
-                .format('state_map', self.__class__.__name__)
+                "property '{}' not properly implemented in class '{}'".format(
+                    "state_map", self.__class__.__name__
+                )
             )
-        super(Vm, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _api_state_to_vmstate(self, api_state):
         """
@@ -73,7 +85,8 @@ class Vm(Entity, metaclass=ABCMeta):
         except KeyError:
             self.logger.warn(
                 "Unmapped VM state '%s' received from system, mapped to '%s'",
-                api_state, VmState.UNKNOWN
+                api_state,
+                VmState.UNKNOWN,
             )
             return VmState.UNKNOWN
 
@@ -174,7 +187,7 @@ class Vm(Entity, metaclass=ABCMeta):
         Returns creation time of VM/instance
         """
 
-    def wait_for_state(self, state, timeout='6m', delay=15):
+    def wait_for_state(self, state, timeout="6m", delay=15):
         """
         Waits for a VM to be in the desired state
 
@@ -187,24 +200,36 @@ class Vm(Entity, metaclass=ABCMeta):
         if state not in valid_states:
             self.logger.error(
                 "Invalid desired state. Valid states for %s: %s",
-                self.__class__.__name__, valid_states
+                self.__class__.__name__,
+                valid_states,
             )
-            raise ValueError('Invalid desired state')
+            raise ValueError("Invalid desired state")
 
         wait_for(
             lambda: self.state == state,
             timeout=timeout,
             delay=delay,
-            message="wait for vm {} to reach state '{}'".format(self._log_id, state))
+            message=f"wait for vm {self._log_id} to reach state '{state}'",
+        )
 
-    def _handle_transition(self, in_desired_state, in_state_requiring_prep, in_actionable_state,
-                           do_prep, do_action, state, timeout, delay):
+    def _handle_transition(
+        self,
+        in_desired_state,
+        in_state_requiring_prep,
+        in_actionable_state,
+        do_prep,
+        do_action,
+        state,
+        timeout,
+        delay,
+    ):
         """
         Handles state transition for ensure_state() method
 
         See that docstring below for explanation of the args. Each arg here is a callable except for
         'state', 'timeout' and 'delay'
         """
+
         def _transition():
             if in_desired_state():
                 # Hacking around some race conditions -- double check that desired state is steady
@@ -216,24 +241,30 @@ class Vm(Entity, metaclass=ABCMeta):
             elif in_state_requiring_prep():
                 self.logger.info(
                     "VM %s in state requiring prep. current state: %s, ensuring state: %s)",
-                    self._log_id, self.state, state
+                    self._log_id,
+                    self.state,
+                    state,
                 )
                 do_prep()
                 return False
             elif in_actionable_state():
                 self.logger.info(
                     "VM %s in actionable state. current state: %s, ensuring state: %s)",
-                    self._log_id, self.state, state
+                    self._log_id,
+                    self.state,
+                    state,
                 )
                 do_action()
                 return False
 
         return wait_for(
-            _transition, timeout=timeout, delay=delay,
-            message="ensure vm {} reaches state '{}'".format(self._log_id, state)
+            _transition,
+            timeout=timeout,
+            delay=delay,
+            message=f"ensure vm {self._log_id} reaches state '{state}'",
         )
 
-    def ensure_state(self, state, timeout='6m', delay=5):
+    def ensure_state(self, state, timeout="6m", delay=5):
         """
         Perform the actions required to get the VM to the desired state.
 
@@ -266,9 +297,10 @@ class Vm(Entity, metaclass=ABCMeta):
         if state not in valid_states:
             self.logger.error(
                 "Invalid desired state. Valid states for %s: %s",
-                self.__class__.__name__, valid_states
+                self.__class__.__name__,
+                valid_states,
             )
-            raise ValueError('Invalid desired state')
+            raise ValueError("Invalid desired state")
 
         if state == VmState.RUNNING:
             return self._handle_transition(
@@ -277,45 +309,51 @@ class Vm(Entity, metaclass=ABCMeta):
                 in_actionable_state=lambda: self.is_stopped or self.is_suspended or self.is_paused,
                 do_prep=lambda: None,
                 do_action=self.start,
-                state=state, timeout=timeout, delay=delay
+                state=state,
+                timeout=timeout,
+                delay=delay,
             )
         elif state == VmState.STOPPED:
             return self._handle_transition(
                 in_desired_state=lambda: self.is_stopped,
-                in_state_requiring_prep=lambda: (self.is_suspended or
-                                                 self.is_paused or
-                                                 self.is_starting),
+                in_state_requiring_prep=lambda: (
+                    self.is_suspended or self.is_paused or self.is_starting
+                ),
                 in_actionable_state=lambda: self.is_running,
                 do_prep=self.start,
                 do_action=self.stop,
-                state=state, timeout=timeout, delay=delay
+                state=state,
+                timeout=timeout,
+                delay=delay,
             )
         elif state == VmState.SUSPENDED:
             if not self.system.can_suspend:
-                raise ValueError(
-                    'System {} is unable to suspend'.format(self.system.__class__.__name__))
+                raise ValueError(f"System {self.system.__class__.__name__} is unable to suspend")
             return self._handle_transition(
                 in_desired_state=lambda: self.is_suspended,
                 in_state_requiring_prep=lambda: self.is_stopped or self.is_paused,
                 in_actionable_state=lambda: self.is_running,
                 do_prep=self.start,
                 do_action=self.suspend,
-                state=state, timeout=timeout, delay=delay
+                state=state,
+                timeout=timeout,
+                delay=delay,
             )
         elif state == VmState.PAUSED:
             if not self.system.can_pause:
-                raise ValueError(
-                    'System {} is unable to pause'.format(self.system.__class__.__name__))
+                raise ValueError(f"System {self.system.__class__.__name__} is unable to pause")
             return self._handle_transition(
                 in_desired_state=lambda: self.is_paused,
                 in_state_requiring_prep=lambda: self.is_stopped or self.is_suspended,
                 in_actionable_state=lambda: self.is_running,
                 do_prep=self.start,
                 do_action=self.pause,
-                state=state, timeout=timeout, delay=delay
+                state=state,
+                timeout=timeout,
+                delay=delay,
             )
         else:
-            raise ValueError("Invalid desired state '{}'".format(state))
+            raise ValueError(f"Invalid desired state '{state}'")
 
     @property
     def in_steady_state(self):
@@ -338,11 +376,12 @@ class Vm(Entity, metaclass=ABCMeta):
                 lambda: self.in_steady_state,
                 timeout=timeout if timeout else self.system.steady_wait_time,
                 delay=delay,
-                message="VM/Instance '{}' in steady state".format(self._log_id)
+                message=f"VM/Instance '{self._log_id}' in steady state",
             )
         except TimedOutError:
             self.logger.exception(
-                "VM %s stuck in '%s' while waiting for steady state.", self._log_id, self.state)
+                "VM %s stuck in '%s' while waiting for steady state.", self._log_id, self.state
+            )
             raise
 
     @abstractmethod
@@ -373,7 +412,7 @@ class Vm(Entity, metaclass=ABCMeta):
         """
         Rename VM/instance. Not supported on all platforms.
         """
-        raise NotImplementedError('rename not implemented.')
+        raise NotImplementedError("rename not implemented.")
 
     def suspend(self):
         """
@@ -383,7 +422,7 @@ class Vm(Entity, metaclass=ABCMeta):
 
         Returns: True if vm action has been initiated properly
         """
-        raise NotImplementedError('suspend not implemented.')
+        raise NotImplementedError("suspend not implemented.")
 
     def pause(self):
         """
@@ -393,7 +432,7 @@ class Vm(Entity, metaclass=ABCMeta):
 
         Returns: True if vm action has been initiated properly
         """
-        raise NotImplementedError('pause not implemented.')
+        raise NotImplementedError("pause not implemented.")
 
     def clone(self, vm_name, **kwargs):
         """
@@ -405,13 +444,14 @@ class Vm(Entity, metaclass=ABCMeta):
             vm_name: The name of the new VM
         Returns: VM object for the new VM
         """
-        raise NotImplementedError('clone not implemented.')
+        raise NotImplementedError("clone not implemented.")
 
     def get_hardware_configuration(self):
         """Return hardware configuration of the VM."""
         raise NotImplementedError(
-            'Provider {} does not implement get_hardware_configuration'
-            .format(type(self.system).__name__)
+            "Provider {} does not implement get_hardware_configuration".format(
+                type(self.system).__name__
+            )
         )
 
 
@@ -419,6 +459,7 @@ class VmMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods or properties a wrapanapi.systems.System that manages Vm's should have
     """
+
     # Implementations must define whether this system can suspend (True/False)
     can_suspend = None
     # Implementations must define whether this system can pause (True/False)
@@ -432,13 +473,14 @@ class VmMixin(EntityMixin, metaclass=ABCMeta):
 
         Since abc has no 'abstract class property' concept, this is the approach taken.
         """
-        required_props = ['can_suspend', 'can_pause']
+        required_props = ["can_suspend", "can_pause"]
         for prop in required_props:
             prop_value = getattr(self, prop)
             if not isinstance(prop_value, bool):
                 raise NotImplementedError(
-                    "property '{}' must be implemented in class '{}'"
-                    .format(prop, self.__class__.__name__)
+                    "property '{}' must be implemented in class '{}'".format(
+                        prop, self.__class__.__name__
+                    )
                 )
 
     @abstractproperty

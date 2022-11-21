@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-
 import os
-from dateutil import parser
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import timedelta
 
 import pytz
 from azure.common import AzureConflictHttpError
@@ -15,29 +13,35 @@ from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
-from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
+from azure.mgmt.network.models import NetworkSecurityGroup
+from azure.mgmt.network.models import SecurityRule
 from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlockBlobService
 from cached_property import cached_property
+from dateutil import parser
 from wait_for import wait_for
 
-from wrapanapi.entities import (Instance, Template, TemplateMixin, VmMixin,
-                                VmState)
-from wrapanapi.exceptions import (ImageNotFoundError, MultipleImagesError,
-                                  VMInstanceNotFound)
+from wrapanapi.entities import Instance
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
+from wrapanapi.exceptions import ImageNotFoundError
+from wrapanapi.exceptions import MultipleImagesError
+from wrapanapi.exceptions import VMInstanceNotFound
 from wrapanapi.systems.base import System
 
 
 class AzureInstance(Instance):
     state_map = {
-        'VM starting': VmState.STARTING,
-        'VM running': VmState.RUNNING,
-        'VM deallocated': VmState.STOPPED,
-        'VM stopped': VmState.SUSPENDED,
-        'Paused': VmState.PAUSED,
+        "VM starting": VmState.STARTING,
+        "VM running": VmState.RUNNING,
+        "VM deallocated": VmState.STOPPED,
+        "VM stopped": VmState.SUSPENDED,
+        "Paused": VmState.PAUSED,
     }
 
     def __init__(self, system, raw=None, **kwargs):
@@ -50,24 +54,25 @@ class AzureInstance(Instance):
             name: name of instance
             resource_group: name of resource group this instance is in
         """
-        self._resource_group = kwargs.get('resource_group')
-        self._name = kwargs.get('name')
+        self._resource_group = kwargs.get("resource_group")
+        self._name = kwargs.get("name")
         if not self._name or not self._resource_group:
             raise ValueError("missing required kwargs: 'resource_group', 'name'")
 
-        super(AzureInstance, self).__init__(system, raw, **kwargs)
+        super().__init__(system, raw, **kwargs)
         self._api = self.system.vms_collection
 
     @property
     def _identifying_attrs(self):
-        return {'name': self._name, 'resource_group': self._resource_group}
+        return {"name": self._name, "resource_group": self._resource_group}
 
     def _wait_on_operation(self, operation):
         if operation:
             operation.wait()
             return True if operation.status().lower() == "succeeded" else False
         self.logger.warning(
-            "wait_on_operation got operation=None, expected an OperationStatusResponse")
+            "wait_on_operation got operation=None, expected an OperationStatusResponse"
+        )
         return True
 
     @property
@@ -86,7 +91,8 @@ class AzureInstance(Instance):
         """
         try:
             vm = self._api.get(
-                resource_group_name=self._resource_group, vm_name=self._name, expand='instanceView')
+                resource_group_name=self._resource_group, vm_name=self._name, expand="instanceView"
+            )
         except CloudError as e:
             if e.response.status_code == 404:
                 raise VMInstanceNotFound(self._name)
@@ -94,8 +100,8 @@ class AzureInstance(Instance):
                 raise
 
         first_status = vm.instance_view.statuses[0]
-        if first_status.display_status == 'Provisioning failed':
-            raise VMInstanceNotFound('provisioning failed for VM {}'.format(self._name))
+        if first_status.display_status == "Provisioning failed":
+            raise VMInstanceNotFound(f"provisioning failed for VM {self._name}")
         self.raw = vm
         return self.raw
 
@@ -150,23 +156,26 @@ class AzureInstance(Instance):
                 break
 
         ip_config_obj = network_client.network_interface_ip_configurations.get(
-            self._resource_group, if_name, ip_config_name)
+            self._resource_group, if_name, ip_config_name
+        )
 
         # Getting public IP id from the IP configuration object
         try:
             pub_ip_id = ip_config_obj.public_ip_address.id
         except AttributeError:
             self.logger.error(
-                "VM '%s' doesn't have public IP on %s:%s", self.name, if_name, ip_config_name)
+                "VM '%s' doesn't have public IP on %s:%s", self.name, if_name, ip_config_name
+            )
             return None
 
         pub_ip_name = os.path.split(pub_ip_id)[1]
         public_ip = network_client.public_ip_addresses.get(self._resource_group, pub_ip_name)
-        if not hasattr(public_ip, 'ip_address') or not public_ip.ip_address:
+        if not hasattr(public_ip, "ip_address") or not public_ip.ip_address:
             # Dynamic ip will be allocated for Running VMs only
             self.logger.error(
                 "Couldn't get Public IP of vm '%s'.  public_ip_allocation_method -- '%s'. ",
-                self.name, public_ip.public_ip_allocation_method
+                self.name,
+                public_ip.public_ip_allocation_method,
             )
             return None
 
@@ -174,7 +183,7 @@ class AzureInstance(Instance):
 
     @property
     def all_ips(self):
-        """ Wrapping self.ip to meet abstractproperty requirement
+        """Wrapping self.ip to meet abstractproperty requirement
 
         TODO: Actually fetch the various addresses on non-primary interfaces
 
@@ -195,8 +204,7 @@ class AzureInstance(Instance):
 
     def delete(self):
         self.logger.info("deleting vm '%s'", self.name)
-        operation = self._api.delete(
-            resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.delete(resource_group_name=self._resource_group, vm_name=self.name)
         return self._wait_on_operation(operation)
 
     def cleanup(self):
@@ -214,13 +222,13 @@ class AzureInstance(Instance):
             self.system.remove_discs_by_search(self.name)
         except Exception:
             self.logger.exception(
-                "cleanup: failed to cleanup NICs/PIPs/Discs for VM '%s'", self.name)
+                "cleanup: failed to cleanup NICs/PIPs/Discs for VM '%s'", self.name
+            )
         return True
 
     def start(self):
         self.logger.info("starting vm '%s'", self.name)
-        operation = self._api.start(
-            resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.start(resource_group_name=self._resource_group, vm_name=self.name)
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.RUNNING)
             return True
@@ -229,7 +237,8 @@ class AzureInstance(Instance):
     def stop(self):
         self.logger.info("stopping vm '%s'", self.name)
         operation = self._api.deallocate(
-            resource_group_name=self._resource_group, vm_name=self.name)
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.STOPPED)
             return True
@@ -237,8 +246,7 @@ class AzureInstance(Instance):
 
     def restart(self):
         self.logger.info("restarting vm '%s'", self.name)
-        operation = self._api.restart(
-            resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.restart(resource_group_name=self._resource_group, vm_name=self.name)
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.RUNNING)
             return True
@@ -246,8 +254,7 @@ class AzureInstance(Instance):
 
     def suspend(self):
         self.logger.info("suspending vm '%s'", self.name)
-        operation = self._api.power_off(
-            resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.power_off(resource_group_name=self._resource_group, vm_name=self.name)
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.SUSPENDED)
             return True
@@ -261,17 +268,18 @@ class AzureInstance(Instance):
         params = ComputeManagementClient.models().VirtualMachineCaptureParameters(
             vhd_prefix=image_name,
             destination_container_name=container,
-            overwrite_vhds=overwrite_vhds
+            overwrite_vhds=overwrite_vhds,
         )
         self.stop()
         self.logger.info("Generalizing VM '%s'", self.name)
-        operation = self._api.generalize(resource_group_name=self._resource_group,
-                                         vm_name=self.name)
+        operation = self._api.generalize(
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         self._wait_on_operation(operation)
         self.logger.info("Capturing VM '%s'", self.name)
-        operation = self._api.capture(resource_group_name=self._resource_group,
-                                      vm_name=self.name,
-                                      parameters=params)
+        operation = self._api.capture(
+            resource_group_name=self._resource_group, vm_name=self.name, parameters=params
+        )
         return self._wait_on_operation(operation)
 
     def get_vhd_uri(self):
@@ -296,17 +304,17 @@ class AzureBlobImage(Template):
             name: name of template
             container: container the template is stored in
         """
-        self._name = kwargs.get('name')
-        self._container = kwargs.get('container')
+        self._name = kwargs.get("name")
+        self._container = kwargs.get("container")
         if not self._name or not self._container:
             raise ValueError("missing required kwargs: 'name', 'container'")
 
-        super(AzureBlobImage, self).__init__(system, raw, **kwargs)
+        super().__init__(system, raw, **kwargs)
         self._api = self.system.container_client
 
     @property
     def _identifying_attrs(self):
-        return {'name': self._name, 'container': self._container}
+        return {"name": self._name, "container": self._container}
 
     @property
     def name(self):
@@ -332,11 +340,11 @@ class AzureBlobImage(Template):
     def delete(self, delete_snapshots=True):
         kwargs = {}
         if delete_snapshots:
-            kwargs['delete_snapshots'] = 'include'
+            kwargs["delete_snapshots"] = "include"
         self._api.delete_blob(self._container, self.name, **kwargs)
 
     def delete_snapshots_only(self):
-        self._api.delete_blob(self._container, self.name, delete_snapshots='only')
+        self._api.delete_blob(self._container, self.name, delete_snapshots="only")
 
     def cleanup(self):
         return self.delete()
@@ -345,81 +353,74 @@ class AzureBlobImage(Template):
         # TODO: this method is huge, it should be broken up ...
         # TODO #2: check args of vm_settings better
         # TODO #3: possibly use compute images instead of blob images?
-        resource_group = vm_settings.get('resource_group', self.system.resource_group)
-        location = vm_settings.get('region_api', self.system.region)
-        subnet = vm_settings['subnet_range']
-        address_space = vm_settings['address_space']
-        vnet_name = vm_settings['virtual_net']
+        resource_group = vm_settings.get("resource_group", self.system.resource_group)
+        location = vm_settings.get("region_api", self.system.region)
+        subnet = vm_settings["subnet_range"]
+        address_space = vm_settings["address_space"]
+        vnet_name = vm_settings["virtual_net"]
 
         # checking whether passed vm size value is correct
         vm_sizes = {t.value for t in ComputeManagementClient.models().VirtualMachineSizeTypes}
-        vm_size = vm_settings['vm_size']
+        vm_size = vm_settings["vm_size"]
         if vm_size not in vm_sizes:
-            raise ValueError("wrong vm size %s passed. possible size: %s", vm_size,
-                             ",".join(vm_sizes))
+            raise ValueError(
+                "wrong vm size %s passed. possible size: %s", vm_size, ",".join(vm_sizes)
+            )
 
-        storage_container = vm_settings['storage_container']
+        storage_container = vm_settings["storage_container"]
         # nsg_name = vm_settings['network_nsg']  # todo: check whether nsg is necessary at all
 
         # allocating public ip address for new vm
-        public_ip_params = {
-            'location': location,
-            'public_ip_allocation_method': 'Dynamic'
-        }
+        public_ip_params = {"location": location, "public_ip_allocation_method": "Dynamic"}
         public_ip = self.system.network_client.public_ip_addresses.create_or_update(
             resource_group_name=resource_group,
             public_ip_address_name=vm_name,
-            parameters=public_ip_params
+            parameters=public_ip_params,
         ).result()
 
         # creating virtual network
         virtual_networks = self.system.network_client.virtual_networks
         if vnet_name not in [v.name for v in virtual_networks.list(resource_group)]:
             vnet_params = {
-                'location': location,
-                'address_space': {
-                    'address_prefixes': [address_space]
-                }
+                "location": location,
+                "address_space": {"address_prefixes": [address_space]},
             }
             virtual_networks.create_or_update(
                 resource_group_name=resource_group,
                 virtual_network_name=vnet_name,
-                parameters=vnet_params
+                parameters=vnet_params,
             ).result()
 
         # creating sub net
-        subnet_name = 'default'
+        subnet_name = "default"
         subnets = self.system.network_client.subnets
         if subnet_name not in [v.name for v in subnets.list(resource_group, vnet_name)]:
             vsubnet = subnets.create_or_update(
                 resource_group_name=resource_group,
                 virtual_network_name=vnet_name,
-                subnet_name='default',
-                subnet_parameters={'address_prefix': subnet}
+                subnet_name="default",
+                subnet_parameters={"address_prefix": subnet},
             ).result()
         else:
             vsubnet = subnets.get(
                 resource_group_name=resource_group,
                 virtual_network_name=vnet_name,
-                subnet_name='default')
+                subnet_name="default",
+            )
 
         # creating network interface
         nic_params = {
-            'location': location,
-            'ip_configurations': [{
-                'name': vm_name,
-                'public_ip_address': public_ip,
-                'subnet': {
-                    'id': vsubnet.id
-                }
-            }]
+            "location": location,
+            "ip_configurations": [
+                {"name": vm_name, "public_ip_address": public_ip, "subnet": {"id": vsubnet.id}}
+            ],
         }
 
         def _create_or_update_nic():
             return self.system.network_client.network_interfaces.create_or_update(
                 resource_group_name=resource_group,
                 network_interface_name=vm_name,
-                parameters=nic_params
+                parameters=nic_params,
             ).result()
 
         try:
@@ -431,77 +432,69 @@ class AzureBlobImage(Template):
         # preparing os disk
         # todo: replace with copy disk operation
         self.system.copy_blob_image(
-            self.name, vm_name, vm_settings['storage_account'],
-            self._container, storage_container
+            self.name, vm_name, vm_settings["storage_account"], self._container, storage_container
         )
         image_uri = self.system.container_client.make_blob_url(
-            container_name=storage_container, blob_name=vm_name)
+            container_name=storage_container, blob_name=vm_name
+        )
         # creating virtual machine
         vm_parameters = {
-            'location': location,
-            'hardware_profile': {
-                'vm_size': vm_size
-            },
-            'storage_profile': {
-                'os_disk': {
-                    'os_type': 'Linux',  # TODO: why is this hardcoded?
-                    'name': vm_name,
-                    'vhd': ComputeManagementClient.models().VirtualHardDisk(uri='{}.vhd'
-                                                                            .format(image_uri)),
-                    'create_option': ComputeManagementClient.models().DiskCreateOptionTypes.attach,
+            "location": location,
+            "hardware_profile": {"vm_size": vm_size},
+            "storage_profile": {
+                "os_disk": {
+                    "os_type": "Linux",  # TODO: why is this hardcoded?
+                    "name": vm_name,
+                    "vhd": ComputeManagementClient.models().VirtualHardDisk(uri=f"{image_uri}.vhd"),
+                    "create_option": ComputeManagementClient.models().DiskCreateOptionTypes.attach,
                 }
             },
-            'network_profile': {
-                'network_interfaces': [{
-                    'id': nic.id
-                }]
-            },
+            "network_profile": {"network_interfaces": [{"id": nic.id}]},
         }
         vm = self.system.compute_client.virtual_machines.create_or_update(
-            resource_group_name=resource_group,
-            vm_name=vm_name,
-            parameters=vm_parameters).result()
+            resource_group_name=resource_group, vm_name=vm_name, parameters=vm_parameters
+        ).result()
         vm = AzureInstance(
-            system=self.system, name=vm.name,
-            resource_group=vm_settings['resource_group'], raw=vm)
+            system=self.system, name=vm.name, resource_group=vm_settings["resource_group"], raw=vm
+        )
         vm.wait_for_state(VmState.RUNNING)
         return vm
 
 
 class AzureSystem(System, VmMixin, TemplateMixin):
-    """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module
-    """
+    """This class is used to connect to Microsoft Azure Portal via PowerShell AzureRM Module"""
+
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms()),
-        'num_template': lambda self: len(list(self.list_compute_images())),
+        "num_vm": lambda self: len(self.list_vms()),
+        "num_template": lambda self: len(list(self.list_compute_images())),
     }
 
     can_suspend = True
     can_pause = False
 
     def __init__(self, **kwargs):
-        super(AzureSystem, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.client_id = kwargs.get("username")
         self.client_secret = kwargs.get("password")
         self.tenant = kwargs.get("tenant_id")
         self.subscription_id = kwargs.get("subscription_id")
-        self.resource_group = kwargs['provisioning']['resource_group']  # default resource group
+        self.resource_group = kwargs["provisioning"]["resource_group"]  # default resource group
         self.storage_account = kwargs.get("storage_account")
         self.storage_key = kwargs.get("storage_key")
-        self.template_container = kwargs['provisioning']['template_container']
-        self.orphaned_discs_path = 'Microsoft.Compute/Images/templates/'
-        self.region = kwargs["provisioning"]["region_api"].replace(' ', '').lower()
+        self.template_container = kwargs["provisioning"]["template_container"]
+        self.orphaned_discs_path = "Microsoft.Compute/Images/templates/"
+        self.region = kwargs["provisioning"]["region_api"].replace(" ", "").lower()
 
-        self.credentials = ServicePrincipalCredentials(client_id=self.client_id,
-                                                       secret=self.client_secret,
-                                                       tenant=self.tenant)
+        self.credentials = ServicePrincipalCredentials(
+            client_id=self.client_id, secret=self.client_secret, tenant=self.tenant
+        )
 
     @property
     def _identifying_attrs(self):
         return {
-            'tenant': self.tenant,
-            'subscription_id': self.subscription_id,
-            'storage_account': self.storage_account
+            "tenant": self.tenant,
+            "subscription_id": self.subscription_id,
+            "storage_account": self.storage_account,
         }
 
     @property
@@ -514,14 +507,20 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def __setattr__(self, key, value):
         """If the subscription_id is changed, invalidate client caches"""
-        if key in ['credentials', 'subscription_id']:
-            for client in ['compute_client', 'iot_client', 'resource_client', 'network_client',
-                           'subscription_client', 'storage_client']:
+        if key in ["credentials", "subscription_id"]:
+            for client in [
+                "compute_client",
+                "iot_client",
+                "resource_client",
+                "network_client",
+                "subscription_client",
+                "storage_client",
+            ]:
                 if getattr(self, client, False):
                     del self.__dict__[client]
-        if key in ['storage_account', 'storage_key']:
-            if getattr(self, 'container_client', False):
-                del self.__dict__['container_client']
+        if key in ["storage_account", "storage_key"]:
+            if getattr(self, "container_client", False):
+                del self.__dict__["container_client"]
         self.__dict__[key] = value
 
     @cached_property
@@ -559,7 +558,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def create_vm(self, vm_name, *args, **kwargs):
         raise NotImplementedError
 
-    def create_iothub(self, name, sku_name='F1', sku_capacity=1):
+    def create_iothub(self, name, sku_name="F1", sku_capacity=1):
         """
         Create an iothub in Azure with the specified name.
         sku_name and sku_capacity are required for the creation
@@ -568,14 +567,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         async_iot_hub = self.iot_client.iot_hub_resource.create_or_update(
             self.resource_group,
             name,
-            {'location': self.region,
-             'subscriptionid': self.subscription_id,
-             'resourcegroup': self.resource_group,
-             'sku': {
-                 'name': sku_name,
-                 'capacity': sku_capacity
-             },
-             'features': 'None'}
+            {
+                "location": self.region,
+                "subscriptionid": self.subscription_id,
+                "resourcegroup": self.resource_group,
+                "sku": {"name": sku_name, "capacity": sku_capacity},
+                "features": "None",
+            },
         )
         return async_iot_hub.result()
 
@@ -597,10 +595,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         resource_groups = [resource_group] if resource_group else self.list_resource_groups()
         for res_group in resource_groups:
             vms = self.vms_collection.list(resource_group_name=res_group)
-            vm_list.extend([
-                AzureInstance(system=self, name=vm.name, resource_group=res_group, raw=vm)
-                for vm in vms if vm.location == self.region
-            ])
+            vm_list.extend(
+                [
+                    AzureInstance(system=self, name=vm.name, resource_group=res_group, raw=vm)
+                    for vm in vms
+                    if vm.location == self.region
+                ]
+            )
         if name:
             return [vm for vm in vm_list if vm.name == name]
         return vm_list
@@ -616,12 +617,14 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         return vms[0]
 
     def data(self, vm_name, resource_group=None):
-        raise NotImplementedError('data not implemented.')
+        raise NotImplementedError("data not implemented.")
 
     def list_subscriptions(self):
-        return [(str(s.display_name), str(s.subscription_id)) for s in
-                self.subscription_client.subscriptions.list() if
-                s.state == SubscriptionState.enabled]
+        return [
+            (str(s.display_name), str(s.subscription_id))
+            for s in self.subscription_client.subscriptions.list()
+            if s.state == SubscriptionState.enabled
+        ]
 
     def list_region(self, subscription=None):
         """
@@ -633,21 +636,27 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         Return: list of tuples - (name, display_name)
         """
         subscription = subscription or self.subscription_id
-        return [(region.name, region.display_name) for region in
-                self.subscription_client.subscriptions.list_locations(subscription)]
+        return [
+            (region.name, region.display_name)
+            for region in self.subscription_client.subscriptions.list_locations(subscription)
+        ]
 
     def list_storage_accounts_by_resource_group(self, resource_group):
         """List Azure Storage accounts on current subscription by resource group"""
         return [
-            s.name for s in
-            self.storage_client.storage_accounts.list_by_resource_group(resource_group)
+            s.name
+            for s in self.storage_client.storage_accounts.list_by_resource_group(resource_group)
         ]
 
     def get_storage_account_key(self, storage_account_name, resource_group):
         """Each Storage account has 2 keys by default - both are valid and equal"""
-        keys = {v.key_name: v.value for v in self.storage_client.storage_accounts.list_keys(
-            resource_group, storage_account_name).keys}
-        return keys['key1']
+        keys = {
+            v.key_name: v.value
+            for v in self.storage_client.storage_accounts.list_keys(
+                resource_group, storage_account_name
+            ).keys
+        }
+        return keys["key1"]
 
     def list_resource_groups(self):
         """
@@ -682,16 +691,19 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         List all resources in selected resource_group
         """
         resource_group = resource_group or self.resource_group
-        return list(self.resource_client.resources.list_by_resource_group(resource_group, expand="changedTime,createdTime"))
+        return list(
+            self.resource_client.resources.list_by_resource_group(
+                resource_group, expand="changedTime,createdTime"
+            )
+        )
 
     def list_free_discs(self, disc_template=None, resource_group=None):
         """
         List all or specific VMs attached Disc(s) in selected resource_group
         """
         resource_group = resource_group or self.resource_group
-        disks = self.compute_client.disks.list_by_resource_group(
-            resource_group_name=resource_group)
-        all_free_discs = [disk.name for disk in disks if not disk.disk_state == 'Attached']
+        disks = self.compute_client.disks.list_by_resource_group(resource_group_name=resource_group)
+        all_free_discs = [disk.name for disk in disks if not disk.disk_state == "Attached"]
         if disc_template:
             return [disc_name for disc_name in all_free_discs if disc_template in disc_name]
         return all_free_discs
@@ -715,14 +727,14 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         return found_stacks
 
     def list_flavor(self):
-        raise NotImplementedError('list_flavor not implemented.')
+        raise NotImplementedError("list_flavor not implemented.")
 
     def list_network(self):
         self.logger.info("Attempting to list Azure Virtual Private Networks in '%s'", self.region)
         # Azure API returns all networks from all regions, and there is options to filter by region.
         # In CFME only the networks of the provider regions are displayed.
         all_networks = self.network_client.virtual_networks.list_all()
-        self.logger.debug('self.region=%s', self.region)
+        self.logger.debug("self.region=%s", self.region)
         networks_in_region = []
         for network in all_networks:
             if network.location == self.region:
@@ -735,7 +747,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         # is only one network in the resource_group defined in cfme_data.
         all_networks = self.network_client.virtual_networks.list_all()
 
-        self.logger.debug('self.region=%s', self.region)
+        self.logger.debug("self.region=%s", self.region)
         subnets = dict()
         for network in all_networks:
             if network.location == self.region:
@@ -746,8 +758,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def list_security_group(self):
         self.logger.info("Attempting to List Azure security groups")
         all_sec_groups = self.network_client.network_security_groups.list_all()
-        self.logger.debug('self.region=%s', self.region)
-        location = self.region.replace(' ', '').lower()
+        self.logger.debug("self.region=%s", self.region)
+        location = self.region.replace(" ", "").lower()
         sec_groups_in_location = []
         for sec_gp in all_sec_groups:
             if sec_gp.location == location:
@@ -756,8 +768,11 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def list_security_group_ports(self, sec_group_name, resource_group=None):
         resource_group = resource_group or self.resource_group
-        self.logger.info('Attempting to List ports from Azure security group "%s"'
-                         'in resource group "%s"', sec_group_name, resource_group)
+        self.logger.info(
+            'Attempting to List ports from Azure security group "%s"' 'in resource group "%s"',
+            sec_group_name,
+            resource_group,
+        )
         sg_rules = self.network_client.security_rules.list(resource_group, sec_group_name)
         sg_ports = [sgr.destination_port_range for sgr in sg_rules]
         return sg_ports
@@ -777,7 +792,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def _age_filter(self, resource, hours_old=0):
         now_time = datetime.utcnow().replace(tzinfo=pytz.utc)
-        start_time = parser.parse(resource.additional_properties['createdTime'])
+        start_time = parser.parse(resource.additional_properties["createdTime"])
         timediff = now_time - start_time
         totalhours = timediff.total_seconds() / 3600
 
@@ -790,7 +805,11 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         hours_old = float(hours_old)
 
         resources = self.list_all_resources_by_resource_group(resource_group)
-        return filter(lambda f: self._age_filter(f, hours_old), resources) if bool(hours_old) else resources
+        return (
+            filter(lambda f: self._age_filter(f, hours_old), resources)
+            if bool(hours_old)
+            else resources
+        )
 
     def list_resources_from_hours_old(self, resource_group=None, hours_old=0):
         """
@@ -801,12 +820,12 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def remove_resource_group_of_old_resources(self, resource_group=None, hours_old=0):
         """
-        Used for clean_up jobs to remove group containing resources older than hours_old numeric value.
+        Used for clean_up jobs to remove group containing resources older than hours_old.
         Age is calculated as difference of current time and resource creation timestamp.
         """
 
         hours_old = float(hours_old)
-        self.logger.info('Attempting to remove all old resources')
+        self.logger.info("Attempting to remove all old resources")
         resource_group = resource_group or self.resource_group
 
         resources = self._list_resources(resource_group, hours_old)
@@ -819,25 +838,27 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         in selected resource_group.If None (default) resource_group provided, the instance's
         resource group is used instead
         """
-        self.logger.info('Attempting to List all unused NICs')
+        self.logger.info("Attempting to List all unused NICs")
         results = []
-        nic_list = self.list_free_nics(nic_template,
-                                       resource_group=resource_group or self.resource_group)
+        nic_list = self.list_free_nics(
+            nic_template, resource_group=resource_group or self.resource_group
+        )
 
         for nic in nic_list:
             try:
                 operation = self.network_client.network_interfaces.delete(
                     resource_group_name=resource_group or self.resource_group,
-                    network_interface_name=nic)
+                    network_interface_name=nic,
+                )
             except CloudError as e:
-                self.logger.error('{} nic can\'t be removed - {}'.format(nic, e.error.error))
+                self.logger.error(f"{nic} nic can't be removed - {e.error.error}")
                 results.append((nic, e.error.error))
                 continue
             operation.wait()
             self.logger.info('"%s" nic removed', nic)
             results.append((nic, operation.status()))
         if not results:
-            self.logger.debug('No unused/unattached NIC(s) found to be removed!')
+            self.logger.debug("No unused/unattached NIC(s) found to be removed!")
         return results
 
     def remove_pips_by_search(self, pip_template=None, resource_group=None):
@@ -846,20 +867,22 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         in selected resource_group. If None (default) resource_group provided, the instance's
         resource group is used instead
         """
-        self.logger.info('Attempting to list all unused Public IPs')
+        self.logger.info("Attempting to list all unused Public IPs")
         results = []
-        pip_list = self.list_free_pip(pip_template,
-                                      resource_group=resource_group or self.resource_group)
+        pip_list = self.list_free_pip(
+            pip_template, resource_group=resource_group or self.resource_group
+        )
 
         for pip in pip_list:
             operation = self.network_client.public_ip_addresses.delete(
                 resource_group_name=resource_group or self.resource_group,
-                public_ip_address_name=pip)
+                public_ip_address_name=pip,
+            )
             operation.wait()
             self.logger.info('"%s" pip removed', pip)
             results.append((pip, operation.status()))
         if not results:
-            self.logger.debug('No unused/unattached PIPs found to be removed!')
+            self.logger.debug("No unused/unattached PIPs found to be removed!")
         return results
 
     def remove_discs_by_search(self, disc_name=None, resource_group=None):
@@ -868,39 +891,41 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         results = []
         if disc_name:
-            self.logger.info('Attempting to find the disc image {}'.format(disc_name))
-            discs = self.find_templates(container='system',
-                                        prefix='{}{}'.format(self.orphaned_discs_path, disc_name))
+            self.logger.info(f"Attempting to find the disc image {disc_name}")
+            discs = self.find_templates(
+                container="system", prefix=f"{self.orphaned_discs_path}{disc_name}"
+            )
 
             for disc in discs:
                 disc.delete()
-                self.logger.info('disc {} removed'.format(disc_name))
+                self.logger.info(f"disc {disc_name} removed")
                 results.append(disc_name)
             if not results:
-                self.logger.debug('No discs matching {} were found'.format(disc_name))
+                self.logger.debug(f"No discs matching {disc_name} were found")
         else:
             # Remove all discs
-            self.logger.info('Attempting to find all the unattached disks and delete.')
+            self.logger.info("Attempting to find all the unattached disks and delete.")
             discs = self.list_free_discs(resource_group=self.resource_group)
             for disc_name in discs:
                 operation = self.compute_client.disks.delete(
-                    resource_group_name=resource_group or self.resource_group,
-                    disk_name=disc_name)
+                    resource_group_name=resource_group or self.resource_group, disk_name=disc_name
+                )
                 operation.wait()
                 self.logger.info('"%s" disc removed', disc_name)
                 results.append((disc_name, operation.status()))
             if not results:
-                self.logger.debug('No unused/attached discs were found to be removed!')
+                self.logger.debug("No unused/attached discs were found to be removed!")
         return results
 
     def create_netsec_group(self, group_name, resource_group=None):
         security_groups = self.network_client.network_security_groups
         self.logger.info("Attempting to Create New Azure Security Group %s", group_name)
         nsg = NetworkSecurityGroup(location=self.region)
-        operation = security_groups.create_or_update(resource_group_name=resource_group or
-                                                     self.resource_group,
-                                                     network_security_group_name=group_name,
-                                                     parameters=nsg)
+        operation = security_groups.create_or_update(
+            resource_group_name=resource_group or self.resource_group,
+            network_security_group_name=group_name,
+            parameters=nsg,
+        )
         operation.wait()
         self.logger.info("Network Security Group '%s' is created", group_name)
         return operation.status()
@@ -913,25 +938,41 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         self.logger.info("Attempting to Remove Azure Security Group '%s'", group_name)
         security_groups = self.network_client.network_security_groups
-        operation = security_groups.delete(resource_group_name=resource_group or
-                                           self.resource_group,
-                                           network_security_group_name=group_name)
+        operation = security_groups.delete(
+            resource_group_name=resource_group or self.resource_group,
+            network_security_group_name=group_name,
+        )
         operation.wait()
         self.logger.info("Network Security Group '%s' is removed", group_name)
         return operation.status()
 
-    def create_netsec_group_port_allow(self, secgroup_name, protocol,
-            source_address_prefix, destination_address_prefix, access, direction,
-            resource_group=None, **kwargs):
+    def create_netsec_group_port_allow(
+        self,
+        secgroup_name,
+        protocol,
+        source_address_prefix,
+        destination_address_prefix,
+        access,
+        direction,
+        resource_group=None,
+        **kwargs,
+    ):
         resource_group = resource_group or self.resource_group
-        self.logger.info("Attempting to Create New Azure Security Group "
-                         "Rule '%s'.", secgroup_name)
+        self.logger.info(
+            "Attempting to Create New Azure Security Group " "Rule '%s'.", secgroup_name
+        )
 
         parameters = NetworkSecurityGroup(location=self.region)
         parameters.security_rules = [
-            SecurityRule(protocol=protocol, source_address_prefix=source_address_prefix,
-                         destination_address_prefix=destination_address_prefix,
-                         access=access, direction=direction, **kwargs)]
+            SecurityRule(
+                protocol=protocol,
+                source_address_prefix=source_address_prefix,
+                destination_address_prefix=destination_address_prefix,
+                access=access,
+                direction=direction,
+                **kwargs,
+            )
+        ]
         nsg = self.network_client.network_security_groups
         operation = nsg.create_or_update(resource_group, secgroup_name, parameters)
         operation.wait()
@@ -940,7 +981,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def list_load_balancer(self):
         self.logger.info("Attempting to List Azure Load Balancers")
-        self.logger.debug('self.region=%s', self.region)
+        self.logger.debug("self.region=%s", self.region)
         all_lbs = self.network_client.load_balancers.list_all()
         lbs_in_location = []
         for lb in all_lbs:
@@ -958,22 +999,25 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         container_client = container_client or self.container_client
         for container in container_client.list_containers():
-            if container.name.startswith('bootdiagnostics-test'):
+            if container.name.startswith("bootdiagnostics-test"):
                 self.logger.info("Removing container '%s'", container.name)
                 self.container_client.delete_container(container_name=container.name)
-        self.logger.info("All diags containers are removed from '%s'",
-                         container_client.account_name)
+        self.logger.info(
+            "All diags containers are removed from '%s'", container_client.account_name
+        )
 
-    def copy_blob_image(self, template, vm_name, storage_account,
-                        template_container, storage_container):
+    def copy_blob_image(
+        self, template, vm_name, storage_account, template_container, storage_container
+    ):
         # todo: weird method to refactor it later
         container_client = BlockBlobService(storage_account, self.storage_key)
-        src_uri = container_client.make_blob_url(container_name=template_container,
-                                                 blob_name=template)
-        operation = container_client.copy_blob(container_name=storage_container,
-                                               blob_name=vm_name + ".vhd",
-                                               copy_source=src_uri)
-        wait_for(lambda: operation.status != 'pending', timeout='10m', delay=15)
+        src_uri = container_client.make_blob_url(
+            container_name=template_container, blob_name=template
+        )
+        operation = container_client.copy_blob(
+            container_name=storage_container, blob_name=vm_name + ".vhd", copy_source=src_uri
+        )
+        wait_for(lambda: operation.status != "pending", timeout="10m", delay=15)
         # copy operation obj.status->str
         return operation.status
 
@@ -981,13 +1025,13 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         # Redundant with AzureBlobImage.delete(), but used below in self.remove_unused_blobs()
         self.logger.info("Removing Blob '%s' from containter '%s'", blob.name, container.name)
         try:
-            container_client.delete_blob(
-                container_name=container.name, blob_name=blob.name)
+            container_client.delete_blob(container_name=container.name, blob_name=blob.name)
         except AzureConflictHttpError as e:
-            if 'SnapshotsPresent' in str(e) and remove_snapshots:
+            if "SnapshotsPresent" in str(e) and remove_snapshots:
                 self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
                 container_client.delete_blob(
-                    container_name=container.name, blob_name=blob.name, delete_snapshots="include")
+                    container_name=container.name, blob_name=blob.name, delete_snapshots="include"
+                )
             else:
                 raise
 
@@ -1010,28 +1054,31 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             container_client = BlockBlobService(storage_account, key)
             for container in container_client.list_containers():
                 removed_blobs[resource_group][storage_account][container.name] = []
-                for blob in container_client.list_blobs(container_name=container.name,
-                                                        prefix='test'):
-                    if blob.properties.lease.status == 'unlocked':
+                for blob in container_client.list_blobs(
+                    container_name=container.name, prefix="test"
+                ):
+                    if blob.properties.lease.status == "unlocked":
                         self._remove_container_blob(container_client, container, blob)
                         removed_blobs[resource_group][storage_account][container.name].append(
-                            blob.name)
+                            blob.name
+                        )
             # also delete unused 'bootdiag' containers
             self.remove_diags_container(container_client)
 
         # removing managed disks
         removed_disks = []
         for disk in self.compute_client.disks.list_by_resource_group(resource_group):
-            if disk.name.startswith('test') and disk.managed_by is None:
+            if disk.name.startswith("test") and disk.managed_by is None:
                 self.logger.info("Removing disk '%s'", disk.name)
-                self.compute_client.disks.delete(resource_group_name=resource_group,
-                                                 disk_name=disk.name)
-                removed_disks.append({'resource_group': resource_group,
-                                      'disk': disk.name})
+                self.compute_client.disks.delete(
+                    resource_group_name=resource_group, disk_name=disk.name
+                )
+                removed_disks.append({"resource_group": resource_group, "disk": disk.name})
         if not removed_disks:
-            self.logger.debug("No Managed disks matching 'test*' were found in '%s'",
-                              resource_group)
-        return {'Managed': removed_disks, 'Unmanaged': removed_blobs}
+            self.logger.debug(
+                "No Managed disks matching 'test*' were found in '%s'", resource_group
+            )
+        return {"Managed": removed_disks, "Unmanaged": removed_blobs}
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
@@ -1058,13 +1105,15 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                 continue
             for image in self.container_client.list_blobs(found_container_name, prefix=prefix):
                 img_name = image.name
-                if only_vhd and (not img_name.endswith('.vhd') and not img_name.endswith('.vhdx')):
+                if only_vhd and (not img_name.endswith(".vhd") and not img_name.endswith(".vhdx")):
                     continue
                 if name and name.lower() != img_name.lower():
                     continue
                 matches.append(
                     AzureBlobImage(
-                        system=self, name=img_name, container=found_container_name, raw=image))
+                        system=self, name=img_name, container=found_container_name, raw=image
+                    )
+                )
         return matches
 
     def list_templates(self):
@@ -1075,7 +1124,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     def list_compute_images(self):
         return self.resource_client.resources.list(
-            filter="resourceType eq 'Microsoft.Compute/images'")
+            filter="resourceType eq 'Microsoft.Compute/images'"
+        )
 
     def list_compute_images_by_resource_group(self, resource_group=None, free_images=None):
         """
@@ -1131,9 +1181,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         if not templates:
             raise ImageNotFoundError(name)
         elif len(templates) > 1:
-            raise MultipleImagesError(
-                "Image with name '{}' exists in multiple containers".format(name)
-            )
+            raise MultipleImagesError(f"Image with name '{name}' exists in multiple containers")
         return templates[0]
 
     # TODO: Refactor the below stack methods into the StackMixin/StackEntity structure
@@ -1146,11 +1194,15 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
         deps = self.resource_client.deployments
-        operation = deps.delete(resource_group_name=resource_group or self.resource_group,
-                                deployment_name=stack_name)
+        operation = deps.delete(
+            resource_group_name=resource_group or self.resource_group, deployment_name=stack_name
+        )
         operation.wait()
-        self.logger.info("'%s' was removed from '%s' resource group", stack_name,
-                         resource_group or self.resource_group)
+        self.logger.info(
+            "'%s' was removed from '%s' resource group",
+            stack_name,
+            resource_group or self.resource_group,
+        )
         return operation.status()
 
     def delete_stack_by_date(self, days_old, resource_group=None):
@@ -1162,8 +1214,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             self.logger.info("Removing Deployment Stack '%s'", stack)
             result = self.delete_stack(stack_name=stack, resource_group=resource_group)
             results.append((stack, result))
-            self.logger.info("Attempt to remove Stack '%s' finished with status '%s'", stack,
-                             result)
+            self.logger.info(
+                "Attempt to remove Stack '%s' finished with status '%s'", stack, result
+            )
         return results
 
     def delete_compute_image_by_resource_group(self, resource_group=None, image_list=None):
@@ -1185,50 +1238,49 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.logger.info("Checking Stack %s resources ", stack_name)
         # todo: weird implementation to refactor this method later
         resources = {
-            'vms': [],
-            'nics': [],
-            'pips': [],
+            "vms": [],
+            "nics": [],
+            "pips": [],
         }
         dep_op_list = self.resource_client.deployment_operations.list(
-            resource_group_name=resource_group or self.resource_group,
-            deployment_name=stack_name
+            resource_group_name=resource_group or self.resource_group, deployment_name=stack_name
         )
         for dep in dep_op_list:
             if dep.properties.target_resource:
                 target = dep.properties.target_resource
                 res_type, res_name = (target.resource_type, target.resource_name)
 
-                if res_type == 'Microsoft.Compute/virtualMachines':
+                if res_type == "Microsoft.Compute/virtualMachines":
                     try:
                         self.compute_client.virtual_machines.get(
                             resource_group_name=resource_group or self.resource_group,
-                            vm_name=res_name
+                            vm_name=res_name,
                         )
                         res_exists = True
                     except CloudError:
                         res_exists = False
-                    resources['vms'].append((res_name, res_exists))
-                elif res_type == 'Microsoft.Network/networkInterfaces':
+                    resources["vms"].append((res_name, res_exists))
+                elif res_type == "Microsoft.Network/networkInterfaces":
                     try:
                         self.network_client.network_interfaces.get(
                             resource_group_name=resource_group or self.resource_group,
-                            network_interface_name=res_name
+                            network_interface_name=res_name,
                         )
                         res_exists = True
                     except CloudError:
                         res_exists = False
-                    resources['nics'].append((res_name, res_exists))
-                elif res_type == 'Microsoft.Network/publicIpAddresses':
+                    resources["nics"].append((res_name, res_exists))
+                elif res_type == "Microsoft.Network/publicIpAddresses":
                     # todo: double check this match
                     try:
                         self.network_client.public_ip_addresses.get(
                             resource_group_name=resource_group or self.resource_group,
-                            public_ip_address_name=res_name
+                            public_ip_address_name=res_name,
                         )
                         res_exists = True
                     except CloudError:
                         res_exists = False
-                    resources['pips'].append((res_name, res_exists))
+                    resources["pips"].append((res_name, res_exists))
         return resources
 
     def is_stack_empty(self, stack_name, resource_group):

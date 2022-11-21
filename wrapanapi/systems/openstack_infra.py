@@ -1,6 +1,5 @@
-# coding: utf-8
-
 from collections import namedtuple
+
 from ironicclient import client as iclient
 from keystoneauth1.identity import Password
 from keystoneauth1.session import Session
@@ -9,11 +8,11 @@ from novaclient import client as osclient
 from novaclient.client import SessionClient
 from requests.exceptions import Timeout
 
-from wrapanapi.systems.base import System
 from wrapanapi.exceptions import KeystoneVersionNotSupported
+from wrapanapi.systems.base import System
 
 
-Node = namedtuple('Node', ['uuid', 'name', 'power_state', 'provision_state'])
+Node = namedtuple("Node", ["uuid", "name", "power_state", "provision_state"])
 
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -30,12 +29,12 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
         return SessionClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
-            self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
+            self._cfme_logger.error(f"nova request timed out after {retry_count} retries")
             raise
         else:
             # feed back into the replaced method that supports retry_count
             retry_count += 1
-            self._cfme_logger.error('nova request timed out; retry {}'.format(retry_count))
+            self._cfme_logger.error(f"nova request timed out; retry {retry_count}")
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
@@ -45,20 +44,20 @@ class OpenstackInfraSystem(System):
     """
 
     _stats_available = {
-        'num_template': lambda self: len(self.list_templates()),
-        'num_host': lambda self: len(self.list_host()),
+        "num_template": lambda self: len(self.list_templates()),
+        "num_host": lambda self: len(self.list_host()),
     }
 
     def __init__(self, **kwargs):
-        self.keystone_version = kwargs.get('keystone_version', 2)
+        self.keystone_version = kwargs.get("keystone_version", 2)
         if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
-        super(OpenstackInfraSystem, self).__init__(**kwargs)
-        self.tenant = kwargs['tenant']
-        self.username = kwargs['username']
-        self.password = kwargs['password']
-        self.auth_url = kwargs['auth_url']
-        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        super().__init__(**kwargs)
+        self.tenant = kwargs["tenant"]
+        self.username = kwargs["username"]
+        self.password = kwargs["password"]
+        self.auth_url = kwargs["auth_url"]
+        self.domain_id = kwargs["domain_id"] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
         self._kapi = None
@@ -67,16 +66,21 @@ class OpenstackInfraSystem(System):
 
     @property
     def _identifying_attrs(self):
-        return {'auth_url': self.auth_url, 'tenant': self.tenant}
+        return {"auth_url": self.auth_url, "tenant": self.tenant}
 
     @property
     def session(self):
         if not self._session:
-            auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
-                               password=self.password, project_name=self.tenant)
+            auth_kwargs = dict(
+                auth_url=self.auth_url,
+                username=self.username,
+                password=self.password,
+                project_name=self.tenant,
+            )
             if self.keystone_version == 3:
-                auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_name=self.domain_id))
+                auth_kwargs.update(
+                    dict(user_domain_id=self.domain_id, project_domain_name=self.domain_id)
+                )
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
         return self._session
@@ -84,11 +88,9 @@ class OpenstackInfraSystem(System):
     @property
     def api(self):
         if not self._api:
-            self._api = osclient.Client('2',
-                                        session=self.session,
-                                        service_type="compute",
-                                        insecure=True,
-                                        timeout=30)
+            self._api = osclient.Client(
+                "2", session=self.session, service_type="compute", insecure=True, timeout=30
+            )
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
             # replacing the method directly on the SessionClient class)
@@ -96,8 +98,7 @@ class OpenstackInfraSystem(System):
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
             self._api.client.request = _request_timeout_handler.__get__(
-                self._api.client,
-                SessionClient
+                self._api.client, SessionClient
             )
         return self._api
 
@@ -145,8 +146,10 @@ class OpenstackInfraSystem(System):
                 # Sometimes Ironic does not show the names, pull them from Nova if possible.
                 selected_nova_node = None
                 for nova_node in nodes:
-                    if getattr(
-                            nova_node, 'OS-EXT-SRV-ATTR:hypervisor_hostname', None) == i_node.uuid:
+                    if (
+                        getattr(nova_node, "OS-EXT-SRV-ATTR:hypervisor_hostname", None)
+                        == i_node.uuid
+                    ):
                         selected_nova_node = nova_node
                         break
                 if selected_nova_node:
@@ -157,7 +160,7 @@ class OpenstackInfraSystem(System):
         return result
 
     def info(self):
-        raise NotImplementedError('info not implemented.')
+        raise NotImplementedError("info not implemented.")
 
     def disconnect(self):
         pass

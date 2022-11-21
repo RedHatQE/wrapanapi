@@ -3,8 +3,8 @@ wrapanapi.entities.instance
 
 Instances which run on cloud providers
 """
-
-from abc import ABCMeta, abstractproperty
+from abc import ABCMeta
+from abc import abstractproperty
 
 from .vm import Vm
 
@@ -14,6 +14,7 @@ class Instance(Vm, metaclass=ABCMeta):
     Adds a few additional properties/methods pertaining to VMs hosted
     on a cloud platform.
     """
+
     @abstractproperty
     def type(self):
         """

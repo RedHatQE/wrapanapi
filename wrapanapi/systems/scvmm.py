@@ -1,14 +1,12 @@
-# coding: utf-8
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-
 import json
 import re
+import time
 from datetime import datetime
 from textwrap import dedent
-import time
 
 import pytz
 import tzlocal
@@ -16,113 +14,117 @@ import winrm
 from cached_property import cached_property
 from wait_for import wait_for
 
-from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
-from wrapanapi.exceptions import (
-    ImageNotFoundError, VMInstanceNotFound, MultipleItemsError
-)
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import Vm
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
+from wrapanapi.exceptions import ImageNotFoundError
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import VMInstanceNotFound
 from wrapanapi.systems.base import System
 
 
 WINDOWS_TZ_INFO = {
-    'AUS Central Standard Time': 'Australia/Darwin',
-    'AUS Eastern Standard Time': 'Australia/Sydney',
-    'Afghanistan Standard Time': 'Asia/Kabul',
-    'Alaskan Standard Time': 'America/Anchorage',
-    'Arab Standard Time': 'Asia/Riyadh',
-    'Arabian Standard Time': 'Asia/Dubai',
-    'Arabic Standard Time': 'Asia/Baghdad',
-    'Argentina Standard Time': 'America/Buenos_Aires',
-    'Atlantic Standard Time': 'America/Halifax',
-    'Azerbaijan Standard Time': 'Asia/Baku',
-    'Azores Standard Time': 'Atlantic/Azores',
-    'Bahia Standard Time': 'America/Bahia',
-    'Bangladesh Standard Time': 'Asia/Dhaka',
-    'Canada Central Standard Time': 'America/Regina',
-    'Cape Verde Standard Time': 'Atlantic/Cape_Verde',
-    'Caucasus Standard Time': 'Asia/Yerevan',
-    'Cen. Australia Standard Time': 'Australia/Adelaide',
-    'Central America Standard Time': 'America/Guatemala',
-    'Central Asia Standard Time': 'Asia/Almaty',
-    'Central Brazilian Standard Time': 'America/Cuiaba',
-    'Central Europe Standard Time': 'Europe/Budapest',
-    'Central European Standard Time': 'Europe/Warsaw',
-    'Central Pacific Standard Time': 'Pacific/Guadalcanal',
-    'Central Standard Time': 'America/Chicago',
-    'Central Standard Time (Mexico)': 'America/Mexico_City',
-    'China Standard Time': 'Asia/Shanghai',
-    'Dateline Standard Time': 'Etc/GMT+12',
-    'E. Africa Standard Time': 'Africa/Nairobi',
-    'E. Australia Standard Time': 'Australia/Brisbane',
-    'E. Europe Standard Time': 'Asia/Nicosia',
-    'E. South America Standard Time': 'America/Sao_Paulo',
-    'Eastern Standard Time': 'America/New_York',
-    'Egypt Standard Time': 'Africa/Cairo',
-    'Ekaterinburg Standard Time': 'Asia/Yekaterinburg',
-    'FLE Standard Time': 'Europe/Kiev',
-    'Fiji Standard Time': 'Pacific/Fiji',
-    'GMT Standard Time': 'Europe/London',
-    'GTB Standard Time': 'Europe/Bucharest',
-    'Georgian Standard Time': 'Asia/Tbilisi',
-    'Greenland Standard Time': 'America/Godthab',
-    'Greenwich Standard Time': 'Atlantic/Reykjavik',
-    'Hawaiian Standard Time': 'Pacific/Honolulu',
-    'India Standard Time': 'Asia/Calcutta',
-    'Iran Standard Time': 'Asia/Tehran',
-    'Israel Standard Time': 'Asia/Jerusalem',
-    'Jordan Standard Time': 'Asia/Amman',
-    'Kaliningrad Standard Time': 'Europe/Kaliningrad',
-    'Korea Standard Time': 'Asia/Seoul',
-    'Magadan Standard Time': 'Asia/Magadan',
-    'Mauritius Standard Time': 'Indian/Mauritius',
-    'Middle East Standard Time': 'Asia/Beirut',
-    'Montevideo Standard Time': 'America/Montevideo',
-    'Morocco Standard Time': 'Africa/Casablanca',
-    'Mountain Standard Time': 'America/Denver',
-    'Mountain Standard Time (Mexico)': 'America/Chihuahua',
-    'Myanmar Standard Time': 'Asia/Rangoon',
-    'N. Central Asia Standard Time': 'Asia/Novosibirsk',
-    'Namibia Standard Time': 'Africa/Windhoek',
-    'Nepal Standard Time': 'Asia/Katmandu',
-    'New Zealand Standard Time': 'Pacific/Auckland',
-    'Newfoundland Standard Time': 'America/St_Johns',
-    'North Asia East Standard Time': 'Asia/Irkutsk',
-    'North Asia Standard Time': 'Asia/Krasnoyarsk',
-    'Pacific SA Standard Time': 'America/Santiago',
-    'Pacific Standard Time': 'America/Los_Angeles',
-    'Pacific Standard Time (Mexico)': 'America/Santa_Isabel',
-    'Pakistan Standard Time': 'Asia/Karachi',
-    'Paraguay Standard Time': 'America/Asuncion',
-    'Romance Standard Time': 'Europe/Paris',
-    'Russian Standard Time': 'Europe/Moscow',
-    'SA Eastern Standard Time': 'America/Cayenne',
-    'SA Pacific Standard Time': 'America/Bogota',
-    'SA Western Standard Time': 'America/La_Paz',
-    'SE Asia Standard Time': 'Asia/Bangkok',
-    'Samoa Standard Time': 'Pacific/Apia',
-    'Singapore Standard Time': 'Asia/Singapore',
-    'South Africa Standard Time': 'Africa/Johannesburg',
-    'Sri Lanka Standard Time': 'Asia/Colombo',
-    'Syria Standard Time': 'Asia/Damascus',
-    'Taipei Standard Time': 'Asia/Taipei',
-    'Tasmania Standard Time': 'Australia/Hobart',
-    'Tokyo Standard Time': 'Asia/Tokyo',
-    'Tonga Standard Time': 'Pacific/Tongatapu',
-    'Turkey Standard Time': 'Europe/Istanbul',
-    'US Eastern Standard Time': 'America/Indianapolis',
-    'US Mountain Standard Time': 'America/Phoenix',
-    'UTC': 'Etc/GMT',
-    'UTC+12': 'Etc/GMT-12',
-    'UTC-02': 'Etc/GMT+2',
-    'UTC-11': 'Etc/GMT+11',
-    'Ulaanbaatar Standard Time': 'Asia/Ulaanbaatar',
-    'Venezuela Standard Time': 'America/Caracas',
-    'Vladivostok Standard Time': 'Asia/Vladivostok',
-    'W. Australia Standard Time': 'Australia/Perth',
-    'W. Central Africa Standard Time': 'Africa/Lagos',
-    'W. Europe Standard Time': 'Europe/Berlin',
-    'West Asia Standard Time': 'Asia/Tashkent',
-    'West Pacific Standard Time': 'Pacific/Port_Moresby',
-    'Yakutsk Standard Time': 'Asia/Yakutsk'
+    "AUS Central Standard Time": "Australia/Darwin",
+    "AUS Eastern Standard Time": "Australia/Sydney",
+    "Afghanistan Standard Time": "Asia/Kabul",
+    "Alaskan Standard Time": "America/Anchorage",
+    "Arab Standard Time": "Asia/Riyadh",
+    "Arabian Standard Time": "Asia/Dubai",
+    "Arabic Standard Time": "Asia/Baghdad",
+    "Argentina Standard Time": "America/Buenos_Aires",
+    "Atlantic Standard Time": "America/Halifax",
+    "Azerbaijan Standard Time": "Asia/Baku",
+    "Azores Standard Time": "Atlantic/Azores",
+    "Bahia Standard Time": "America/Bahia",
+    "Bangladesh Standard Time": "Asia/Dhaka",
+    "Canada Central Standard Time": "America/Regina",
+    "Cape Verde Standard Time": "Atlantic/Cape_Verde",
+    "Caucasus Standard Time": "Asia/Yerevan",
+    "Cen. Australia Standard Time": "Australia/Adelaide",
+    "Central America Standard Time": "America/Guatemala",
+    "Central Asia Standard Time": "Asia/Almaty",
+    "Central Brazilian Standard Time": "America/Cuiaba",
+    "Central Europe Standard Time": "Europe/Budapest",
+    "Central European Standard Time": "Europe/Warsaw",
+    "Central Pacific Standard Time": "Pacific/Guadalcanal",
+    "Central Standard Time": "America/Chicago",
+    "Central Standard Time (Mexico)": "America/Mexico_City",
+    "China Standard Time": "Asia/Shanghai",
+    "Dateline Standard Time": "Etc/GMT+12",
+    "E. Africa Standard Time": "Africa/Nairobi",
+    "E. Australia Standard Time": "Australia/Brisbane",
+    "E. Europe Standard Time": "Asia/Nicosia",
+    "E. South America Standard Time": "America/Sao_Paulo",
+    "Eastern Standard Time": "America/New_York",
+    "Egypt Standard Time": "Africa/Cairo",
+    "Ekaterinburg Standard Time": "Asia/Yekaterinburg",
+    "FLE Standard Time": "Europe/Kiev",
+    "Fiji Standard Time": "Pacific/Fiji",
+    "GMT Standard Time": "Europe/London",
+    "GTB Standard Time": "Europe/Bucharest",
+    "Georgian Standard Time": "Asia/Tbilisi",
+    "Greenland Standard Time": "America/Godthab",
+    "Greenwich Standard Time": "Atlantic/Reykjavik",
+    "Hawaiian Standard Time": "Pacific/Honolulu",
+    "India Standard Time": "Asia/Calcutta",
+    "Iran Standard Time": "Asia/Tehran",
+    "Israel Standard Time": "Asia/Jerusalem",
+    "Jordan Standard Time": "Asia/Amman",
+    "Kaliningrad Standard Time": "Europe/Kaliningrad",
+    "Korea Standard Time": "Asia/Seoul",
+    "Magadan Standard Time": "Asia/Magadan",
+    "Mauritius Standard Time": "Indian/Mauritius",
+    "Middle East Standard Time": "Asia/Beirut",
+    "Montevideo Standard Time": "America/Montevideo",
+    "Morocco Standard Time": "Africa/Casablanca",
+    "Mountain Standard Time": "America/Denver",
+    "Mountain Standard Time (Mexico)": "America/Chihuahua",
+    "Myanmar Standard Time": "Asia/Rangoon",
+    "N. Central Asia Standard Time": "Asia/Novosibirsk",
+    "Namibia Standard Time": "Africa/Windhoek",
+    "Nepal Standard Time": "Asia/Katmandu",
+    "New Zealand Standard Time": "Pacific/Auckland",
+    "Newfoundland Standard Time": "America/St_Johns",
+    "North Asia East Standard Time": "Asia/Irkutsk",
+    "North Asia Standard Time": "Asia/Krasnoyarsk",
+    "Pacific SA Standard Time": "America/Santiago",
+    "Pacific Standard Time": "America/Los_Angeles",
+    "Pacific Standard Time (Mexico)": "America/Santa_Isabel",
+    "Pakistan Standard Time": "Asia/Karachi",
+    "Paraguay Standard Time": "America/Asuncion",
+    "Romance Standard Time": "Europe/Paris",
+    "Russian Standard Time": "Europe/Moscow",
+    "SA Eastern Standard Time": "America/Cayenne",
+    "SA Pacific Standard Time": "America/Bogota",
+    "SA Western Standard Time": "America/La_Paz",
+    "SE Asia Standard Time": "Asia/Bangkok",
+    "Samoa Standard Time": "Pacific/Apia",
+    "Singapore Standard Time": "Asia/Singapore",
+    "South Africa Standard Time": "Africa/Johannesburg",
+    "Sri Lanka Standard Time": "Asia/Colombo",
+    "Syria Standard Time": "Asia/Damascus",
+    "Taipei Standard Time": "Asia/Taipei",
+    "Tasmania Standard Time": "Australia/Hobart",
+    "Tokyo Standard Time": "Asia/Tokyo",
+    "Tonga Standard Time": "Pacific/Tongatapu",
+    "Turkey Standard Time": "Europe/Istanbul",
+    "US Eastern Standard Time": "America/Indianapolis",
+    "US Mountain Standard Time": "America/Phoenix",
+    "UTC": "Etc/GMT",
+    "UTC+12": "Etc/GMT-12",
+    "UTC-02": "Etc/GMT+2",
+    "UTC-11": "Etc/GMT+11",
+    "Ulaanbaatar Standard Time": "Asia/Ulaanbaatar",
+    "Venezuela Standard Time": "America/Caracas",
+    "Vladivostok Standard Time": "Asia/Vladivostok",
+    "W. Australia Standard Time": "Australia/Perth",
+    "W. Central Africa Standard Time": "Africa/Lagos",
+    "W. Europe Standard Time": "Europe/Berlin",
+    "West Asia Standard Time": "Asia/Tashkent",
+    "West Pacific Standard Time": "Pacific/Port_Moresby",
+    "Yakutsk Standard Time": "Asia/Yakutsk",
 }
 
 
@@ -135,34 +137,33 @@ def convert_powershell_date(date_obj_string):
     So this converts to:
     "/Date(1449273876697)/" == datetime.datetime.fromtimestamp(1449273876697/1000.)
     """
-    match = re.search(r'^/Date\((\d+)\)/$', date_obj_string)
+    match = re.search(r"^/Date\((\d+)\)/$", date_obj_string)
     if not match:
-        raise ValueError('Invalid date object string: {}'.format(date_obj_string))
-    return datetime.fromtimestamp(int(match.group(1)) / 1000.)
+        raise ValueError(f"Invalid date object string: {date_obj_string}")
+    return datetime.fromtimestamp(int(match.group(1)) / 1000.0)
 
 
-class _LogStrMixin(object):
+class _LogStrMixin:
     @property
     def _log_str(self):
         """
         Returns name or ID, but doesn't refresh raw to get name if we don't
         have raw data yet.. This is used only for logging purposes.
         """
-        return (
-            "[name: {}, id: {}]"
-            .format(self._raw['Name'] if self._raw else "<not retrieved>", self._id)
+        return "[name: {}, id: {}]".format(
+            self._raw["Name"] if self._raw else "<not retrieved>", self._id
         )
 
 
 class SCVirtualMachine(Vm, _LogStrMixin):
 
     state_map = {
-        'Running': VmState.RUNNING,
-        'PowerOff': VmState.STOPPED,
-        'Stopped': VmState.STOPPED,
-        'Paused': VmState.SUSPENDED,  # 'Paused' is scvmm's version of 'suspended'
-        'Missing': VmState.ERROR,
-        'Creation Failed': VmState.ERROR,
+        "Running": VmState.RUNNING,
+        "PowerOff": VmState.STOPPED,
+        "Stopped": VmState.STOPPED,
+        "Paused": VmState.SUSPENDED,  # 'Paused' is scvmm's version of 'suspended'
+        "Missing": VmState.ERROR,
+        "Creation Failed": VmState.ERROR,
     }
     ALLOWED_CHECK_TYPES = ["Standard", "Production", "ProductionOnly"]
 
@@ -175,8 +176,8 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             raw: raw json (as dict) for the VM returned by the API
             id: uuid of the VM (the SCVMM 'ID' property on the VM)
         """
-        super(SCVirtualMachine, self).__init__(system, raw, **kwargs)
-        self._id = raw['ID'] if raw else kwargs.get('id')
+        super().__init__(system, raw, **kwargs)
+        self._id = raw["ID"] if raw else kwargs.get("id")
         if not self._id:
             raise ValueError("missing required kwarg: 'id'")
         self._run_script = self.system.run_script
@@ -184,7 +185,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def _identifying_attrs(self):
-        return {'id': self._id}
+        return {"id": self._id}
 
     def refresh(self, read_from_hyperv=True):
         """
@@ -196,17 +197,17 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         Returns:
             raw VM json
         """
-        script = 'Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server'
+        script = 'Get-SCVirtualMachine -ID "{}" -VMMServer $scvmm_server'
         if read_from_hyperv:
-            script = '{} | Read-SCVirtualMachine'.format(script)
+            script = f"{script} | Read-SCVirtualMachine"
         try:
             data = self._get_json(script.format(self._id))
         except SCVMMSystem.PowerShellScriptError as error:
             if "Error ID: 801" in str(error):
                 # Error ID 801 is a "not found" error
                 data = None
-            elif 'Error ID: 1730' in str(error):
-                self.logger.warning('Refresh called on a VM in a state not valid for refresh')
+            elif "Error ID: 1730" in str(error):
+                self.logger.warning("Refresh called on a VM in a state not valid for refresh")
                 return None
             else:
                 raise
@@ -217,7 +218,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def name(self):
-        return self.raw['Name']
+        return self.raw["Name"]
 
     @property
     def host(self):
@@ -225,7 +226,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     def _get_state(self):
         self.refresh(read_from_hyperv=False)
-        return self._api_state_to_vmstate(self.raw['StatusString'])
+        return self._api_state_to_vmstate(self.raw["StatusString"])
 
     @property
     def uuid(self):
@@ -233,37 +234,38 @@ class SCVirtualMachine(Vm, _LogStrMixin):
 
     @property
     def vmid(self):
-        """ VMId is the ID of the VM according to Hyper-V"""
+        """VMId is the ID of the VM according to Hyper-V"""
         return self.raw["VMId"]
 
     @property
     def ip(self):
         self.refresh(read_from_hyperv=True)
         data = self._run_script(
-            "Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server |"
+            'Get-SCVirtualMachine -ID "{}" -VMMServer $scvmm_server |'
             "Get-SCVirtualNetworkAdapter | Select IPv4Addresses |"
-            "ft -HideTableHeaders".format(self._id))
+            "ft -HideTableHeaders".format(self._id)
+        )
         table = str.maketrans(dict.fromkeys("{}"))
         ip = data.translate(table)
         return ip if ip else None
 
     @property
     def all_ips(self):
-        """ wrap self.ip to meet abstractproperty """
+        """wrap self.ip to meet abstractproperty"""
         return [self.ip]
 
     @property
     def creation_time(self):
         self.refresh()
-        creation_time = convert_powershell_date(self.raw['CreationTime'])
+        creation_time = convert_powershell_date(self.raw["CreationTime"])
         return creation_time.replace(
             tzinfo=self.system.timezone or tzlocal.get_localzone()
         ).astimezone(pytz.UTC)
 
     def _do_vm(self, action, params=""):
         cmd = (
-            "Get-SCVirtualMachine -ID \"{}\" -VMMServer $scvmm_server | {}-SCVirtualMachine {}"
-            .format(self._id, action, params).strip()
+            'Get-SCVirtualMachine -ID "{}" -VMMServer $scvmm_server '
+            "| {}-SCVirtualMachine {}".format(self._id, action, params).strip()
         )
         self.logger.info(cmd)
         self._run_script(cmd)
@@ -295,8 +297,10 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         self.ensure_state(VmState.STOPPED)
         self._do_vm("Remove")
         wait_for(
-            lambda: not self.exists, delay=5, timeout="3m",
-            message="vm {} to not exist".format(self._log_str)
+            lambda: not self.exists,
+            delay=5,
+            timeout="3m",
+            message=f"vm {self._log_str} to not exist",
         )
         return True
 
@@ -306,11 +310,13 @@ class SCVirtualMachine(Vm, _LogStrMixin):
     def rename(self, name):
         self.logger.info(" Renaming SCVMM VM '%s' to '%s'", self._log_str, name)
         self.ensure_state(VmState.STOPPED)
-        self._do_vm("Set", "-Name {}".format(name))
-        old_name = self.raw['Name']
+        self._do_vm("Set", f"-Name {name}")
+        old_name = self.raw["Name"]
         wait_for(
-            lambda: self.refresh(read_from_hyperv=True) and self.name != old_name, delay=5,
-            timeout="3m", message="vm {} to change names".format(self._log_str)
+            lambda: self.refresh(read_from_hyperv=True) and self.name != old_name,
+            delay=5,
+            timeout="3m",
+            message=f"vm {self._log_str} to change names",
         )
         return True
 
@@ -320,9 +326,11 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $vm_new = Get-SCVirtualMachine -ID "{src_vm}" -VMMServer $scvmm_server
             $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
             New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}"
-        """.format(vm_name=vm_name, src_vm=self._id, vm_host=vm_host, path=path)
+        """.format(
+            vm_name=vm_name, src_vm=self._id, vm_host=vm_host, path=path
+        )
         if start_vm:
-            script = "{} -StartVM".format(script)
+            script = f"{script} -StartVM"
         self._run_script(script)
         return SCVirtualMachine(system=self.system, name=vm_name)
 
@@ -335,27 +343,32 @@ class SCVirtualMachine(Vm, _LogStrMixin):
                 Get-VM -Id {h_id} | Enable-VMIntegrationService -Name 'Guest Service Interface' }}
             Read-SCVirtualMachine -VM $vm
         """.format(
-            dom=self.system.domain, user=self.system.user,
-            password=self.system.password, scvmm_vm_id=self._id, h_id=self.vmid
+            dom=self.system.domain,
+            user=self.system.user,
+            password=self.system.password,
+            scvmm_vm_id=self._id,
+            h_id=self.vmid,
         )
         self.system.run_script(script)
 
     def create_snapshot(self, check_type="Standard"):
-        """ Create a snapshot of a VM, set checkpoint type to standard by default. """
+        """Create a snapshot of a VM, set checkpoint type to standard by default."""
         self.set_checkpoint_type(check_type=check_type)
         self.logger.info("Creating a checkpoint/snapshot of VM '%s'", self.name)
         script = """
             $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
             New-SCVMCheckpoint -VM $vm
-        """.format(scvmm_vm_id=self._id)
+        """.format(
+            scvmm_vm_id=self._id
+        )
         self.system.run_script(script)
 
     def set_checkpoint_type(self, check_type="Standard"):
-        """ Set the checkpoint type of a VM, check_type must be one of ALLOW_CHECK_TYPES """
+        """Set the checkpoint type of a VM, check_type must be one of ALLOW_CHECK_TYPES"""
         self.logger.info("Setting checkpoint type to %s for VM '%s'", check_type, self.name)
 
         if check_type not in self.ALLOWED_CHECK_TYPES:
-            raise NameError("checkpoint type '{}' not understood".format(check_type))
+            raise NameError(f"checkpoint type '{check_type}' not understood")
 
         script = """
             $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
@@ -370,17 +383,14 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             password=self.system.password,
             scvmm_vm_id=self._id,
             h_id=self.vmid,
-            check_type=check_type
+            check_type=check_type,
         )
         self.system.run_script(script)
 
     def get_hardware_configuration(self):
         self.refresh(read_from_hyperv=True)
-        data = {'mem': self.raw['Memory'], 'cpu': self.raw['CPUCount']}
-        return {
-            key: str(val) if isinstance(val, str) else val
-            for key, val in data.items()
-        }
+        data = {"mem": self.raw["Memory"], "cpu": self.raw["CPUCount"]}
+        return {key: str(val) if isinstance(val, str) else val for key, val in data.items()}
 
     def disconnect_dvd_drives(self):
         number_dvds_disconnected = 0
@@ -389,25 +399,28 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $DVDDrives = Get-SCVirtualDVDDrive -VM $VM
             foreach ($drive in $DVDDrives) {{$drive | Remove-SCVirtualDVDDrivce}}
             Write-Host "number_dvds_disconnected: " + $DVDDrives.length
-        """.format(self._id)
+        """.format(
+            self._id
+        )
         output = self._run_script(script)
         output = output.splitlines()
         num_removed_line = [line for line in output if "number_dvds_disconnected:" in line]
         if num_removed_line:
             number_dvds_disconnected = int(
-                num_removed_line[0].split('number_dvds_disconnected:')[1].replace(" ", "")
+                num_removed_line[0].split("number_dvds_disconnected:")[1].replace(" ", "")
             )
         return number_dvds_disconnected
 
     def mark_as_template(self, library_server, library_share, template_name=None, **kwargs):
         # Converts an existing VM into a template.  VM no longer exists afterwards.
-        name = template_name or self.raw['Name']
+        name = template_name or self.raw["Name"]
         script = """
             $VM = Get-SCVirtualMachine -ID \"{id}\" -VMMServer $scvmm_server
             New-SCVMTemplate -Name \"{name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
-        """.format(id=self._id, name=name, ls=library_server, lp=library_share)
-        self.logger.info(
-            "Creating SCVMM Template '%s' from VM '%s'", name, self._log_str)
+        """.format(
+            id=self._id, name=name, ls=library_server, lp=library_share
+        )
+        self.logger.info("Creating SCVMM Template '%s' from VM '%s'", name, self._log_str)
         self._run_script(script)
         self.system.update_scvmm_library()
         return self.system.get_template(name=name)
@@ -423,8 +436,8 @@ class SCVMTemplate(Template, _LogStrMixin):
             raw: raw json (as dict) for the template returned by the API
             id: uuid of template (the 'ID' property on the template)
         """
-        super(SCVMTemplate, self).__init__(system, raw, **kwargs)
-        self._id = raw['ID'] if raw else kwargs.get('id')
+        super().__init__(system, raw, **kwargs)
+        self._id = raw["ID"] if raw else kwargs.get("id")
         if not self._id:
             raise ValueError("missing required kwarg: 'id'")
         self._run_script = self.system.run_script
@@ -432,11 +445,11 @@ class SCVMTemplate(Template, _LogStrMixin):
 
     @property
     def _identifying_attrs(self):
-        return {'id': self._id}
+        return {"id": self._id}
 
     @property
     def name(self):
-        return self.raw['Name']
+        return self.raw["Name"]
 
     @property
     def uuid(self):
@@ -449,7 +462,7 @@ class SCVMTemplate(Template, _LogStrMixin):
         Returns:
             dict of raw template json
         """
-        script = 'Get-SCVMTemplate -ID \"{}\" -VMMServer $scvmm_server'
+        script = 'Get-SCVMTemplate -ID "{}" -VMMServer $scvmm_server'
         try:
             data = self._get_json(script.format(self._id))
         except SCVMMSystem.PowerShellScriptError as error:
@@ -470,16 +483,20 @@ class SCVMTemplate(Template, _LogStrMixin):
             $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
             Update-SCVMConfiguration -VMConfiguration $vmc
             New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
-        """.format(id=self._id, vm_name=vm_name, host_group=host_group)
+        """.format(
+            id=self._id, vm_name=vm_name, host_group=host_group
+        )
         if kwargs:
             self.logger.warn("deploy() ignored kwargs: %s", kwargs)
         if vm_cpu:
-            script += " -CPUCount '{vm_cpu}'".format(vm_cpu=vm_cpu)
+            script += f" -CPUCount '{vm_cpu}'"
         if vm_ram:
-            script += " -MemoryMB '{vm_ram}'".format(vm_ram=vm_ram)
+            script += f" -MemoryMB '{vm_ram}'"
         self.logger.info(
             " Deploying SCVMM VM '%s' from template '%s' on host group '%s'",
-            vm_name, self._log_str, host_group
+            vm_name,
+            self._log_str,
+            host_group,
         )
         self._run_script(script)
 
@@ -493,7 +510,9 @@ class SCVMTemplate(Template, _LogStrMixin):
         script = """
             $Template = Get-SCVMTemplate -ID \"{id}\" -VMMServer $scvmm_server
             Remove-SCVMTemplate -VMTemplate $Template -Force
-        """.format(id=self._id)
+        """.format(
+            id=self._id
+        )
         self.logger.info("Removing SCVMM VM Template '%s'", self._log_str)
         self._run_script(script)
         self.system.update_scvmm_library()
@@ -510,16 +529,17 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
     It still has some drawback, the main one is that pywinrm does not support domains with simple
     auth mode so I have to do the connection manually in the script which seems to be VERY slow.
     """
+
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms()),
-        'num_template': lambda self: len(self.list_templates()),
+        "num_vm": lambda self: len(self.list_vms()),
+        "num_template": lambda self: len(self.list_templates()),
     }
 
     can_suspend = True
     can_pause = False
 
     def __init__(self, **kwargs):
-        super(SCVMMSystem, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.host = kwargs["hostname"]
         self.port = kwargs.get("winrm_port", 5985)
         self.scheme = kwargs.get("winrm_scheme", "http")
@@ -529,14 +549,14 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         self.domain = kwargs["domain"]
         self.provisioning = kwargs["provisioning"]
         self.api = winrm.Session(
-            '{scheme}://{host}:{port}'.format(scheme=self.scheme, host=self.host, port=self.port),
+            f"{self.scheme}://{self.host}:{self.port}",
             auth=(self.user, self.password),
-            server_cert_validation='validate' if self.winrm_validate_ssl_cert else 'ignore',
+            server_cert_validation="validate" if self.winrm_validate_ssl_cert else "ignore",
         )
 
     @property
     def _identifying_attrs(self):
-        return {'hostname': self.host}
+        return {"hostname": self.host}
 
     @property
     def can_suspend(self):
@@ -554,11 +574,15 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         we need to create our own authentication object (PSCredential) which will provide the
         domain. Then it works. Big drawback is speed of this solution.
         """
-        return dedent("""
+        return dedent(
+            """
         $secpasswd = ConvertTo-SecureString "{}" -AsPlainText -Force
         $mycreds = New-Object System.Management.Automation.PSCredential ("{}\\{}", $secpasswd)
         $scvmm_server = Get-SCVMMServer -Computername localhost -Credential $mycreds
-        """.format(self.password, self.domain, self.user))
+        """.format(
+                self.password, self.domain, self.user
+            )
+        )
 
     @cached_property
     def timezone(self):
@@ -578,26 +602,27 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
 
         def _raise_for_result(result):
             raise self.PowerShellScriptError(
-                "Script returned {}!: {}"
-                .format(result.status_code, result.std_err)
+                f"Script returned {result.status_code}!: {result.std_err}"
             )
 
         # Add retries for error id 1600
         num_tries = 6
         sleep_time = 10
         for attempt in range(1, num_tries + 1):
-            self.logger.debug(' Running PowerShell script:\n%s\n', script)
-            result = self.api.run_ps("{}\n\n{}".format(self.pre_script, script))
+            self.logger.debug(" Running PowerShell script:\n%s\n", script)
+            result = self.api.run_ps(f"{self.pre_script}\n\n{script}")
             if result.status_code == 0:
                 break
-            elif hasattr(result, 'std_err') and 'Error ID: 1600' in result.std_err:
+            elif hasattr(result, "std_err") and "Error ID: 1600" in result.std_err:
                 if attempt == num_tries:
                     self.logger.error("Retried %d times, giving up", num_tries)
                     _raise_for_result(result)
 
                 self.logger.warning(
                     "Hit scvmm error 1600 running script, waiting %d sec... (%d/%d)",
-                    sleep_time, attempt, num_tries
+                    sleep_time,
+                    attempt,
+                    num_tries,
                 )
                 time.sleep(sleep_time)
             else:
@@ -613,8 +638,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """
         Run script and parse output as json
         """
-        result = self.run_script(
-            "{} | ConvertTo-Json -Compress -Depth {}".format(script, depth))
+        result = self.run_script(f"{script} | ConvertTo-Json -Compress -Depth {depth}")
         if not result:
             return None
         try:
@@ -627,7 +651,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         raise NotImplementedError
 
     def list_vms(self):
-        vm_list = self.get_json('Get-SCVirtualMachine -All -VMMServer $scvmm_server')
+        vm_list = self.get_json("Get-SCVirtualMachine -All -VMMServer $scvmm_server")
         return [SCVirtualMachine(system=self, raw=vm) for vm in vm_list]
 
     def find_vms(self, name):
@@ -636,8 +660,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
 
         Returns a list of SCVirtualMachine objects matching this name.
         """
-        script = (
-            'Get-SCVirtualMachine -Name \"{}\" -VMMServer $scvmm_server')
+        script = 'Get-SCVirtualMachine -Name "{}" -VMMServer $scvmm_server'
         data = self.get_json(script.format(name))
         # Check if the data returned to us was a list or 1 dict. Always return a list
         if not data:
@@ -655,9 +678,9 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """
         matches = self.find_vms(name=vm_name)
         if not matches:
-            raise VMInstanceNotFound('vm with name {}'.format(vm_name))
+            raise VMInstanceNotFound(f"vm with name {vm_name}")
         if len(matches) > 1:
-            raise MultipleItemsError('multiple VMs with name {}'.format(vm_name))
+            raise MultipleItemsError(f"multiple VMs with name {vm_name}")
         return matches[0]
 
     def list_templates(self):
@@ -670,8 +693,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
 
         Returns a list of SCVMTemplate objects matching this name.
         """
-        script = (
-            'Get-SCVMTemplate -Name \"{}\" -VMMServer $scvmm_server')
+        script = 'Get-SCVMTemplate -Name "{}" -VMMServer $scvmm_server'
         data = self.get_json(script.format(name))
         # Check if the data returned to us was a list or 1 dict. Always return a list
         if not data:
@@ -689,9 +711,9 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """
         matches = self.find_templates(name=name)
         if not matches:
-            raise ImageNotFoundError('template with name {}'.format(name))
+            raise ImageNotFoundError(f"template with name {name}")
         if len(matches) > 1:
-            raise MultipleItemsError('multiple templates with name {}'.format(name))
+            raise MultipleItemsError(f"multiple templates with name {name}")
         return matches[0]
 
     def create_template(self, **kwargs):
@@ -701,29 +723,29 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         """
         Return names for an arbitrary item type
         """
-        data = self.get_json('Get-{} -VMMServer $scvmm_server'.format(item_type))
+        data = self.get_json(f"Get-{item_type} -VMMServer $scvmm_server")
         if data:
-            return [item['Name'] for item in data] if isinstance(data, list) else [data["Name"]]
+            return [item["Name"] for item in data] if isinstance(data, list) else [data["Name"]]
         else:
             return None
 
     def list_clusters(self, **kwargs):
         """List all clusters' names."""
-        return self._get_names('SCVMHostCluster')
+        return self._get_names("SCVMHostCluster")
 
     def list_networks(self):
         """List all networks' names."""
-        return self._get_names('SCLogicalNetwork')
+        return self._get_names("SCLogicalNetwork")
 
     def list_host(self, **kwargs):
-        return self._get_names('SCVMHost')
+        return self._get_names("SCVMHost")
 
     def list_vhds(self, **kwargs):
-        """ List all VHD names."""
+        """List all VHD names."""
         return self._get_names("SCVirtualHardDisk")
 
     def info(self):
-        return "SCVMMSystem host={}".format(self.host)
+        return f"SCVMMSystem host={self.host}"
 
     def disconnect(self):
         pass
@@ -734,29 +756,35 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $lib = Get-SCLibraryShare
             Read-SCLibraryShare -LibraryShare $lib[0] -Path {path} -RunAsynchronously
-        """.format(path=path)
+        """.format(
+            path=path
+        )
         self.run_script(script)
 
     def unzip_archive(self, path, dest):
-        """ Unzips an archive file (Expand-Archive doesn't work for PowerShell < 5)"""
+        """Unzips an archive file (Expand-Archive doesn't work for PowerShell < 5)"""
         self.logger.info(f"Unzipping {path} into {dest}")
         script = """
             $path = "{path}"
             $dest = "{dest}"
             Add-Type -assembly "system.io.compression.filesystem"
             [io.compression.zipfile]::ExtractToDirectory($path, $dest)
-        """.format(path=path, dest=dest)
+        """.format(
+            path=path, dest=dest
+        )
         self.run_script(script)
 
     def download_file(self, url, name, dest="L:\\Library\\VHDs\\", unzip=False):
-        """ Downloads a file given a URL into the SCVMM library (or any dest) """
-        self.logger.info("Downloading file {} from url into: {}".format(name, dest))
+        """Downloads a file given a URL into the SCVMM library (or any dest)"""
+        self.logger.info(f"Downloading file {name} from url into: {dest}")
         script = """
             $url = "{url}"
             $output = "{dest}{name}"
             $wc = New-Object System.Net.WebClient
             $wc.DownloadFile($url, $output)
-        """.format(url=url, name=name, dest=dest)
+        """.format(
+            url=url, name=name, dest=dest
+        )
         self.run_script(script)
         if unzip:
             self.unzip_archive(f"{dest}{name}", dest)
@@ -764,30 +792,36 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         self.update_scvmm_library(dest)
 
     def delete_file(self, name, dest="L:\\Library\\VHDs\\"):
-        """ Deletes a file from the SCVMM library """
-        self.logger.info("Deleting file {} from: {}".format(name, dest))
+        """Deletes a file from the SCVMM library"""
+        self.logger.info(f"Deleting file {name} from: {dest}")
         script = """
             $fname = "{dest}{name}"
             Remove-Item -Path $fname
-        """.format(name=name, dest=dest)
+        """.format(
+            name=name, dest=dest
+        )
         self.run_script(script)
         self.update_scvmm_library(dest)
 
     def delete_app_package(self, name):
-        self.logger.info("Deleting application package: {}".format(name))
+        self.logger.info(f"Deleting application package: {name}")
         script = """
             $app_package = Get-SCApplicationPackage -Name "{}"
             Remove-SCApplicationPackage -ApplicationPackage $app_package
-        """.format(name)
+        """.format(
+            name
+        )
         self.run_script(script)
 
     def delete_vhd(self, name):
-        """ Deletes a vhd or vhdx file """
-        self.logger.info("Removing the vhd {} from the library".format(name))
+        """Deletes a vhd or vhdx file"""
+        self.logger.info(f"Removing the vhd {name} from the library")
         script = """
             $vhd = Get-SCVirtualHardDisk -Name "{}"
             Remove-SCVirtualHardDisk -VirtualHardDisk $vhd
-        """.format(name)
+        """.format(
+            name
+        )
         self.run_script(script)
 
     class PowerShellScriptError(Exception):

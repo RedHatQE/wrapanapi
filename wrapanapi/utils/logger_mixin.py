@@ -5,7 +5,7 @@ Contains utils used by the base classes
 import logging
 
 
-class LoggerMixin(object):
+class LoggerMixin:
     @property
     def logger(self):
         """
@@ -17,10 +17,7 @@ class LoggerMixin(object):
         """
         if not hasattr(self, "_logger"):
             self._logger = logging.getLogger(
-                "{}.{}".format(
-                    self.__class__.__module__,
-                    self.__class__.__name__
-                )
+                f"{self.__class__.__module__}.{self.__class__.__name__}"
             )
         return self._logger
 
@@ -37,17 +34,11 @@ class LoggerMixin(object):
         else:
             # Basic check to make sure 'value' is some kind of logger
             # (not necessarily a logging.Logger)
-            expected_attrs = [
-                'info', 'warning', 'critical', 'error',
-                'trace', 'debug', 'exception'
-            ]
+            expected_attrs = ["info", "warning", "critical", "error", "trace", "debug", "exception"]
             callable_attrs_present = (
                 hasattr(value, a) and callable(value.a) for a in expected_attrs
             )
 
             if not all(callable_attrs_present):
-                raise ValueError(
-                    "missing one of expected logger methods: {}"
-                    .format(expected_attrs)
-                )
+                raise ValueError(f"missing one of expected logger methods: {expected_attrs}")
             self._logger = value
