@@ -35,11 +35,5 @@ jobs:
           pip install --compile --no-cache-dir pycurl
           pip install -U -e .[test]
 
-      # coming soon
-      #- name: Pre Commit Checks
-      #  uses: pre-commit/action@v3.0.0
-      #  with:
-      #    extra_args: --show-diff-on-failure
-
       - name: Run Unit Tests
         run: py.test tests/ -v --cov wrapanapi
