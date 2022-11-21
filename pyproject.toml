@@ -35,6 +35,7 @@ keywords = [
     "hatch",
     "hyperscaler",
     "api",
+    "cloud",
 ]
 dependencies = [
     "azure-storage-common>=1.0",
