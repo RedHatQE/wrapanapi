@@ -1,0 +1,85 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/wrapanapi",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "/wrapanapi",
+]
+
+[project.urls]
+"Source" = "https://github.com/RedHatQE/wrapanapi"
+
+[project]
+name = "wrapanapi"
+dynamic = ["version"]
+readme = "README.rst"
+license-files = { paths = ["LICENSE"] }
+authors = [
+    { name = "Peter Savage" },
+]
+maintainers = [
+    { name = "Jitendra Yejare" },
+    { name = "Mike Shriver" },
+]
+keywords = [
+    "distutils",
+    "hatch",
+    "hyperscaler",
+    "api",
+    "cloud",
+]
+dependencies = [
+    "azure-storage-common>=1.0",
+    "azure<5.0.0",
+    "boto",
+    "boto3",
+    "botocore",
+    "cached_property",
+    "dateparser",
+    "fauxfactory",
+    "google-api-python-client",
+    "google-compute-engine",
+    "inflection",
+    "lxml",
+    "miq-version",
+    "oauth2client",
+    "openshift==0.3.4",
+    "ovirt-engine-sdk-python~=4.3",
+    "packaging",
+    "py3winrm==0.0.1",
+    "python-cinderclient",
+    "python-glanceclient",
+    "python-heatclient",
+    "python-ironicclient",
+    "python-keystoneclient",
+    "python-neutronclient==6.12.0",
+    "python-novaclient==7.1.2",
+    "python-swiftclient",
+    "pyvcloud==19.1.2",
+    "pyvmomi>=6.5.0.2017.5.post1",
+    "redfish-client==0.1.0",
+    "requests",
+    "tzlocal",
+    "vspk==5.3.2",
+    "wait_for",
+    "websocket_client",
+]
+
+[project.optional-dependencies]
+test = [
+    "mock",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-variables",
+    "coveralls",
+]

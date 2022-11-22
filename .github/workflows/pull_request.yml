@@ -30,14 +30,16 @@ jobs:
           sudo apt-get install -y libgnutls28-dev libcurl4-openssl-dev libssl-dev
           # Uninstall pycurl - its likely not installed, but in case the ubuntu-latest packages change
           # then compile and install it with PYCURL_SSL_LIBRARY set to openssl
-          pip install -U pip
+          pip install -U pip wheel
           pip uninstall -y pycurl
           pip install --compile --no-cache-dir pycurl
-          pip install -Ur requirements-test.txt --upgrade-strategy eager
+          pip install -U -e .[test]
+
+      # coming soon
+      #- name: Pre Commit Checks
+      #  uses: pre-commit/action@v3.0.0
+      #  with:
+      #    extra_args: --show-diff-on-failure
 
       - name: Run Unit Tests
         run: py.test tests/ -v --cov wrapanapi
-
-      - name: Analysis (git diff)
-        if: failure()
-        run: git diff
