@@ -581,11 +581,13 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     def create_vm(self):
         raise NotImplementedError
 
-    def list_templates(self, include_public=False):
+    def list_templates(self, include_public=False, project_list=None):
         images = self._compute.images()
         results = []
         projects = [self._project]
-        if include_public:
+        if project_list and include_public:
+            projects.extend(project_list)
+        elif include_public:
             projects.extend(IMAGE_PROJECTS)
         for project in projects:
             results.extend(
