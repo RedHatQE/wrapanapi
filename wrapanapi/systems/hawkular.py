@@ -235,9 +235,9 @@ class HawkularSystem(System):
         return cls(**kwargs)
 
     def _metrics_older(self, metrics_version):
-        return version.parse(
-            self.metric._get("status")
-            ['Implementation-Version']) >= version.parse(metrics_version)
+        metrics_version = metrics_version.rstrip('.Final')
+        status_version = self.metric._get("status")['Implementation-Version'].rstrip('.Final')
+        return version.parse(status_version) > version.parse(metrics_version)
 
     def info(self):
         raise NotImplementedError('info not implemented.')
