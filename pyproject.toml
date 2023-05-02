@@ -64,7 +64,7 @@ dependencies = [
     "python-neutronclient==6.12.0",
     "python-novaclient==7.1.2",
     "python-swiftclient",
-    "pyvcloud==19.1.2",
+    "pyvcloud==23.0.4",
     "pyvmomi>=6.5.0.2017.5.post1",
     "redfish-client==0.1.0",
     "requests",
