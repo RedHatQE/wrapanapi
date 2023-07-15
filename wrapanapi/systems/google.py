@@ -581,7 +581,28 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     def create_vm(self):
         raise NotImplementedError
 
-    def list_templates(self, include_public=False, public_projects=None):
+    def _list_templates(
+        self,
+        include_public=False,
+        public_projects=None,
+        filter_expr="",
+        order_by=None,
+        max_results=None,
+    ):
+        """
+        List all templates in the GCE account.
+
+        This method is used by both list_templates and find_templates.
+
+        Args:
+            include_public: Include public images in search
+            public_projects: List of projects to search for public images
+            filter_expr: Filter expression to use in search
+            order_by: Order by expression
+            max_results: Maximum number of results to return
+        Returns:
+            List of GoogleCloudImage objects
+        """
         images = self._compute.images()
         results = []
         projects = [self._project]
@@ -593,10 +614,28 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         for project in projects:
             results.extend(
                 GoogleCloudImage(system=self, raw=image, project=project, name=image['name'])
-                for image in
-                images.list(project=project).execute().get('items', [])
+                for image in images.list(
+                    project=project,
+                    filter=filter_expr,
+                    orderBy=order_by,
+                    maxResults=max_results,
+                )
+                .execute()
+                .get("items", [])
             )
         return results
+
+    def list_templates(self, include_public=False, public_projects=None):
+        """
+        List images available.
+
+        Args:
+            include_public: Include public images in search
+            public_projects: List of projects to search for public images
+        Returns:
+            List of GoogleCloudImage objects
+        """
+        return self._list_templates(include_public=include_public, public_projects=public_projects)
 
     def get_template(self, name, project=None):
         if not project:
@@ -606,19 +645,47 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             return GoogleCloudImage(system=self, raw=image, project=project, name=name)
         except errors.HttpError as error:
             if error.resp.status == 404:
-                raise ImageNotFoundError("'{}' not found in project '{}'".format(name, project))
+                raise ImageNotFoundError(
+                    "'{}' not found in project '{}'".format(name, project)
+                )
             else:
                 raise
 
-    def find_templates(self, name, include_public=False):
+    def find_templates(
+        self,
+        name=None,
+        include_public=False,
+        public_projects=None,
+        filter_expr=None,
+        order_by=None,
+        max_results=None,
+    ):
         """
-        Find templates with 'name' in any project
+        Find templates with 'name' or by a 'filter_expr' in any project.
+
+        If both 'name' and 'filter_expr' are specified, 'name' is used and 'filter_expr' is ignored.
+
+        Args:
+            name: Name of the GoogleCloudImage to search for
+            include_public: Include public images in search
+            filter_expr: Filter expression to use in search
+            order_by: Order by expression
+            max_results: Maximum number of results to return
+        Returns:
+            List of GoogleCloudImage objects
         """
-        # TODO: Possibly expand this to truly "find" something using regex, filters, etc.
-        return [
-            image for image in self.list_templates(include_public=include_public)
-            if image.name == name
-        ]
+        if name:
+            filter_expr = f"name={name}"
+        elif not filter_expr:
+            raise ValueError("Either 'name' or 'filter_expr' must be specified")
+
+        return self._list_templates(
+            filter_expr=filter_expr,
+            include_public=include_public,
+            public_projects=public_projects,
+            order_by=order_by,
+            max_results=max_results,
+        )
 
     def create_template(self, name, bucket_url, timeout=360):
         """
