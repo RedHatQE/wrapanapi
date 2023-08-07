@@ -832,6 +832,35 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         return [EC2Image(system=self, raw=self.ec2_resource.Image(image["ImageId"]))
                 for image in images]
 
+    def list_free_images(self, image_list=None):
+        """
+        Returns images which don't have a VM associated to it
+
+        Args:
+            image_list (list): List of  ids of all images in resource group
+        """
+        free_images = []
+        vm_list = self.list_vms()
+
+        if not vm_list:
+            # No VMs using the images, images are free
+            return image_list
+
+        for vm in vm_list:
+            if vm.raw.image_id not in image_list:
+                free_images.append(vm.raw.image_id)
+        return free_images
+
+    def delete_images(self, image_list=None):
+        """
+        Deletes images by ID
+
+        Args:
+            image_list (list): ["imageID_1", "imageID_2"]
+        """
+        for image in image_list:
+            img=EC2Image(system=self, raw=self.ec2_resource.Image(image)).delete()
+
     def find_templates(self, name=None, id=None, executable_by_me=True, owned_by_me=True,
                        public=False, filters=None):
         """

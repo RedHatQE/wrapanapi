@@ -1077,6 +1077,42 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         return self.resource_client.resources.list(
             filter="resourceType eq 'Microsoft.Compute/images'")
 
+    def list_compute_images_by_resource_group(self, resource_group=None, free_images=None):
+        """
+        Args:
+            resource_group (str): Name of the resource group
+            free_images (bool): Whether to collect image which do not have any resource(VM) linked to it
+        """
+        resource_group = resource_group or self.resource_group
+        image_list = list(
+            self.resource_client.resources.list(
+                filter=f"resourceType eq 'Microsoft.Compute/images' and resourceGroup eq '{resource_group}'"
+            )
+        )
+
+        if not free_images:
+            return image_list
+
+        vm_list = self.list_vms(resource_group=resource_group)
+        if not vm_list:
+            return image_list
+
+        images_used_by_vm = []
+        for vm_name in vm_list:
+            images_used_by_vm.append(
+                self.compute_client.virtual_machines.get(
+                    resource_group_name=resource_group,
+                    vm_name=vm_name
+                ).storage_profile.image_reference.id
+            )
+
+        images_with_no_resources = []
+        for image in image_list:
+            if image.id not in images_used_by_vm:
+                images_with_no_resources.append(image)
+
+        return images_with_no_resources
+
     def list_all_image_names(self):
         blob_image_names = [item.name for item in self.find_templates()]
         compute_image_names = [item.name for item in self.list_compute_images()]
@@ -1129,6 +1165,21 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             self.logger.info("Attempt to remove Stack '%s' finished with status '%s'", stack,
                              result)
         return results
+
+    def delete_compute_image_by_resource_group(self, resource_group=None, image_list=None):
+        """
+        Delete compute images by resource group
+
+        :resource_group: (str) Name of the resource group. "FooBar"
+        :image_list: (list) List of images. ["imagename1", "imagename2", "imagename3"]
+        """
+        result = []
+        resource_group = resource_group or self.resource_group
+        for image in image_list:
+            self.logger.info("Deleting '%s' from '%s'", image, resource_group)
+            response = self.compute_client.images.delete(resource_group_name=resource_group, image_name=image)
+            result.append((image, response))
+        return result
 
     def list_stack_resources(self, stack_name, resource_group=None):
         self.logger.info("Checking Stack %s resources ", stack_name)
