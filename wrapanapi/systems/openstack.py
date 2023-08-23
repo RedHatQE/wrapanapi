@@ -632,7 +632,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                                password=self.password, project_name=self.tenant)
             if self.keystone_version == 3:
                 auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_name=self.domain_id))
+                                        project_domain_id=self.domain_id))
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
         return self._session
