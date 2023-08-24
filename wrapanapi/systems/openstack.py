@@ -632,7 +632,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                                password=self.password, project_name=self.tenant)
             if self.keystone_version == 3:
                 auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_name=self.domain_id))
+                                        project_domain_id=self.domain_id))
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
         return self._session
@@ -793,10 +793,10 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 break
         return lists
 
-    def list_vms(self, filter_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': True})
+    def list_vms(self, filter_tenants=True, all_tenants=True):
+        call = partial(self.api.servers.list, True, {'all_tenants': all_tenants})
         instances = self._generic_paginator(call)
-        if filter_tenants:
+        if filter_tenants and all_tenants:
             # Filter instances based on their tenant ID
             # needed for CFME 5.3 and higher
             tenants = self._get_tenants()
@@ -804,7 +804,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             instances = [i for i in instances if i.tenant_id in ids]
         return [OpenstackInstance(system=self, uuid=i.id, raw=i) for i in instances]
 
-    def find_vms(self, name=None, id=None, ip=None):
+    def find_vms(self, name=None, id=None, ip=None, all_tenants=True):
         """
         Find VM based on name OR IP OR ID
 
@@ -826,7 +826,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if not any((name, ip, id)):
             raise ValueError("Any of these parameters must be specified: name, ip, or id")
         matches = []
-        instances = self.list_vms()
+        instances = self.list_vms(all_tenants=all_tenants)
         for instance in instances:
             # Use 'instance.raw' below so we don't refresh the properties, since we
             # *just* pulled down this list of VMs and stored the raw data in list_vms()
@@ -840,7 +840,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 matches.append(instance)
         return matches
 
-    def get_vm(self, name=None, id=None, ip=None):
+    def get_vm(self, name=None, id=None, ip=None, all_tenants=True):
         """
         Get a VM based on name, or ID, or IP
 
@@ -862,7 +862,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         kwargs = {'name': name, 'id': id, 'ip': ip}
         kwargs = {key: val for key, val in kwargs.items() if val is not None}
 
-        matches = self.find_vms(**kwargs)
+        matches = self.find_vms(**kwargs, all_tenants=all_tenants)
         if not matches:
             raise VMInstanceNotFound('match criteria: {}'.format(kwargs))
         elif len(matches) > 1:
