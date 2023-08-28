@@ -200,6 +200,7 @@ class Openshift(System):
         self.k_api = kubeclient.CoreV1Api(api_client=self.kapi_client)
         self.security_api = self.ociclient.SecurityOpenshiftIoV1Api(api_client=self.oapi_client)
         self.batch_api = self.kclient.BatchV1Api(api_client=self.kapi_client)  # for job api
+        self.custom_api = kubeclient.CustomObjectsApi(api_client=self.kapi_client)
 
     def info(self):
         url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
@@ -319,6 +320,40 @@ class Openshift(System):
                 statuses.append(status)
         # returns only the image registry name, without the port number in case of local registry
         return sorted(set([status.image.split('/')[0].split(':')[0] for status in statuses]))
+
+    def list_hive_cluster_deployments(self, namespace=None, clusterpool=None):
+        # get namespaces
+        namespaces = []
+        if namespace:
+            namespaces.append(namespace)
+        else:
+            list_ns = self.k_api.list_namespace().items
+            for ns in list_ns:
+                if clusterpool:
+                    ns_clusterpool = ns.metadata.labels.get('hive.openshift.io/cluster-pool-name')
+                    if clusterpool != ns_clusterpool:
+                        continue         
+                namespaces.append(ns.metadata.name)
+        # get cluster deployments
+        clusterdeployments = []
+        for ns in namespaces:
+            try:
+                result = self.custom_api.list_namespaced_custom_object(
+                    namespace=ns,
+                    group='hive.openshift.io',
+                    version='v1',
+                    plural='clusterdeployments'
+                )
+                for cd in list(result.items())[1][1]:
+                    if clusterpool:
+                        cd_clusterpool = cd.get('spec').get('clusterPoolRef').get('poolName')
+                        if clusterpool != cd_clusterpool:
+                            continue
+                    clusterdeployments.append(cd)
+            except:
+                # to some namespaces we do not have access
+                pass
+        return clusterdeployments
 
     def expose_db_ip(self, namespace):
         """Creates special service in appliance project (namespace) which makes internal appliance
