@@ -506,6 +506,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.ssm_connection = boto3client('ssm', **connection_kwargs)
         self.sns_connection = boto3client('sns', **connection_kwargs)
         self.cw_events_connection = boto3client('events', **connection_kwargs)
+        self.resourcegroupstaggingapi_connection = boto3client('resourcegroupstaggingapi', **connection_kwargs)
 
         self.kwargs = kwargs
 
@@ -1624,3 +1625,41 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.remove_all_unused_nics()
         self.remove_all_unused_volumes()
         self.remove_all_unused_ips()
+
+    def list_ocps(self):
+        """
+        List openshift clusters (name, metadata, resources) where metadata can be used for uninstalling the cluster
+        """
+        ocp_list = []
+        resources = self.resourcegroupstaggingapi_connection.get_resources()["ResourceTagMappingList"]
+        for resource in resources:
+            tags = resource["Tags"]
+            for tag in tags:
+                key = tag["Key"]
+                if key.startswith("kubernetes.io/cluster/"):
+                    ocp = None
+                    ocp_name = key[22:]
+                    for ocp_item in ocp_list:
+                        if ocp_item["name"] == ocp_name:
+                            ocp = ocp_item
+                            break
+                    if not ocp:
+                        ocp = {
+                            "name": ocp_name,
+                            "metadata": {
+                                "clusterName": ocp_name,
+                                "infraID": ocp_name,
+                                "aws": {
+                                    "region": self._region_name,
+                                    "identifier": [
+                                        {
+                                            "kubernetes.io/cluster/" + ocp_name: "owned"
+                                        }
+                                    ]
+                                }
+                            },
+                            "resources": []
+                        }
+                        ocp_list.append(ocp)
+                    ocp["resources"].append(resource)
+        return ocp_list
