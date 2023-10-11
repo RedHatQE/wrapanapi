@@ -1,27 +1,29 @@
-# coding: utf-8
 """
 Defines System and Entity classes related to the Google Cloud platform
 """
-
 import os
 import random
 import time
-
-from oauth2client.service_account import ServiceAccountCredentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from googleapiclient import errors
 from json import dumps as json_dumps
 
 import httplib2
 import iso8601
 import pytz
+from googleapiclient import errors
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
-from wrapanapi.entities import (Instance, Template, TemplateMixin, VmMixin,
-                                VmState)
-from wrapanapi.exceptions import (ImageNotFoundError, MultipleInstancesError,
-                                  NotFoundError, VMInstanceNotFound)
+from wrapanapi.entities import Instance
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
+from wrapanapi.exceptions import ImageNotFoundError
+from wrapanapi.exceptions import MultipleInstancesError
+from wrapanapi.exceptions import NotFoundError
+from wrapanapi.exceptions import VMInstanceNotFound
 from wrapanapi.systems.base import System
 
 # Retry transport and file IO errors.
@@ -31,21 +33,30 @@ NUM_RETRIES = 5
 # Number of bytes to send/receive in each request.
 CHUNKSIZE = 2 * 1024 * 1024
 # Mimetype to use if one can't be guessed from the file extension.
-DEFAULT_MIMETYPE = 'application/octet-stream'
+DEFAULT_MIMETYPE = "application/octet-stream"
 
 # List of image projects which gce provided from the box. Could be extend in the future and
 # will have impact on total number of templates/images
-IMAGE_PROJECTS = ['centos-cloud', 'debian-cloud', 'rhel-cloud', 'suse-cloud', 'ubuntu-os-cloud',
-                  'windows-cloud', 'opensuse-cloud', 'coreos-cloud', 'google-containers']
+IMAGE_PROJECTS = [
+    "centos-cloud",
+    "debian-cloud",
+    "rhel-cloud",
+    "suse-cloud",
+    "ubuntu-os-cloud",
+    "windows-cloud",
+    "opensuse-cloud",
+    "coreos-cloud",
+    "google-containers",
+]
 
 
 class GoogleCloudInstance(Instance):
     state_map = {
-        'PROVISIONING': VmState.STARTING,
-        'STAGING': VmState.STARTING,
-        'STOPPING': VmState.STOPPING,
-        'RUNNING': VmState.RUNNING,
-        'TERMINATED': VmState.STOPPED,
+        "PROVISIONING": VmState.STARTING,
+        "STAGING": VmState.STARTING,
+        "STOPPING": VmState.STOPPING,
+        "RUNNING": VmState.RUNNING,
+        "TERMINATED": VmState.STOPPED,
     }
 
     def __init__(self, system, raw=None, **kwargs):
@@ -58,23 +69,23 @@ class GoogleCloudInstance(Instance):
             name: the name of the VM
             zone: the zone of the VM
         """
-        self._name = raw['name'] if raw else kwargs.get('name')
-        self._zone = raw['zone'].split('/')[-1] if raw else kwargs.get('zone')
+        self._name = raw["name"] if raw else kwargs.get("name")
+        self._zone = raw["zone"].split("/")[-1] if raw else kwargs.get("zone")
         if not self._name or not self._zone:
             raise ValueError("missing required kwargs: 'name' and 'zone'")
 
-        super(GoogleCloudInstance, self).__init__(system, raw, **kwargs)
+        super().__init__(system, raw, **kwargs)
 
         self._project = self.system._project
         self._api = self.system._compute.instances()
 
     @property
     def _identifying_attrs(self):
-        return {'name': self._name, 'zone': self._zone, 'project': self._project}
+        return {"name": self._name, "zone": self._zone, "project": self._project}
 
     @property
     def uuid(self):
-        return self.raw['id']
+        return self.raw["id"]
 
     @property
     def name(self):
@@ -87,7 +98,8 @@ class GoogleCloudInstance(Instance):
     def refresh(self):
         try:
             self.raw = self._api.get(
-                project=self._project, zone=self._zone, instance=self._name).execute()
+                project=self._project, zone=self._zone, instance=self._name
+            ).execute()
         except errors.HttpError as error:
             if error.resp.status == 404:
                 raise VMInstanceNotFound(self._name)
@@ -97,13 +109,13 @@ class GoogleCloudInstance(Instance):
 
     def _get_state(self):
         self.refresh()
-        return self._api_state_to_vmstate(self.raw['status'])
+        return self._api_state_to_vmstate(self.raw["status"])
 
     @property
     def ip_internal(self):
         self.refresh()
         try:
-            return self.raw.get('networkInterfaces')[0].get('networkIP')
+            return self.raw.get("networkInterfaces")[0].get("networkIP")
         except IndexError:
             return None
 
@@ -111,14 +123,14 @@ class GoogleCloudInstance(Instance):
     def ip(self):
         self.refresh()
         try:
-            access_configs = self.raw.get('networkInterfaces', [{}])[0].get('accessConfigs', [])[0]
-            return access_configs.get('natIP')
+            access_configs = self.raw.get("networkInterfaces", [{}])[0].get("accessConfigs", [])[0]
+            return access_configs.get("natIP")
         except IndexError:
             return None
 
     @property
     def all_ips(self):
-        """ Wrapping self.ip and self.ip_internal to meet abstractproperty requirement
+        """Wrapping self.ip and self.ip_internal to meet abstractproperty requirement
 
         Returns: (list) the addresses assigned to the machine
         """
@@ -126,33 +138,37 @@ class GoogleCloudInstance(Instance):
 
     @property
     def type(self):
-        if self.raw.get('machineType', None):
-            return self.raw['machineType'].split('/')[-1]
+        if self.raw.get("machineType", None):
+            return self.raw["machineType"].split("/")[-1]
         return None
 
     @property
     def creation_time(self):
         self.refresh()
-        creation_time = iso8601.parse_date(self.raw['creationTimestamp'])
+        creation_time = iso8601.parse_date(self.raw["creationTimestamp"])
         return creation_time.astimezone(pytz.UTC)
 
     def delete(self, timeout=360):
         self.logger.info("Deleting Google Cloud instance '%s'", self.name)
         operation = self._api.delete(
-            project=self._project, zone=self.zone, instance=self.name).execute()
+            project=self._project, zone=self.zone, instance=self.name
+        ).execute()
 
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
-            num_sec=timeout, message="Delete {}".format(self.name)
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=timeout,
+            message=f"Delete {self.name}",
         )
 
         self.logger.info(
-            "DELETE request successful, waiting for instance '%s' to be removed...",
-            self.name
+            "DELETE request successful, waiting for instance '%s' to be removed...", self.name
         )
         wait_for(
-            lambda: not self.exists, delay=0.5, num_sec=timeout,
-            message=" instance '{}' to not exist".format(self.name)
+            lambda: not self.exists,
+            delay=0.5,
+            num_sec=timeout,
+            message=f" instance '{self.name}' to not exist",
         )
         return True
 
@@ -168,10 +184,12 @@ class GoogleCloudInstance(Instance):
     def stop(self):
         self.logger.info("Stopping Google Cloud instance '%s'", self.name)
         operation = self._api.stop(
-            project=self._project, zone=self.zone, instance=self.name).execute()
+            project=self._project, zone=self.zone, instance=self.name
+        ).execute()
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation['name']),
-            message="stop operation done {}".format(self.name), timeout=360
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            message=f"stop operation done {self.name}",
+            timeout=360,
         )
         self.wait_for_state(VmState.STOPPED)
         return True
@@ -179,10 +197,11 @@ class GoogleCloudInstance(Instance):
     def start(self):
         self.logger.info("Starting Google Cloud instance '%s'", self.name)
         operation = self._api.start(
-            project=self._project, zone=self.zone, instance=self.name).execute()
+            project=self._project, zone=self.zone, instance=self.name
+        ).execute()
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation['name']),
-            message="start operation done {}".format(self.name)
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            message=f"start operation done {self.name}",
         )
         self.wait_for_state(VmState.RUNNING)
         return True
@@ -195,33 +214,39 @@ class GoogleCloudInstance(Instance):
             project = self._project
 
         # Attach disk
-        disk_source = "/compute/v1/projects/{}/zones/{}/disks/{}".format(project, zone, disk_name)
-        attach_data = {'source': disk_source}
-        req = self._api.attachDisk(
-            project=project, zone=zone, instance=self.name, body=attach_data)
+        disk_source = f"/compute/v1/projects/{project}/zones/{zone}/disks/{disk_name}"
+        attach_data = {"source": disk_source}
+        req = self._api.attachDisk(project=project, zone=zone, instance=self.name, body=attach_data)
         operation = req.execute()
-        wait_for(lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
-            num_sec=120, message=" Attach {}".format(disk_name))
+        wait_for(
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=120,
+            message=f" Attach {disk_name}",
+        )
 
         # Get device name of this new disk
         self.refresh()
         device_name = None
-        for disk in self.raw['disks']:
-            if disk['source'].endswith(disk_source):
-                device_name = disk['deviceName']
+        for disk in self.raw["disks"]:
+            if disk["source"].endswith(disk_source):
+                device_name = disk["deviceName"]
 
-        self.logger.info('"Instance disks: %s', self.raw['disks'])
+        self.logger.info('"Instance disks: %s', self.raw["disks"])
         if not device_name:
             raise Exception("Unable to find deviceName for attached disk.")
 
         # Mark disk for auto-delete
         req = self._api.setDiskAutoDelete(
-            project=project, zone=zone, instance=self.name,
-            deviceName=device_name, autoDelete=True
+            project=project, zone=zone, instance=self.name, deviceName=device_name, autoDelete=True
         )
         operation = req.execute()
-        wait_for(lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
-            num_sec=120, message=" Set auto-delete {}".format(disk_name))
+        wait_for(
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=120,
+            message=f" Set auto-delete {disk_name}",
+        )
 
 
 class GoogleCloudImage(Template):
@@ -235,23 +260,23 @@ class GoogleCloudImage(Template):
             name: name of image
             project: project image is located in
         """
-        self._name = raw['name'] if raw else kwargs.get('name')
-        self._project = kwargs.get('project') or self.system._project
+        self._name = raw["name"] if raw else kwargs.get("name")
+        self._project = kwargs.get("project") or self.system._project
         if not self._name or not self._project:
             raise ValueError("missing required kwargs: 'name' and 'project'")
 
-        super(GoogleCloudImage, self).__init__(system, raw, **kwargs)
+        super().__init__(system, raw, **kwargs)
 
         self._api = self.system._compute.images()
         self._instances_api = self.system._compute.instances()
 
     @property
     def _identifying_attrs(self):
-        return {'name': self._name, 'project': self._project}
+        return {"name": self._name, "project": self._project}
 
     @property
     def uuid(self):
-        return self.raw['id']
+        return self.raw["id"]
 
     @property
     def name(self):
@@ -273,24 +298,36 @@ class GoogleCloudImage(Template):
 
     def delete(self, timeout=360):
         if self._project in IMAGE_PROJECTS:
-            raise ValueError('Public images cannot be deleted')
+            raise ValueError("Public images cannot be deleted")
 
         operation = self._api.delete(project=self._project, image=self.name).execute()
         wait_for(
-            lambda: self.system.is_global_operation_done(operation['name']), delay=0.5,
-            num_sec=timeout, message=" Deleting image {}".format(self.name)
+            lambda: self.system.is_global_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=timeout,
+            message=f" Deleting image {self.name}",
         )
         wait_for(
-            lambda: not self.exists, delay=0.5, num_sec=timeout,
-            message=" image '{}' to not exist".format(self.name)
+            lambda: not self.exists,
+            delay=0.5,
+            num_sec=timeout,
+            message=f" image '{self.name}' to not exist",
         )
         return True
 
     def cleanup(self):
         return self.delete()
 
-    def deploy(self, vm_name, zone=None, machine_type=None, ssh_key=None,
-               startup_script="#!/bin/bash", timeout=180, **kwargs):
+    def deploy(
+        self,
+        vm_name,
+        zone=None,
+        machine_type=None,
+        ssh_key=None,
+        startup_script="#!/bin/bash",
+        timeout=180,
+        **kwargs,
+    ):
         """
         Depoy an instance from this template
 
@@ -306,88 +343,89 @@ class GoogleCloudImage(Template):
         if kwargs:
             self.logger.warn("deploy() ignored kwargs: %s", kwargs)
 
-        template_link = self.raw['selfLink']
+        template_link = self.raw["selfLink"]
 
         instance_name = vm_name
         if not zone:
             zone = self.system._zone
         if not machine_type:
-            machine_type = 'n1-standard-1'
+            machine_type = "n1-standard-1"
 
-        full_machine_type = 'zones/{}/machineTypes/{}'.format(zone, machine_type)
+        full_machine_type = f"zones/{zone}/machineTypes/{machine_type}"
 
         self.logger.info("Creating instance '%s'", instance_name)
 
         config = {
-            'name': instance_name,
-            'machineType': full_machine_type,
-
+            "name": instance_name,
+            "machineType": full_machine_type,
             # Specify the boot disk and the image to use as a source.
-            'disks': [
+            "disks": [
                 {
-                    'boot': True,
-                    'autoDelete': True,
-                    'initializeParams': {
-                        'sourceImage': template_link,
-                    }
+                    "boot": True,
+                    "autoDelete": True,
+                    "initializeParams": {
+                        "sourceImage": template_link,
+                    },
                 }
             ],
-
             # Specify a network interface with NAT to access the public
             # internet.
-            'networkInterfaces': [{
-                'network': 'global/networks/default',
-                'accessConfigs': [
-                    {'type': 'ONE_TO_ONE_NAT', 'name': 'External NAT'}
-                ]
-            }],
-
+            "networkInterfaces": [
+                {
+                    "network": "global/networks/default",
+                    "accessConfigs": [{"type": "ONE_TO_ONE_NAT", "name": "External NAT"}],
+                }
+            ],
             # Allow the instance to access cloud storage and logging.
-            'serviceAccounts': [{
-                'email': 'default',
-                'scopes': [
-                    'https://www.googleapis.com/auth/devstorage.read_write',
-                    'https://www.googleapis.com/auth/logging.write'
-                ]
-            }],
-
+            "serviceAccounts": [
+                {
+                    "email": "default",
+                    "scopes": [
+                        "https://www.googleapis.com/auth/devstorage.read_write",
+                        "https://www.googleapis.com/auth/logging.write",
+                    ],
+                }
+            ],
             # Metadata is readable from the instance and allows you to
             # pass configuration from deployment scripts to instances.
-            'metadata': {
-                'items': [{
-                    # Startup script is automatically executed by the
-                    # instance upon startup.
-                    'key': 'startup-script',
-                    'value': startup_script
-                }, {
-                    # Every project has a default Cloud Storage bucket that's
-                    # the same name as the project.
-                    'key': 'bucket',
-                    'value': self._project
-                }]
+            "metadata": {
+                "items": [
+                    {
+                        # Startup script is automatically executed by the
+                        # instance upon startup.
+                        "key": "startup-script",
+                        "value": startup_script,
+                    },
+                    {
+                        # Every project has a default Cloud Storage bucket that's
+                        # the same name as the project.
+                        "key": "bucket",
+                        "value": self._project,
+                    },
+                ]
             },
-            'tags': {
-                'items': ['https-server']
-            }
+            "tags": {"items": ["https-server"]},
         }
 
         if ssh_key:
-            ssh_keys = {
-                'key': 'ssh-keys',
-                'value': ssh_key
-            }
-            config['metadata']['items'].append(ssh_keys)
+            ssh_keys = {"key": "ssh-keys", "value": ssh_key}
+            config["metadata"]["items"].append(ssh_keys)
 
         operation = self._instances_api.insert(
-            project=self._project, zone=zone, body=config).execute()
+            project=self._project, zone=zone, body=config
+        ).execute()
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation['name']), delay=0.5,
-            num_sec=timeout, message=" Create {}".format(instance_name)
+            lambda: self.system.is_zone_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=timeout,
+            message=f" Create {instance_name}",
         )
         instance = GoogleCloudInstance(system=self.system, name=instance_name, zone=zone)
         wait_for(
-            lambda: instance.in_steady_state, timeout=timeout,
-            delay=0.5, message="Instance {} to reach steady state".format(instance_name)
+            lambda: instance.in_steady_state,
+            timeout=timeout,
+            delay=0.5,
+            message=f"Instance {instance_name} to reach steady state",
         )
         return instance
 
@@ -397,68 +435,69 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     Client to Google Cloud Platform API
 
     """
+
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms()),
-        'num_template': lambda self: len(self.list_templates()),
+        "num_vm": lambda self: len(self.list_vms()),
+        "num_template": lambda self: len(self.list_templates()),
     }
 
     can_suspend = False
     can_pause = False
 
-    default_scope = ['https://www.googleapis.com/auth/cloud-platform']
+    default_scope = ["https://www.googleapis.com/auth/cloud-platform"]
 
     def __init__(self, project=None, zone=None, file_type=None, **kwargs):
         """
-            The last three argumets are optional and required only if you want
-            to use json or p12 files.
-            By default, we expecting that service_account arg contains service account data.
+        The last three argumets are optional and required only if you want
+        to use json or p12 files.
+        By default, we expecting that service_account arg contains service account data.
 
-            Args:
-                project: name of the project, so called project_id
-                zone: zone of cloud
-                service_account: service_account_content
+        Args:
+            project: name of the project, so called project_id
+            zone: zone of cloud
+            service_account: service_account_content
 
-                scope: compute engine, container engine, sqlservice end etc
-                cache_discovery: turn on cache discovery default off
-                file_path: path to json or p12 file
-                file_type: p12 or json
-                client_email: Require for p12 file
+            scope: compute engine, container engine, sqlservice end etc
+            cache_discovery: turn on cache discovery default off
+            file_path: path to json or p12 file
+            file_type: p12 or json
+            client_email: Require for p12 file
 
-            Returns: A :py:class:`GoogleCloudSystem` object.
+        Returns: A :py:class:`GoogleCloudSystem` object.
         """
-        super(GoogleCloudSystem, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self._project = project
         self._zone = zone
-        self._region = kwargs.get('region')
-        scope = kwargs.get('scope', self.default_scope)
+        self._region = kwargs.get("region")
+        scope = kwargs.get("scope", self.default_scope)
         cache_discovery = kwargs.get("cache_discovery", False)
 
-        if 'service_account' in kwargs:
-            service_account = kwargs.get('service_account').copy()
-            service_account['private_key'] = service_account['private_key'].replace('\\n', '\n')
-            service_account['type'] = service_account.get('type', 'service_account')  # default it
-            credentials = ServiceAccountCredentials.from_json_keyfile_dict(service_account,
-                                                                           scopes=scope)
-        elif file_type == 'json':
-            file_path = kwargs.get('file_path', None)
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(file_path,
-                                                                           scopes=scope)
-        elif file_type == 'p12':
-            file_path = kwargs.get('file_path', None)
-            client_email = kwargs.get('client_email', None)
-            credentials = ServiceAccountCredentials.from_p12_keyfile(client_email,
-                                                                     file_path,
-                                                                     scopes=scope)
+        if "service_account" in kwargs:
+            service_account = kwargs.get("service_account").copy()
+            service_account["private_key"] = service_account["private_key"].replace("\\n", "\n")
+            service_account["type"] = service_account.get("type", "service_account")  # default it
+            credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+                service_account, scopes=scope
+            )
+        elif file_type == "json":
+            file_path = kwargs.get("file_path", None)
+            credentials = ServiceAccountCredentials.from_json_keyfile_name(file_path, scopes=scope)
+        elif file_type == "p12":
+            file_path = kwargs.get("file_path", None)
+            client_email = kwargs.get("client_email", None)
+            credentials = ServiceAccountCredentials.from_p12_keyfile(
+                client_email, file_path, scopes=scope
+            )
         http_auth = credentials.authorize(httplib2.Http())
-        self._compute = build('compute', 'v1', http=http_auth, cache_discovery=cache_discovery)
-        self._storage = build('storage', 'v1', http=http_auth, cache_discovery=cache_discovery)
+        self._compute = build("compute", "v1", http=http_auth, cache_discovery=cache_discovery)
+        self._storage = build("storage", "v1", http=http_auth, cache_discovery=cache_discovery)
         self._instances = self._compute.instances()
         self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
 
     @property
     def _identifying_attrs(self):
-        return {'project': self._project, 'zone': self._zone, 'region': self._region}
+        return {"project": self._project, "zone": self._zone, "region": self._region}
 
     @property
     def can_suspend(self):
@@ -473,12 +512,15 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
 
     def _get_all_forwarding_rules(self):
         results = []
-        results.extend(self._forwarding_rules.list(project=self._project, region=self._zone).
-                       execute().get('items', []))
+        results.extend(
+            self._forwarding_rules.list(project=self._project, region=self._zone)
+            .execute()
+            .get("items", [])
+        )
         return results
 
     def info(self):
-        return "{}: project={}, zone={}".format(self.__class__.__name__, self._project, self._zone)
+        return f"{self.__class__.__name__}: project={self._project}, zone={self._zone}"
 
     def disconnect(self):
         """
@@ -504,12 +546,11 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             zones = [self._zone]
 
         for zone_name in zones:
-            zone_instances = self._instances.list(
-                project=self._project, zone=zone_name).execute()
-            for instance in zone_instances.get('items', []):
+            zone_instances = self._instances.list(project=self._project, zone=zone_name).execute()
+            for instance in zone_instances.get("items", []):
                 results.append(
                     GoogleCloudInstance(
-                        system=self, raw=instance, name=instance['name'], zone=zone_name
+                        system=self, raw=instance, name=instance["name"], zone=zone_name
                     )
                 )
 
@@ -527,18 +568,22 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         results = []
         if not zones:
             zones = [
-                zone['name'].split('/')[-1] for zone  # convert url-based name
-                in self._compute.zones().list(project=self._project).execute().get('items', [])
+                zone["name"].split("/")[-1]
+                for zone in self._compute.zones()  # convert url-based name
+                .list(project=self._project)
+                .execute()
+                .get("items", [])
             ]
 
         for zone_name in zones:
             try:
                 # Just use get in each zone instead of iterating through all instances
                 instance = self._instances.get(
-                    project=self._project, zone=zone_name, instance=name).execute()
+                    project=self._project, zone=zone_name, instance=name
+                ).execute()
                 results.append(
                     GoogleCloudInstance(
-                        system=self, raw=instance, name=instance['name'], zone=zone_name
+                        system=self, raw=instance, name=instance["name"], zone=zone_name
                     )
                 )
             except errors.HttpError as error:
@@ -613,7 +658,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                 projects.extend(IMAGE_PROJECTS)
         for project in projects:
             results.extend(
-                GoogleCloudImage(system=self, raw=image, project=project, name=image['name'])
+                GoogleCloudImage(system=self, raw=image, project=project, name=image["name"])
                 for image in images.list(
                     project=project,
                     filter=filter_expr,
@@ -645,9 +690,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             return GoogleCloudImage(system=self, raw=image, project=project, name=name)
         except errors.HttpError as error:
             if error.resp.status == 404:
-                raise ImageNotFoundError(
-                    "'{}' not found in project '{}'".format(name, project)
-                )
+                raise ImageNotFoundError(f"'{name}' not found in project '{project}'")
             else:
                 raise
 
@@ -697,14 +740,13 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             timeout: time to wait for operation
         """
         images = self._compute.images()
-        data = {
-            "name": name,
-            "rawDisk": {"source": bucket_url}
-        }
+        data = {"name": name, "rawDisk": {"source": bucket_url}}
         operation = images.insert(project=self._project, body=data).execute()
         wait_for(
-            lambda: self.is_global_operation_done(operation['name']), delay=0.5,
-            num_sec=timeout, message=" Creating image {}".format(name)
+            lambda: self.is_global_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=timeout,
+            message=f" Creating image {name}",
         )
         return self.get_template(name, self._project)
 
@@ -724,71 +766,77 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         if not project:
             project = self._project
         disk_data = {
-            'sizeGb': size_gb,
-            'type': "zones/{}/diskTypes/{}".format(zone, disk_type),
-            'name': disk_name
+            "sizeGb": size_gb,
+            "type": f"zones/{zone}/diskTypes/{disk_type}",
+            "name": disk_name,
         }
         req = self._compute.disks().insert(project=project, zone=zone, body=disk_data)
         operation = req.execute()
-        wait_for(lambda: self.is_zone_operation_done(operation['name']), delay=0.5,
-            num_sec=120, message=" Create {}".format(disk_name))
+        wait_for(
+            lambda: self.is_zone_operation_done(operation["name"]),
+            delay=0.5,
+            num_sec=120,
+            message=f" Create {disk_name}",
+        )
 
     def list_bucket(self):
         buckets = self._get_all_buckets()
-        return [bucket.get('name') for bucket in buckets.get('items', [])]
+        return [bucket.get("name") for bucket in buckets.get("items", [])]
 
     def list_forwarding_rules(self):
         rules = self._get_all_forwarding_rules()
-        return [forwarding_rule.get('name') for forwarding_rule in rules]
+        return [forwarding_rule.get("name") for forwarding_rule in rules]
 
     def _find_forwarding_rule_by_name(self, forwarding_rule_name):
         try:
             forwarding_rule = self._forwarding_rules.get(
-                project=self._project, zone=self._zone,
-                forwardingRule=forwarding_rule_name).execute()
+                project=self._project, zone=self._zone, forwardingRule=forwarding_rule_name
+            ).execute()
             return forwarding_rule
         except Exception:
             raise NotFoundError
 
     def _check_operation_result(self, result):
-        if result['status'] == 'DONE':
-            self.logger.info("The operation '%s' -> DONE", result['name'])
-            if 'error' in result:
-                self.logger.error("Error during operation '%s'", result['name'])
-                self.logger.error("Error details: %s", result['error'])
-                raise Exception(result['error'])
+        if result["status"] == "DONE":
+            self.logger.info("The operation '%s' -> DONE", result["name"])
+            if "error" in result:
+                self.logger.error("Error during operation '%s'", result["name"])
+                self.logger.error("Error details: %s", result["error"])
+                raise Exception(result["error"])
             return True
         return False
 
     def is_global_operation_done(self, operation_name):
-        result = self._compute.globalOperations().get(
-            project=self._project,
-            operation=operation_name).execute()
+        result = (
+            self._compute.globalOperations()
+            .get(project=self._project, operation=operation_name)
+            .execute()
+        )
         self._check_operation_result(result)
 
     def is_zone_operation_done(self, operation_name, zone=None):
         if not zone:
             zone = self._zone
-        result = self._compute.zoneOperations().get(
-            project=self._project,
-            zone=zone,
-            operation=operation_name).execute()
+        result = (
+            self._compute.zoneOperations()
+            .get(project=self._project, zone=zone, operation=operation_name)
+            .execute()
+        )
         self._check_operation_result(result)
 
     def create_bucket(self, bucket_name):
-        """ Create bucket
+        """Create bucket
         Args:
             bucket_name: Unique name of bucket
         """
         if not self.bucket_exists(bucket_name):
-            self._buckets.insert(
-                project=self._project, body={"name": "{}".format(bucket_name)}).execute()
+            self._buckets.insert(project=self._project, body={"name": f"{bucket_name}"}).execute()
             self.logger.info("Bucket '%s' was created", bucket_name)
         else:
             self.logger.info("Bucket '%s' was not created, exists already", bucket_name)
 
     def delete_bucket(self, bucket_name):
-        """ Delete bucket
+        """Delete bucket
         Args:
             bucket_name: Name of bucket
         """
@@ -819,7 +867,8 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             except errors.HttpError as error:
                 if "Not Found" in error.content:
                     self.logger.info(
-                        "File '%s' was not found in bucket '%s'", file_name, bucket_name)
+                        "File '%s' was not found in bucket '%s'", file_name, bucket_name
+                    )
                 else:
                     raise error
         return {}
@@ -827,13 +876,15 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     def delete_file_from_bucket(self, bucket_name, file_name):
         if self.bucket_exists(bucket_name):
             try:
-                data = self._storage.objects().delete(bucket=bucket_name,
-                                                      object=file_name).execute()
+                data = (
+                    self._storage.objects().delete(bucket=bucket_name, object=file_name).execute()
+                )
                 return data
             except errors.HttpError as error:
                 if "No such object" in error.content:
                     self.logger.info(
-                        "File '%s' was not found in bucket '%s'", bucket_name, file_name)
+                        "File '%s' was not found in bucket '%s'", bucket_name, file_name
+                    )
                 else:
                     raise error
         return {}
@@ -841,18 +892,20 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
     def upload_file_to_bucket(self, bucket_name, file_path):
         def handle_progressless_iter(error, progressless_iters):
             if progressless_iters > NUM_RETRIES:
-                self.logger.info('Failed to make progress for too many consecutive iterations.')
+                self.logger.info("Failed to make progress for too many consecutive iterations.")
                 raise error
 
-            sleeptime = random.random() * (2 ** progressless_iters)
+            sleeptime = random.random() * (2**progressless_iters)
             self.logger.info(
-                'Caught exception (%s). Sleeping for %d seconds before retry #%d.',
-                str(error), sleeptime, progressless_iters
+                "Caught exception (%s). Sleeping for %d seconds before retry #%d.",
+                str(error),
+                sleeptime,
+                progressless_iters,
             )
 
             time.sleep(sleeptime)
 
-        self.logger.info('Building upload request...')
+        self.logger.info("Building upload request...")
         media = MediaFileUpload(file_path, chunksize=CHUNKSIZE, resumable=True)
         if not media.mimetype():
             media = MediaFileUpload(file_path, DEFAULT_MIMETYPE, resumable=True)
@@ -860,23 +913,22 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         blob_name = os.path.basename(file_path)
         if not self.bucket_exists(bucket_name):
             self.logger.error("Bucket '%s' doesn't exist", bucket_name)
-            raise NotFoundError("bucket {}".format(bucket_name))
+            raise NotFoundError(f"bucket {bucket_name}")
 
         request = self._storage.objects().insert(
-            bucket=bucket_name, name=blob_name, media_body=media)
+            bucket=bucket_name, name=blob_name, media_body=media
+        )
         self.logger.info(
-            'Uploading file: %s, to bucket: %s, blob: %s',
-            file_path, bucket_name, blob_name
+            "Uploading file: %s, to bucket: %s, blob: %s", file_path, bucket_name, blob_name
         )
 
         progressless_iters = 0
         response = None
         while response is None:
-            error = None
             try:
                 progress, response = request.next_chunk()
                 if progress:
-                    self.logger.info('Upload progress: %d%%', 100 * progress.progress())
+                    self.logger.info("Upload progress: %d%%", 100 * progress.progress())
             except errors.HttpError as error:
                 if error.resp.status < 500:
                     raise
@@ -887,8 +939,8 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                 else:
                     progressless_iters = 0
 
-        self.logger.info('Upload complete!')
-        self.logger.info('Uploaded Object:')
+        self.logger.info("Upload complete!")
+        self.logger.info("Uploaded Object:")
         self.logger.info(json_dumps(response, indent=2))
         return (True, blob_name)
 
@@ -904,14 +956,14 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
 
     def list_network(self):
         self.logger.info("Attempting to List GCE Virtual Private Networks")
-        networks = self._compute.networks().list(project=self._project).execute()['items']
+        networks = self._compute.networks().list(project=self._project).execute()["items"]
 
-        return [net['name'] for net in networks]
+        return [net["name"] for net in networks]
 
     def list_subnet(self):
         self.logger.info("Attempting to List GCE Subnets")
-        networks = self._compute.networks().list(project=self._project).execute()['items']
-        subnetworks = [net['subnetworks'] for net in networks]
+        networks = self._compute.networks().list(project=self._project).execute()["items"]
+        subnetworks = [net["subnetworks"] for net in networks]
         subnets_names = []
 
         # Subnetworks is a bi dimensional array, containing urls of subnets.
@@ -920,7 +972,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         # and CFME displays networks with subnets from all regions.
         for urls in subnetworks:
             for url in urls:
-                subnets_names.append(url.split('/')[-1])
+                subnets_names.append(url.split("/")[-1])
 
         return subnets_names
 
@@ -930,17 +982,23 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         # forwarding rules are displayed instead of loadbalancers, and the regions are neglected.
         # see: https://bugzilla.redhat.com/show_bug.cgi?id=1547465
         # https://bugzilla.redhat.com/show_bug.cgi?id=1433062
-        load_balancers = self._compute.targetPools().list(project=self._project,
-                                                          region=self._region).execute()['items']
-        return [lb['name'] for lb in load_balancers]
+        load_balancers = (
+            self._compute.targetPools()
+            .list(project=self._project, region=self._region)
+            .execute()["items"]
+        )
+        return [lb["name"] for lb in load_balancers]
 
     def list_router(self):
         self.logger.info("Attempting to List GCE routers")
         # routers are not shown on CFME
         # https://bugzilla.redhat.com/show_bug.cgi?id=1543938
-        routers = self._compute.routers().list(project=self._project,
-                                               region=self._region).execute()['items']
-        return [router['name'] for router in routers]
+        routers = (
+            self._compute.routers()
+            .list(project=self._project, region=self._region)
+            .execute()["items"]
+        )
+        return [router["name"] for router in routers]
 
     def list_security_group(self):
-        raise NotImplementedError('list_security_group not implemented.')
+        raise NotImplementedError("list_security_group not implemented.")

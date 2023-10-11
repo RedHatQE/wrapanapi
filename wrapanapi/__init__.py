@@ -1,5 +1,6 @@
 # Imports for convenience
-
+from .entities.vm import VmState
+from .systems.container.rhopenshift import Openshift
 from .systems.ec2 import EC2System
 from .systems.google import GoogleCloudSystem
 from .systems.hawkular import HawkularSystem
@@ -13,13 +14,21 @@ from .systems.rhevm import RHEVMSystem
 from .systems.scvmm import SCVMMSystem
 from .systems.vcloud import VmwareCloudSystem
 from .systems.virtualcenter import VMWareSystem
-from .systems.container.rhopenshift import Openshift
-
-from .entities.vm import VmState
 
 __all__ = [
-    'EC2System', 'GoogleCloudSystem', 'HawkularSystem',
-    'LenovoSystem', 'AzureSystem', 'NuageSystem', 'OpenstackSystem',
-    'OpenstackInfraSystem', 'RedfishSystem', 'RHEVMSystem', 'SCVMMSystem',
-    'VmwareCloudSystem', 'VMWareSystem', 'Openshift', 'VmState'
+    "EC2System",
+    "GoogleCloudSystem",
+    "HawkularSystem",
+    "LenovoSystem",
+    "AzureSystem",
+    "NuageSystem",
+    "OpenstackSystem",
+    "OpenstackInfraSystem",
+    "RedfishSystem",
+    "RHEVMSystem",
+    "SCVMMSystem",
+    "VmwareCloudSystem",
+    "VMWareSystem",
+    "Openshift",
+    "VmState",
 ]

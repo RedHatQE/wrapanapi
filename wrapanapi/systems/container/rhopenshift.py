@@ -1,17 +1,20 @@
 import copy
 import json
 import string
-import yaml
 from collections.abc import Iterable
-from functools import partial, wraps
+from functools import partial
+from functools import wraps
 from random import choice
 
 import inflection
+import yaml
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
-from miq_version import TemplateName, Version
+from miq_version import TemplateName
+from miq_version import Version
 from openshift import client as ociclient
-from wait_for import TimedOutError, wait_for
+from wait_for import TimedOutError
+from wait_for import wait_for
 
 from wrapanapi.systems.base import System
 
@@ -55,17 +58,19 @@ data:
 def reconnect(decorator):
     def decorate(cls):
         for attr in cls.__dict__:
-            if callable(getattr(cls, attr)) and not attr.startswith('_'):
+            if callable(getattr(cls, attr)) and not attr.startswith("_"):
                 setattr(cls, attr, decorator(getattr(cls, attr)))
         return cls
+
     return decorate
 
 
 def unauthenticated_error_handler(method):
     """Fixes issue with 401 error by restoring connection.
-        Sometimes connection to openshift api endpoint gets expired and openshift returns 401.
-        As a result tasks in some applications like sprout fail.
+    Sometimes connection to openshift api endpoint gets expired and openshift returns 401.
+    As a result tasks in some applications like sprout fail.
     """
+
     @wraps(method)
     def wrap(*args, **kwargs):
         attempts = 3
@@ -73,11 +78,12 @@ def unauthenticated_error_handler(method):
             try:
                 return method(*args, **kwargs)
             except ApiException as e:
-                if e.reason == 'Unauthorized':
+                if e.reason == "Unauthorized":
                     args[0]._connect()
                 else:
                     raise e
         return method(*args, **kwargs)
+
     return wrap
 
 
@@ -86,7 +92,7 @@ def is_iterable(item):
 
 
 def drop_item(struct, key):
-    """ It's needed to workaround one bug in processing openshift template.
+    """It's needed to workaround one bug in processing openshift template.
     It just recursively drops passed key from passed struct
 
     :param struct: dict or dicts with lists and etc
@@ -106,68 +112,80 @@ def drop_item(struct, key):
 
 @reconnect(unauthenticated_error_handler)
 class Openshift(System):
-
     _stats_available = {
-        'num_container': lambda self: len(self.list_container()),
-        'num_pod': lambda self: len(self.list_pods()),
-        'num_service': lambda self: len(self.list_service()),
-        'num_replication_controller':
-            lambda self: len(self.list_replication_controller()),
-        'num_image': lambda self: len(self.list_image_id()),
-        'num_node': lambda self: len(self.list_node()),
-        'num_image_registry': lambda self: len(self.list_image_registry()),
-        'num_project': lambda self: len(self.list_project()),
-        'num_route': lambda self: len(self.list_route()),
-        'num_template': lambda self: len(self.list_template())
+        "num_container": lambda self: len(self.list_container()),
+        "num_pod": lambda self: len(self.list_pods()),
+        "num_service": lambda self: len(self.list_service()),
+        "num_replication_controller": lambda self: len(self.list_replication_controller()),
+        "num_image": lambda self: len(self.list_image_id()),
+        "num_node": lambda self: len(self.list_node()),
+        "num_image_registry": lambda self: len(self.list_image_registry()),
+        "num_project": lambda self: len(self.list_project()),
+        "num_route": lambda self: len(self.list_route()),
+        "num_template": lambda self: len(self.list_template()),
     }
 
     stream2template_tags_mapping51012 = {
-        'cloudforms47-cfme-openshift-httpd': {'tag': 'HTTPD_IMG_TAG', 'url': 'HTTPD_IMG_NAME'},
-        'cloudforms47-cfme-openshift-app': {'tag': 'BACKEND_APPLICATION_IMG_TAG',
-                               'url': 'BACKEND_APPLICATION_IMG_NAME'},
-        'cloudforms47-cfme-openshift-app-ui': {'tag': 'FRONTEND_APPLICATION_IMG_TAG',
-                                  'url': 'FRONTEND_APPLICATION_IMG_NAME'},
-        'cloudforms47-cfme-openshift-embedded-ansible': {'tag': 'ANSIBLE_IMG_TAG',
-                                                         'url': 'ANSIBLE_IMG_NAME'},
-        'cloudforms47-cfme-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG',
-                                                  'url': 'MEMCACHED_IMG_NAME'},
-        'cloudforms47-cfme-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG',
-                                                   'url': 'POSTGRESQL_IMG_NAME'},
+        "cloudforms47-cfme-openshift-httpd": {"tag": "HTTPD_IMG_TAG", "url": "HTTPD_IMG_NAME"},
+        "cloudforms47-cfme-openshift-app": {
+            "tag": "BACKEND_APPLICATION_IMG_TAG",
+            "url": "BACKEND_APPLICATION_IMG_NAME",
+        },
+        "cloudforms47-cfme-openshift-app-ui": {
+            "tag": "FRONTEND_APPLICATION_IMG_TAG",
+            "url": "FRONTEND_APPLICATION_IMG_NAME",
+        },
+        "cloudforms47-cfme-openshift-embedded-ansible": {
+            "tag": "ANSIBLE_IMG_TAG",
+            "url": "ANSIBLE_IMG_NAME",
+        },
+        "cloudforms47-cfme-openshift-memcached": {
+            "tag": "MEMCACHED_IMG_TAG",
+            "url": "MEMCACHED_IMG_NAME",
+        },
+        "cloudforms47-cfme-openshift-postgresql": {
+            "tag": "POSTGRESQL_IMG_TAG",
+            "url": "POSTGRESQL_IMG_NAME",
+        },
     }
 
     stream2template_tags_mapping_rest = {
-        'cfme-openshift-httpd': {'tag': 'HTTPD_IMG_TAG', 'url': 'HTTPD_IMG_NAME'},
-        'cfme-openshift-app': {'tag': 'BACKEND_APPLICATION_IMG_TAG',
-                               'url': 'BACKEND_APPLICATION_IMG_NAME'},
-        'cfme-openshift-app-ui': {'tag': 'FRONTEND_APPLICATION_IMG_TAG',
-                                  'url': 'FRONTEND_APPLICATION_IMG_NAME'},
-        'cfme-openshift-embedded-ansible': {'tag': 'ANSIBLE_IMG_TAG', 'url': 'ANSIBLE_IMG_NAME'},
-        'cfme-openshift-memcached': {'tag': 'MEMCACHED_IMG_TAG', 'url': 'MEMCACHED_IMG_NAME'},
-        'cfme-openshift-postgresql': {'tag': 'POSTGRESQL_IMG_TAG', 'url': 'POSTGRESQL_IMG_NAME'},
+        "cfme-openshift-httpd": {"tag": "HTTPD_IMG_TAG", "url": "HTTPD_IMG_NAME"},
+        "cfme-openshift-app": {
+            "tag": "BACKEND_APPLICATION_IMG_TAG",
+            "url": "BACKEND_APPLICATION_IMG_NAME",
+        },
+        "cfme-openshift-app-ui": {
+            "tag": "FRONTEND_APPLICATION_IMG_TAG",
+            "url": "FRONTEND_APPLICATION_IMG_NAME",
+        },
+        "cfme-openshift-embedded-ansible": {"tag": "ANSIBLE_IMG_TAG", "url": "ANSIBLE_IMG_NAME"},
+        "cfme-openshift-memcached": {"tag": "MEMCACHED_IMG_TAG", "url": "MEMCACHED_IMG_NAME"},
+        "cfme-openshift-postgresql": {"tag": "POSTGRESQL_IMG_TAG", "url": "POSTGRESQL_IMG_NAME"},
     }
 
     scc_user_mapping = (
-        {'scc': 'anyuid', 'user': 'cfme-anyuid'},
-        {'scc': 'anyuid', 'user': 'cfme-orchestrator'},
-        {'scc': 'anyuid', 'user': 'cfme-httpd'},
-        {'scc': 'privileged', 'user': 'cfme-privileged'},
+        {"scc": "anyuid", "user": "cfme-anyuid"},
+        {"scc": "anyuid", "user": "cfme-orchestrator"},
+        {"scc": "anyuid", "user": "cfme-httpd"},
+        {"scc": "privileged", "user": "cfme-privileged"},
     )
 
-    default_namespace = 'openshift'
-    required_project_pods = ('httpd', 'memcached', 'postgresql',
-                             'cloudforms', 'cloudforms-backend')
-    not_required_project_pods = ('cloudforms-backend', 'ansible')
+    default_namespace = "openshift"
+    required_project_pods = ("httpd", "memcached", "postgresql", "cloudforms", "cloudforms-backend")
+    not_required_project_pods = ("cloudforms-backend", "ansible")
 
-    def __init__(self, hostname, protocol="https", port=8443, debug=False,
-                 verify_ssl=False, **kwargs):
-        super(Openshift, self).__init__(kwargs)
+    def __init__(
+        self, hostname, protocol="https", port=8443, debug=False, verify_ssl=False, **kwargs
+    ):
+        super().__init__(kwargs)
         self.hostname = hostname
         self.protocol = protocol
         self.port = port
-        self.username = kwargs.get('username', '')
-        self.password = kwargs.get('password', '')
-        self.base_url = kwargs.get('base_url', None)
-        self.token = kwargs.get('token', '')
+        self.username = kwargs.get("username", "")
+        self.password = kwargs.get("password", "")
+        self.base_url = kwargs.get("base_url", None)
+        self.token = kwargs.get("token", "")
         self.auth = self.token if self.token else (self.username, self.password)
         self.debug = debug
         self.verify_ssl = verify_ssl
@@ -179,18 +197,19 @@ class Openshift(System):
         Return a dict with key, value pairs for each kwarg that is used to
         uniquely identify this system.
         """
-        return {'hostname': self.hostname, 'port': self.port}
+        return {"hostname": self.hostname, "port": self.port}
 
     def _connect(self):
-        url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
-                                               port=self.port)
+        url = "{proto}://{host}:{port}".format(
+            proto=self.protocol, host=self.hostname, port=self.port
+        )
 
-        token = 'Bearer {token}'.format(token=self.token)
+        token = f"Bearer {self.token}"
         config = ociclient.Configuration()
         config.host = url
         config.verify_ssl = self.verify_ssl
         config.debug = self.debug
-        config.api_key['authorization'] = token
+        config.api_key["authorization"] = token
 
         self.ociclient = ociclient
         self.kclient = kubeclient
@@ -202,9 +221,10 @@ class Openshift(System):
         self.batch_api = self.kclient.BatchV1Api(api_client=self.kapi_client)  # for job api
 
     def info(self):
-        url = '{proto}://{host}:{port}'.format(proto=self.protocol, host=self.hostname,
-                                               port=self.port)
-        return "rhopenshift {}".format(url)
+        url = "{proto}://{host}:{port}".format(
+            proto=self.protocol, host=self.hostname, port=self.port
+        )
+        return f"rhopenshift {url}"
 
     def list_route(self, namespace=None):
         """Returns list of routes"""
@@ -238,8 +258,11 @@ class Openshift(System):
 
     def list_image_stream_images(self):
         """Returns list of images (Docker registry only)"""
-        return [item for item in self.o_api.list_image().items
-                if item.docker_image_reference is not None]
+        return [
+            item
+            for item in self.o_api.list_image().items
+            if item.docker_image_reference is not None
+        ]
 
     def list_deployment_config(self, namespace=None):
         """Returns list of deployment configs"""
@@ -274,11 +297,11 @@ class Openshift(System):
         """Returns information about the cluster - number of CPUs and memory in GB"""
         aggregate_cpu, aggregate_mem = 0, 0
         for node in self.list_node():
-            aggregate_cpu += int(node.status.capacity['cpu'])
+            aggregate_cpu += int(node.status.capacity["cpu"])
             # converting KiB to GB. 1KiB = 1.024E-6 GB
-            aggregate_mem += int(round(int(node.status.capacity['memory'][:-2]) * 0.00000102400))
+            aggregate_mem += int(round(int(node.status.capacity["memory"][:-2]) * 0.00000102400))
 
-        return {'cpu': aggregate_cpu, 'memory': aggregate_mem}
+        return {"cpu": aggregate_cpu, "memory": aggregate_mem}
 
     def list_persistent_volume(self):
         """Returns list of persistent volumes"""
@@ -308,7 +331,7 @@ class Openshift(System):
         for pod in pods:
             for status in pod.status.container_statuses:
                 statuses.append(status)
-        return sorted(set([status.image_id for status in statuses]))
+        return sorted({status.image_id for status in statuses})
 
     def list_image_registry(self, namespace=None):
         """Returns list of image registries (derived from pods)"""
@@ -318,7 +341,7 @@ class Openshift(System):
             for status in pod.status.container_statuses:
                 statuses.append(status)
         # returns only the image registry name, without the port number in case of local registry
-        return sorted(set([status.image.split('/')[0].split(':')[0] for status in statuses]))
+        return sorted({status.image.split("/")[0].split(":")[0] for status in statuses})
 
     def expose_db_ip(self, namespace):
         """Creates special service in appliance project (namespace) which makes internal appliance
@@ -335,7 +358,7 @@ class Openshift(System):
 
         return self.get_ip_address(namespace)
 
-    def deploy_template(self, template, tags=None, password='smartvm', **kwargs):
+    def deploy_template(self, template, tags=None, password="smartvm", **kwargs):
         """Deploy a VM from a template
 
         Args:
@@ -358,41 +381,42 @@ class Openshift(System):
 
         version = Version(TemplateName.parse_template(template).version)
 
-        if version >= '5.10.12':
+        if version >= "5.10.12":
             tags_mapping = self.stream2template_tags_mapping51012
         else:
             tags_mapping = self.stream2template_tags_mapping_rest
 
-        prepared_tags = {tag['tag']: 'latest' for tag in tags_mapping.values()}
+        prepared_tags = {tag["tag"]: "latest" for tag in tags_mapping.values()}
         if tags:
             not_found_tags = [t for t in tags.keys() if t not in list(tags_mapping.keys())]
             if not_found_tags:
-                raise ValueError("Some passed tags {t} don't exist".format(t=not_found_tags))
+                raise ValueError(f"Some passed tags {not_found_tags} don't exist")
             for tag, value in tags.items():
-                prepared_tags[tags_mapping[tag]['url']] = value['url']
-                prepared_tags[tags_mapping[tag]['tag']] = value['tag']
+                prepared_tags[tags_mapping[tag]["url"]] = value["url"]
+                prepared_tags[tags_mapping[tag]["tag"]] = value["tag"]
 
         # create project
         # assuming this is cfme installation and generating project name
         proj_id = "".join(choice(string.digits + string.ascii_lowercase) for _ in range(6))
 
         # for sprout
-        if 'vm_name' in kwargs:
-            proj_name = kwargs['vm_name']
+        if "vm_name" in kwargs:
+            proj_name = kwargs["vm_name"]
         else:
-            proj_name = "{t}-project-{proj_id}".format(t=template, proj_id=proj_id)
+            proj_name = f"{template}-project-{proj_id}"
 
-        template_params = kwargs.pop('template_params', {})
-        running_pods = kwargs.pop('running_pods', ())
-        proj_url = "{proj}.{base_url}".format(proj=proj_id, base_url=self.base_url)
+        template_params = kwargs.pop("template_params", {})
+        running_pods = kwargs.pop("running_pods", ())
+        proj_url = f"{proj_id}.{self.base_url}"
         self.logger.info("unique id %s, project name %s", proj_id, proj_name)
 
-        default_progress_callback = partial(self._progress_log_callback, self.logger, template,
-                                            proj_name)
-        progress_callback = kwargs.get('progress_callback', default_progress_callback)
+        default_progress_callback = partial(
+            self._progress_log_callback, self.logger, template, proj_name
+        )
+        progress_callback = kwargs.get("progress_callback", default_progress_callback)
 
         self.create_project(name=proj_name, description=template)
-        progress_callback("Created Project `{}`".format(proj_name))
+        progress_callback(f"Created Project `{proj_name}`")
 
         # grant rights according to scc
         self.logger.info("granting rights to project %s sa", proj_name)
@@ -400,12 +424,12 @@ class Openshift(System):
 
         self.logger.info("granting required rights to project's service accounts")
         for mapping in scc_user_mapping:
-            self.append_sa_to_scc(scc_name=mapping['scc'], namespace=proj_name, sa=mapping['user'])
+            self.append_sa_to_scc(scc_name=mapping["scc"], namespace=proj_name, sa=mapping["user"])
         progress_callback("Added service accounts to appropriate scc")
 
         self.logger.info("project sa created via api have no some mandatory roles. adding them")
         self._restore_missing_project_role_bindings(namespace=proj_name)
-        progress_callback("Added all necessary role bindings to project `{}`".format(proj_name))
+        progress_callback(f"Added all necessary role bindings to project `{proj_name}`")
 
         # creating common service with external ip
         ext_ip = self.expose_db_ip(proj_name)
@@ -416,16 +440,18 @@ class Openshift(System):
         self.create_config_map(namespace=proj_name, **yaml.safe_load(image_repo_cm))
 
         # creating pods and etc
-        processing_params = {'DATABASE_PASSWORD': password,
-                             'APPLICATION_DOMAIN': proj_url}
+        processing_params = {"DATABASE_PASSWORD": password, "APPLICATION_DOMAIN": proj_url}
         processing_params.update(prepared_tags)
 
         # updating template parameters
         processing_params.update(template_params)
-        self.logger.info(("processing template and passed params in order to "
-                          "prepare list of required project entities"))
-        template_entities = self.process_template(name=template, namespace=self.default_namespace,
-                                                  parameters=processing_params)
+        self.logger.info(
+            "processing template and passed params in order to "
+            "prepare list of required project entities"
+        )
+        template_entities = self.process_template(
+            name=template, namespace=self.default_namespace, parameters=processing_params
+        )
         self.logger.debug("template entities:\n %r", template_entities)
         progress_callback("Template has been processed")
         self.create_template_entities(namespace=proj_name, entities=template_entities)
@@ -434,14 +460,18 @@ class Openshift(System):
         self.logger.info("verifying that all created entities are up and running")
         progress_callback("Waiting for all pods to be ready and running")
         try:
-            wait_for(self.is_vm_running, timeout=600,
-                     func_kwargs={'vm_name': proj_name, 'running_pods': running_pods})
+            wait_for(
+                self.is_vm_running,
+                timeout=600,
+                func_kwargs={"vm_name": proj_name, "running_pods": running_pods},
+            )
             self.logger.info("all pods look up and running")
             progress_callback("Everything has been deployed w/o errors")
-            return {'url': proj_url,
-                    'external_ip': ext_ip,
-                    'project': proj_name,
-                    }
+            return {
+                "url": proj_url,
+                "external_ip": ext_ip,
+                "project": proj_name,
+            }
         except TimedOutError:
             self.logger.error("deployment failed. Please check failed pods details")
             # todo: return and print all failed pod details
@@ -460,13 +490,13 @@ class Openshift(System):
         Returns: None
         """
         self.logger.debug("passed template entities:\n %r", entities)
-        kinds = set([e['kind'] for e in entities])
+        kinds = {e["kind"] for e in entities}
         entity_names = {e: inflection.underscore(e) for e in kinds}
-        proc_names = {k: 'create_{e}'.format(e=p) for k, p in entity_names.items()}
+        proc_names = {k: f"create_{p}" for k, p in entity_names.items()}
 
         for entity in entities:
-            if entity['kind'] in kinds:
-                procedure = getattr(self, proc_names[entity['kind']], None)
+            if entity["kind"] in kinds:
+                procedure = getattr(self, proc_names[entity["kind"]], None)
                 obtained_entity = procedure(namespace=namespace, **entity)
                 self.logger.debug(obtained_entity)
             else:
@@ -484,7 +514,7 @@ class Openshift(System):
             for pod in self.get_required_pods(vm_name):
                 self.scale_entity(name=pod, namespace=vm_name, replicas=1)
         else:
-            raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
+            raise ValueError(f"Project with name {vm_name} doesn't exist")
 
     def stop_vm(self, vm_name):
         """Stops a vm.
@@ -498,7 +528,7 @@ class Openshift(System):
             for pod in self.get_required_pods(vm_name):
                 self.scale_entity(name=pod, namespace=vm_name, replicas=0)
         else:
-            raise ValueError("Project with name {n} doesn't exist".format(n=vm_name))
+            raise ValueError(f"Project with name {vm_name} doesn't exist")
 
     def delete_vm(self, vm_name):
         """Deletes a vm.
@@ -536,13 +566,13 @@ class Openshift(System):
             new_parameters = template.parameters
             for new_param, new_value in params.items():
                 for index, old_param in enumerate(new_parameters):
-                    if old_param['name'] == new_param:
+                    if old_param["name"] == new_param:
                         old_param = new_parameters.pop(index)
-                        if 'generate' in old_param:
-                            old_param['generate'] = None
-                            old_param['_from'] = None
+                        if "generate" in old_param:
+                            old_param["generate"] = None
+                            old_param["_from"] = None
 
-                        old_param['value'] = new_value
+                        old_param["value"] = new_value
                         new_parameters.append(old_param)
                         template.parameters = new_parameters
         return template
@@ -557,8 +587,9 @@ class Openshift(System):
         Return: list of objects stored in template
         """
         # workaround for bug https://github.com/openshift/openshift-restclient-python/issues/60
-        raw_response = self.o_api.read_namespaced_template(name=name, namespace=namespace,
-                                                           _preload_content=False)
+        raw_response = self.o_api.read_namespaced_template(
+            name=name, namespace=namespace, _preload_content=False
+        )
         raw_data = json.loads(raw_response.data)
 
         return self.process_raw_template(body=raw_data, namespace=namespace, parameters=parameters)
@@ -579,38 +610,39 @@ class Openshift(System):
         updated_data = self.rename_structure(body)
         read_template = self.ociclient.V1Template(**updated_data)
         if parameters:
-            updated_template = self._update_template_parameters(template=read_template,
-                                                                **parameters)
+            updated_template = self._update_template_parameters(
+                template=read_template, **parameters
+            )
         else:
             updated_template = read_template
-        raw_response = self.o_api.create_namespaced_processed_template(namespace=namespace,
-                                                                       body=updated_template,
-                                                                       _preload_content=False)
+        raw_response = self.o_api.create_namespaced_processed_template(
+            namespace=namespace, body=updated_template, _preload_content=False
+        )
         raw_data = json.loads(raw_response.data)
         # above api call started adding wrong apiVersion to template what entails deployment errors
-        updated_data = drop_item(raw_data, 'apiVersion')
+        updated_data = drop_item(raw_data, "apiVersion")
         processed_template = self.ociclient.V1Template(**updated_data)
         return processed_template.objects
 
     def rename_structure(self, struct):
         """Fixes inconsistency in input/output data of openshift python client methods
 
-                Args:
-                    struct: data to process and rename
-                Return: updated data
+        Args:
+            struct: data to process and rename
+        Return: updated data
         """
         if is_iterable(struct):
             new_struct = {}
             if isinstance(struct, dict):
                 # we shouldn't rename something under data or spec
                 for key, value in struct.items():
-                    if key in ('spec', 'data', 'string_data', 'annotations'):
+                    if key in ("spec", "data", "string_data", "annotations"):
                         # these keys and data should be left intact
                         new_struct[key] = value
                         continue
                     else:
                         val = struct.get(key)
-                        if key != 'stringData':
+                        if key != "stringData":
                             # all this data should be processed and updated
                             # except stringData. this key has to be renamed but its contents
                             # should be left intact
@@ -630,7 +662,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         conf_map = self.kclient.V1ConfigMap(**kwargs)
-        conf_map_name = conf_map.to_dict()['metadata']['name']
+        conf_map_name = conf_map.to_dict()["metadata"]["name"]
         self.logger.info("creating config map %s", conf_map_name)
         output = self.k_api.create_namespaced_config_map(namespace=namespace, body=conf_map)
         self.wait_config_map_exist(namespace=namespace, name=conf_map_name)
@@ -645,11 +677,11 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         conf_map = self.kclient.V1ConfigMap(**kwargs)
-        conf_map_name = conf_map.to_dict()['metadata']['name']
+        conf_map_name = conf_map.to_dict()["metadata"]["name"]
         self.logger.info("replacing config map %s", conf_map_name)
-        output = self.k_api.replace_namespaced_config_map(namespace=namespace,
-                                                          name=conf_map_name,
-                                                          body=conf_map)
+        output = self.k_api.replace_namespaced_config_map(
+            namespace=namespace, name=conf_map_name, body=conf_map
+        )
         return output
 
     def create_stateful_set(self, namespace, **kwargs):
@@ -661,7 +693,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         st = self.kclient.V1beta1StatefulSet(**kwargs)
-        st_name = st.to_dict()['metadata']['name']
+        st_name = st.to_dict()["metadata"]["name"]
         self.logger.info("creating stateful set %s", st_name)
         api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
         output = api.create_namespaced_stateful_set(namespace=namespace, body=st)
@@ -677,7 +709,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         service = self.kclient.V1Service(**kwargs)
-        service_name = service.to_dict()['metadata']['name']
+        service_name = service.to_dict()["metadata"]["name"]
         self.logger.info("creating service %s", service_name)
         output = self.k_api.create_namespaced_service(namespace=namespace, body=service)
         self.wait_service_exist(namespace=namespace, name=service_name)
@@ -692,7 +724,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         endpoints = self.kclient.V1Endpoints(**kwargs)
-        endpoints_name = endpoints.to_dict()['metadata']['name']
+        endpoints_name = endpoints.to_dict()["metadata"]["name"]
         self.logger.info("creating endpoints %s", endpoints_name)
         output = self.k_api.create_namespaced_endpoints(namespace=namespace, body=endpoints)
         self.wait_endpoints_exist(namespace=namespace, name=endpoints_name)
@@ -707,7 +739,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         route = self.ociclient.V1Route(**kwargs)
-        route_name = route.to_dict()['metadata']['name']
+        route_name = route.to_dict()["metadata"]["name"]
         self.logger.info("creating route %s", route_name)
         output = self.o_api.create_namespaced_route(namespace=namespace, body=route)
         self.wait_route_exist(namespace=namespace, name=route_name)
@@ -722,7 +754,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         sa = self.kclient.V1ServiceAccount(**kwargs)
-        sa_name = sa.to_dict()['metadata']['name']
+        sa_name = sa.to_dict()["metadata"]["name"]
         self.logger.info("creating service account %s", sa_name)
         output = self.k_api.create_namespaced_service_account(namespace=namespace, body=sa)
         self.wait_service_account_exist(namespace=namespace, name=sa_name)
@@ -739,17 +771,16 @@ class Openshift(System):
         ObjectRef = self.kclient.V1ObjectReference  # noqa
         auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
         # there is some version mismatch in api. so, it would be better to remove version
-        kwargs.pop('api_version', None)
-        role_binding_name = kwargs['metadata']['name']
+        kwargs.pop("api_version", None)
+        role_binding_name = kwargs["metadata"]["name"]
 
         # role and subjects data should be turned into objects before passing them to RoleBinding
-        role_name = kwargs.pop('role_ref')['name']
+        role_name = kwargs.pop("role_ref")["name"]
         role = ObjectRef(name=role_name)
-        subjects = [ObjectRef(namespace=namespace, **subj) for subj in kwargs.pop('subjects')]
+        subjects = [ObjectRef(namespace=namespace, **subj) for subj in kwargs.pop("subjects")]
         role_binding = self.ociclient.V1RoleBinding(role_ref=role, subjects=subjects, **kwargs)
         self.logger.debug("creating role binding %s in project %s", role_binding_name, namespace)
-        output = auth_api.create_namespaced_role_binding(namespace=namespace,
-                                                         body=role_binding)
+        output = auth_api.create_namespaced_role_binding(namespace=namespace, body=role_binding)
         self.wait_role_binding_exist(namespace=namespace, name=role_binding_name)
         return output
 
@@ -762,7 +793,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         image_stream = self.ociclient.V1ImageStream(**kwargs)
-        is_name = image_stream.to_dict()['metadata']['name']
+        is_name = image_stream.to_dict()["metadata"]["name"]
         self.logger.info("creating image stream %s", is_name)
         output = self.o_api.create_namespaced_image_stream(namespace=namespace, body=image_stream)
         self.wait_image_stream_exist(namespace=namespace, name=is_name)
@@ -777,7 +808,7 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         secret = self.kclient.V1Secret(**kwargs)
-        secret_name = secret.to_dict()['metadata']['name']
+        secret_name = secret.to_dict()["metadata"]["name"]
         self.logger.info("creating secret %s", secret_name)
         output = self.k_api.create_namespaced_secret(namespace=namespace, body=secret)
         self.wait_secret_exist(namespace=namespace, name=secret_name)
@@ -792,11 +823,10 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         dc = self.ociclient.V1DeploymentConfig(**kwargs)
-        dc_name = dc.to_dict()['metadata']['name']
+        dc_name = dc.to_dict()["metadata"]["name"]
         self.logger.info("creating deployment config %s", dc_name)
         output = self.o_api.create_namespaced_deployment_config(namespace=namespace, body=dc)
-        self.wait_deployment_config_exist(namespace=namespace,
-                                          name=dc_name)
+        self.wait_deployment_config_exist(namespace=namespace, name=dc_name)
         return output
 
     def create_persistent_volume_claim(self, namespace, **kwargs):
@@ -808,12 +838,12 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         pv_claim = self.kclient.V1PersistentVolumeClaim(**kwargs)
-        pv_claim_name = pv_claim.to_dict()['metadata']['name']
+        pv_claim_name = pv_claim.to_dict()["metadata"]["name"]
         self.logger.info("creating persistent volume claim %s", pv_claim_name)
-        output = self.k_api.create_namespaced_persistent_volume_claim(namespace=namespace,
-                                                                      body=pv_claim)
-        self.wait_persistent_volume_claim_exist(namespace=namespace,
-                                                name=pv_claim_name)
+        output = self.k_api.create_namespaced_persistent_volume_claim(
+            namespace=namespace, body=pv_claim
+        )
+        self.wait_persistent_volume_claim_exist(namespace=namespace, name=pv_claim_name)
         return output
 
     def create_project(self, name, description=None):
@@ -825,9 +855,9 @@ class Openshift(System):
         Return: data if entity was created w/o errors
         """
         proj = self.ociclient.V1Project()
-        proj.metadata = {'name': name, 'annotations': {}}
+        proj.metadata = {"name": name, "annotations": {}}
         if description:
-            proj.metadata['annotations'] = {'openshift.io/description': description}
+            proj.metadata["annotations"] = {"openshift.io/description": description}
         self.logger.info("creating new project with name %s", name)
         output = self.o_api.create_project(body=proj)
         self.wait_project_exist(name=name)
@@ -842,12 +872,12 @@ class Openshift(System):
         Return: True/False
         """
         body = self.rename_structure(body)
-        job_name = body['metadata']['name']
+        job_name = body["metadata"]["name"]
         self.batch_api.create_namespaced_job(namespace=namespace, body=body)
 
         return self.wait_job_finished(namespace, job_name)
 
-    def wait_job_finished(self, namespace, name, wait='15m'):
+    def wait_job_finished(self, namespace, name, wait="15m"):
         """Waits for job to accomplish
 
         Args:
@@ -856,17 +886,18 @@ class Openshift(System):
             wait: stop waiting after "wait" time
         Return: True/False
         """
+
         def job_wait_accomplished():
             try:
-                job = self.batch_api.read_namespaced_job_status(name=name,
-                                                                namespace=namespace)
+                job = self.batch_api.read_namespaced_job_status(name=name, namespace=namespace)
                 # todo: replace with checking final statuses
                 return bool(job.status.succeeded)
             except KeyError:
                 return False
+
         return wait_for(job_wait_accomplished, timeout=wait)[0]
 
-    def wait_persistent_volume_claim_status(self, namespace, name, status, wait='1m'):
+    def wait_persistent_volume_claim_status(self, namespace, name, status, wait="1m"):
         """Waits until pvc gets some particular status.
            For example: Bound.
 
@@ -877,10 +908,12 @@ class Openshift(System):
             wait: stop waiting after "wait" time
         Return: True/False
         """
+
         def pvc_wait_status():
             try:
-                pvc = self.k_api.read_namespaced_persistent_volume_claim(name=name,
-                                                                         namespace=namespace)
+                pvc = self.k_api.read_namespaced_persistent_volume_claim(
+                    name=name, namespace=namespace
+                )
                 return pvc.status.phase == status
             except KeyError:
                 return False
@@ -895,8 +928,11 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.o_api.read_project, 'name': name})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={"func": self.o_api.read_project, "name": name},
+        )[0]
 
     def wait_config_map_exist(self, namespace, name, wait=60):
         """Checks whether Config Map exists within some time.
@@ -907,10 +943,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_config_map,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_config_map,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_stateful_set_exist(self, namespace, name, wait=900):
         """Checks whether StatefulSet exists within some time.
@@ -923,10 +964,11 @@ class Openshift(System):
         """
         api = self.kclient.AppsV1beta1Api(api_client=self.kapi_client)
         read_st = api.read_namespaced_stateful_set
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': read_st,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={"func": read_st, "name": name, "namespace": namespace},
+        )[0]
 
     def wait_service_exist(self, namespace, name, wait=60):
         """Checks whether Service exists within some time.
@@ -937,10 +979,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_service,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_service,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_endpoints_exist(self, namespace, name, wait=60):
         """Checks whether Endpoints exists within some time.
@@ -951,10 +998,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_endpoints,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_endpoints,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_route_exist(self, namespace, name, wait=60):
         """Checks whether Route exists within some time.
@@ -965,10 +1017,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.o_api.read_namespaced_route,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.o_api.read_namespaced_route,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_service_account_exist(self, namespace, name, wait=60):
         """Checks whether Service Account exists within some time.
@@ -979,10 +1036,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_service_account,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_service_account,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_image_stream_exist(self, namespace, name, wait=60):
         """Checks whether Image Stream exists within some time.
@@ -993,10 +1055,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.o_api.read_namespaced_image_stream,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.o_api.read_namespaced_image_stream,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_role_binding_exist(self, namespace, name, wait=60):
         """Checks whether RoleBinding exists within some time.
@@ -1008,10 +1075,15 @@ class Openshift(System):
         Return: True/False
         """
         auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': auth_api.read_namespaced_role_binding,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": auth_api.read_namespaced_role_binding,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_secret_exist(self, namespace, name, wait=90):
         """Checks whether Secret exists within some time.
@@ -1022,10 +1094,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_secret,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_secret,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_persistent_volume_claim_exist(self, namespace, name, wait=60):
         """Checks whether Persistent Volume Claim exists within some time.
@@ -1036,10 +1113,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.k_api.read_namespaced_persistent_volume_claim,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.k_api.read_namespaced_persistent_volume_claim,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def wait_deployment_config_exist(self, namespace, name, wait=600):
         """Checks whether Deployment Config exists within some time.
@@ -1051,10 +1133,11 @@ class Openshift(System):
         Return: True/False
         """
         read_dc = self.o_api.read_namespaced_deployment_config
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': read_dc,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={"func": read_dc, "name": name, "namespace": namespace},
+        )[0]
 
     def wait_template_exist(self, namespace, name, wait=60):
         """Checks whether Template exists within some time.
@@ -1065,10 +1148,15 @@ class Openshift(System):
             wait: entity should appear for this time then - True, otherwise False
         Return: True/False
         """
-        return wait_for(self._does_exist, timeout=wait,
-                        func_kwargs={'func': self.o_api.read_namespaced_template,
-                                     'name': name,
-                                     'namespace': namespace})[0]
+        return wait_for(
+            self._does_exist,
+            timeout=wait,
+            func_kwargs={
+                "func": self.o_api.read_namespaced_template,
+                "name": name,
+                "namespace": namespace,
+            },
+        )[0]
 
     def _does_exist(self, func, **kwargs):
         try:
@@ -1088,48 +1176,46 @@ class Openshift(System):
         """
         # adding builder role binding
         auth_api = self.ociclient.AuthorizationOpenshiftIoV1Api(api_client=self.oapi_client)
-        builder_role = self.kclient.V1ObjectReference(name='system:image-builder')
-        builder_sa = self.kclient.V1ObjectReference(name='builder',
-                                                    kind='ServiceAccount',
-                                                    namespace=namespace)
-        builder_role_binding_name = self.kclient.V1ObjectMeta(name='builder-binding')
-        builder_role_binding = self.ociclient.V1RoleBinding(role_ref=builder_role,
-                                                            subjects=[builder_sa],
-                                                            metadata=builder_role_binding_name)
+        builder_role = self.kclient.V1ObjectReference(name="system:image-builder")
+        builder_sa = self.kclient.V1ObjectReference(
+            name="builder", kind="ServiceAccount", namespace=namespace
+        )
+        builder_role_binding_name = self.kclient.V1ObjectMeta(name="builder-binding")
+        builder_role_binding = self.ociclient.V1RoleBinding(
+            role_ref=builder_role, subjects=[builder_sa], metadata=builder_role_binding_name
+        )
         auth_api.create_namespaced_role_binding(namespace=namespace, body=builder_role_binding)
 
         # adding deployer role binding
-        deployer_role = self.kclient.V1ObjectReference(name='system:deployer')
-        deployer_sa = self.kclient.V1ObjectReference(name='deployer',
-                                                     kind='ServiceAccount',
-                                                     namespace=namespace)
-        deployer_role_binding_name = self.kclient.V1ObjectMeta(name='deployer-binding')
-        deployer_role_binding = self.ociclient.V1RoleBinding(role_ref=deployer_role,
-                                                             subjects=[deployer_sa],
-                                                             metadata=deployer_role_binding_name)
+        deployer_role = self.kclient.V1ObjectReference(name="system:deployer")
+        deployer_sa = self.kclient.V1ObjectReference(
+            name="deployer", kind="ServiceAccount", namespace=namespace
+        )
+        deployer_role_binding_name = self.kclient.V1ObjectMeta(name="deployer-binding")
+        deployer_role_binding = self.ociclient.V1RoleBinding(
+            role_ref=deployer_role, subjects=[deployer_sa], metadata=deployer_role_binding_name
+        )
         auth_api.create_namespaced_role_binding(namespace=namespace, body=deployer_role_binding)
 
         # adding admin role binding
-        admin_role = self.kclient.V1ObjectReference(name='admin')
-        admin_user = self.kclient.V1ObjectReference(name='admin',
-                                                    kind='User',
-                                                    namespace=namespace)
-        admin_role_binding_name = self.kclient.V1ObjectMeta(name='admin-binding')
-        admin_role_binding = self.ociclient.V1RoleBinding(role_ref=admin_role,
-                                                          subjects=[admin_user],
-                                                          metadata=admin_role_binding_name)
+        admin_role = self.kclient.V1ObjectReference(name="admin")
+        admin_user = self.kclient.V1ObjectReference(name="admin", kind="User", namespace=namespace)
+        admin_role_binding_name = self.kclient.V1ObjectMeta(name="admin-binding")
+        admin_role_binding = self.ociclient.V1RoleBinding(
+            role_ref=admin_role, subjects=[admin_user], metadata=admin_role_binding_name
+        )
         auth_api.create_namespaced_role_binding(namespace=namespace, body=admin_role_binding)
 
         # adding image-puller role binding
-        puller_role = self.kclient.V1ObjectReference(name='system:image-puller')
-        group_name = 'system:serviceaccounts:{proj}'.format(proj=namespace)
-        puller_group = self.kclient.V1ObjectReference(name=group_name,
-                                                      kind='SystemGroup',
-                                                      namespace=namespace)
-        role_binding_name = self.kclient.V1ObjectMeta(name='image-puller-binding')
-        puller_role_binding = self.ociclient.V1RoleBinding(role_ref=puller_role,
-                                                           subjects=[puller_group],
-                                                           metadata=role_binding_name)
+        puller_role = self.kclient.V1ObjectReference(name="system:image-puller")
+        group_name = f"system:serviceaccounts:{namespace}"
+        puller_group = self.kclient.V1ObjectReference(
+            name=group_name, kind="SystemGroup", namespace=namespace
+        )
+        role_binding_name = self.kclient.V1ObjectMeta(name="image-puller-binding")
+        puller_role_binding = self.ociclient.V1RoleBinding(
+            role_ref=puller_role, subjects=[puller_group], metadata=role_binding_name
+        )
         auth_api.create_namespaced_role_binding(namespace=namespace, body=puller_role_binding)
 
     def delete_project(self, name, wait=300):
@@ -1144,11 +1230,13 @@ class Openshift(System):
         if self.does_project_exist(name=name):
             self.o_api.delete_project(name=name)
             try:
-                wait_for(lambda name: not self.does_project_exist(name=name), timeout=wait,
-                         func_kwargs={'name': name})
+                wait_for(
+                    lambda name: not self.does_project_exist(name=name),
+                    timeout=wait,
+                    func_kwargs={"name": name},
+                )
             except TimedOutError:
-                raise TimedOutError('project {n} was not removed within {w} sec'.format(n=name,
-                                                                                        w=wait))
+                raise TimedOutError(f"project {name} was not removed within {wait} sec")
 
     def scale_entity(self, namespace, name, replicas, wait=60):
         """Allows to scale up/down entities.
@@ -1166,12 +1254,14 @@ class Openshift(System):
 
         scale_val = self.kclient.V1Scale(spec=self.kclient.V1ScaleSpec(replicas=replicas))
         if self.is_deployment_config(name=name, namespace=namespace):
-            self.o_api.patch_namespaced_deployment_config_scale(name=name, namespace=namespace,
-                                                                body=scale_val)
+            self.o_api.patch_namespaced_deployment_config_scale(
+                name=name, namespace=namespace, body=scale_val
+            )
 
             def check_scale_value():
-                got_scale = self.o_api.read_namespaced_deployment_config_scale(name=name,
-                                                                               namespace=namespace)
+                got_scale = self.o_api.read_namespaced_deployment_config_scale(
+                    name=name, namespace=namespace
+                )
                 return int(got_scale.spec.replicas or 0)
 
         elif self.is_stateful_set(name=name, namespace=namespace):
@@ -1184,9 +1274,11 @@ class Openshift(System):
             def check_scale_value():
                 got_scale = st_api.read_namespaced_stateful_set(name=name, namespace=namespace)
                 return int(got_scale.spec.replicas or 0)
+
         else:
-            raise ValueError("This name %s is not found among "
-                             "deployment configs or stateful sets", name)
+            raise ValueError(
+                "This name %s is not found among " "deployment configs or stateful sets", name
+            )
         self.logger.info("scaling entity %s to %s replicas", name, replicas)
         wait_for(check_scale_value, timeout=wait, fail_condition=lambda val: val != replicas)
 
@@ -1212,9 +1304,9 @@ class Openshift(System):
         Returns: security context constraint object
         """
         raw_scc = self.rename_structure(body)
-        if raw_scc.get('api_version') == 'v1':
+        if raw_scc.get("api_version") == "v1":
             # there is inconsistency between api and some scc files. v1 is not accepted by api now
-            raw_scc.pop('api_version')
+            raw_scc.pop("api_version")
         scc = self.ociclient.V1SecurityContextConstraints(**raw_scc)
         return self.security_api.create_security_context_constraints(body=scc)
 
@@ -1227,22 +1319,16 @@ class Openshift(System):
           sa: service account's name
         Returns: updated security context constraint object
         """
-        user = 'system:serviceaccount:{proj}:{usr}'.format(proj=namespace,
-                                                           usr=sa)
+        user = f"system:serviceaccount:{namespace}:{sa}"
         if self.get_scc(scc_name).users is None:
             # ocp 3.6 has None for users if there is no sa in it
-            update_scc_cmd = [
-                {"op": "add",
-                 "path": "/users",
-                 "value": [user]}]
+            update_scc_cmd = [{"op": "add", "path": "/users", "value": [user]}]
         else:
-            update_scc_cmd = [
-                {"op": "add",
-                 "path": "/users/-",
-                 "value": user}]
+            update_scc_cmd = [{"op": "add", "path": "/users/-", "value": user}]
         self.logger.debug("adding user %r to scc %r", user, scc_name)
-        return self.security_api.patch_security_context_constraints(name=scc_name,
-                                                                    body=update_scc_cmd)
+        return self.security_api.patch_security_context_constraints(
+            name=scc_name, body=update_scc_cmd
+        )
 
     def remove_sa_from_scc(self, scc_name, namespace, sa):
         """Removes Service Account from respective Security Constraint
@@ -1253,20 +1339,19 @@ class Openshift(System):
           sa: service account's name
         Returns: updated security context constraint object
         """
-        user = 'system:serviceaccount:{proj}:{usr}'.format(proj=namespace,
-                                                           usr=sa)
+        user = f"system:serviceaccount:{namespace}:{sa}"
         # json patch's remove works only with indexes. so we have to figure out index
         try:
-            index = next(val[0] for val in enumerate(self.get_scc(scc_name).users)
-                         if val[1] == user)
+            index = next(
+                val[0] for val in enumerate(self.get_scc(scc_name).users) if val[1] == user
+            )
         except StopIteration:
-            raise ValueError("No such sa {} in scc {}".format(user, scc_name))
-        update_scc_cmd = [
-            {"op": "remove",
-             "path": "/users/{}".format(index)}]
+            raise ValueError(f"No such sa {user} in scc {scc_name}")
+        update_scc_cmd = [{"op": "remove", "path": f"/users/{index}"}]
         self.logger.debug("removing user %r from scc %s with index %s", user, scc_name, index)
-        return self.security_api.patch_security_context_constraints(name=scc_name,
-                                                                    body=update_scc_cmd)
+        return self.security_api.patch_security_context_constraints(
+            name=scc_name, body=update_scc_cmd
+        )
 
     def is_vm_running(self, vm_name, running_pods=()):
         """Emulates check is vm(appliance) up and running
@@ -1350,8 +1435,9 @@ class Openshift(System):
         """
         pods = self.k_api.list_namespaced_pod(namespace=vm_name).items
         if pods:
-            self.logger.info(("some pods are still "
-                              "running: {}").format([pod.metadata.name for pod in pods]))
+            self.logger.info(
+                ("some pods are still " "running: {}").format([pod.metadata.name for pod in pods])
+            )
         return not bool(pods)
 
     def wait_vm_running(self, vm_name, num_sec=900):
@@ -1384,8 +1470,9 @@ class Openshift(System):
         Return: ip address or None
         """
         try:
-            common_svc = self.k_api.read_namespaced_service(name='common-service',
-                                                            namespace=vm_name)
+            common_svc = self.k_api.read_namespaced_service(
+                name="common-service", namespace=vm_name
+            )
             return common_svc.spec.external_i_ps[0]
         except Exception:
             return None
@@ -1406,9 +1493,11 @@ class Openshift(System):
             vm_name: VM name
         Returns: True/False
         """
-        return (self.is_vm_running(vm_name)
-                or self.is_vm_stopped(vm_name)
-                or self.is_vm_suspended(vm_name))
+        return (
+            self.is_vm_running(vm_name)
+            or self.is_vm_stopped(vm_name)
+            or self.is_vm_suspended(vm_name)
+        )
 
     @property
     def can_rename(self):
@@ -1433,7 +1522,7 @@ class Openshift(System):
         """
         try:
             proj = self.o_api.read_project(vm_name)
-            description = proj.metadata.annotations['openshift.io/description']
+            description = proj.metadata.annotations["openshift.io/description"]
             return Version(TemplateName.parse_template(description).version)
         except (ApiException, KeyError, ValueError):
             try:
@@ -1441,7 +1530,7 @@ class Openshift(System):
             except ValueError:
                 return None
 
-    def delete_template(self, template_name, namespace='openshift'):
+    def delete_template(self, template_name, namespace="openshift"):
         """Deletes template
 
         Args:
@@ -1450,16 +1539,19 @@ class Openshift(System):
         Returns: result of delete operation
         """
         options = self.kclient.V1DeleteOptions()
-        return self.o_api.delete_namespaced_template(name=template_name, namespace=namespace,
-                                                     body=options)
+        return self.o_api.delete_namespaced_template(
+            name=template_name, namespace=namespace, body=options
+        )
 
     def get_meta_value(self, instance, key):
         raise NotImplementedError(
-            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+            f"Provider {type(self).__name__} does not implement get_meta_value"
+        )
 
     def set_meta_value(self, instance, key):
         raise NotImplementedError(
-            'Provider {} does not implement get_meta_value'.format(type(self).__name__))
+            f"Provider {type(self).__name__} does not implement get_meta_value"
+        )
 
     def vm_status(self, vm_name):
         """Returns current vm/appliance state
@@ -1469,8 +1561,8 @@ class Openshift(System):
         Returns: up/down or exception if vm doesn't exist
         """
         if not self.does_vm_exist(vm_name):
-            raise ValueError("Vm {} doesn't exist".format(vm_name))
-        return 'up' if self.is_vm_running(vm_name) else 'down'
+            raise ValueError(f"Vm {vm_name} doesn't exist")
+        return "up" if self.is_vm_running(vm_name) else "down"
 
     def vm_creation_time(self, vm_name):
         """Returns time when vm/appliance was created
@@ -1480,15 +1572,14 @@ class Openshift(System):
         Return: datetime obj
         """
         if not self.does_vm_exist(vm_name):
-            raise ValueError("Vm {} doesn't exist".format(vm_name))
+            raise ValueError(f"Vm {vm_name} doesn't exist")
         projects = self.o_api.list_project().items
         project = next(proj for proj in projects if proj.metadata.name == vm_name)
         return project.metadata.creation_timestamp
 
     @staticmethod
     def _progress_log_callback(logger, source, destination, progress):
-        logger.info("Provisioning progress {}->{}: {}".format(
-            source, destination, str(progress)))
+        logger.info(f"Provisioning progress {source}->{destination}: {str(progress)}")
 
     def vm_hardware_configuration(self, vm_name):
         """Collects project's cpu and ram usage
@@ -1497,26 +1588,25 @@ class Openshift(System):
             vm_name: openshift's data
         Returns: collected data
         """
-        hw_config = {'ram': 0,
-                     'cpu': 0}
+        hw_config = {"ram": 0, "cpu": 0}
         if not self.does_vm_exist(vm_name):
             return hw_config
 
         proj_pods = self.k_api.list_namespaced_pod(vm_name)
         for pod in proj_pods.items:
             for container in pod.spec.containers:
-                cpu = container.resources.requests['cpu']
-                hw_config['cpu'] += float(cpu[:-1]) / 1000 if cpu.endswith('m') else float(cpu)
+                cpu = container.resources.requests["cpu"]
+                hw_config["cpu"] += float(cpu[:-1]) / 1000 if cpu.endswith("m") else float(cpu)
 
-                ram = container.resources.requests['memory']
-                if ram.endswith('Mi'):
-                    hw_config['ram'] += float(ram[:-2])
-                elif ram.endswith('Gi'):
-                    hw_config['ram'] += float(ram[:-2]) * 1024
-                elif ram.endswith('Ki'):
-                    hw_config['ram'] += float(ram[:-2]) / 1024
+                ram = container.resources.requests["memory"]
+                if ram.endswith("Mi"):
+                    hw_config["ram"] += float(ram[:-2])
+                elif ram.endswith("Gi"):
+                    hw_config["ram"] += float(ram[:-2]) * 1024
+                elif ram.endswith("Ki"):
+                    hw_config["ram"] += float(ram[:-2]) / 1024
                 else:
-                    hw_config['ram'] += ram
+                    hw_config["ram"] += ram
         return hw_config
 
     def usage_and_quota(self):
@@ -1527,13 +1617,13 @@ class Openshift(System):
         # todo: finish this method later
         return {
             # RAM
-            'ram_used': used_ram,
-            'ram_total': installed_ram,
-            'ram_limit': None,
+            "ram_used": used_ram,
+            "ram_total": installed_ram,
+            "ram_limit": None,
             # CPU
-            'cpu_used': used_cpu,
-            'cpu_total': installed_cpu,
-            'cpu_limit': None,
+            "cpu_used": used_cpu,
+            "cpu_total": installed_cpu,
+            "cpu_limit": None,
         }
 
     def get_required_pods(self, vm_name):
@@ -1546,7 +1636,7 @@ class Openshift(System):
         return self.required_project_pods
 
     def get_ip_address(self, vm_name, timeout=600):
-        """ Returns the IP address for the selected appliance.
+        """Returns the IP address for the selected appliance.
 
         Args:
             vm_name: The name of the vm to obtain the IP for.
@@ -1554,11 +1644,13 @@ class Openshift(System):
         Returns: A string containing the first found IP that isn't the device.
         """
         try:
-            ip_address, tc = wait_for(lambda: self.current_ip_address(vm_name),
-                                      fail_condition=None,
-                                      delay=5,
-                                      timeout=timeout,
-                                      message="get_ip_address from openshift")
+            ip_address, tc = wait_for(
+                lambda: self.current_ip_address(vm_name),
+                fail_condition=None,
+                delay=5,
+                timeout=timeout,
+                message="get_ip_address from openshift",
+            )
         except TimedOutError:
             ip_address = None
         return ip_address
@@ -1574,9 +1666,10 @@ class Openshift(System):
         Returns: dict with tags and urls
         """
         try:
-            read_data = self.k_api.read_namespaced_config_map(name='image-repo-data',
-                                                              namespace=name)
-            return json.loads(read_data.data['tags'])
+            read_data = self.k_api.read_namespaced_config_map(
+                name="image-repo-data", namespace=name
+            )
+            return json.loads(read_data.data["tags"])
         except ApiException:
             return {}
 
@@ -1621,7 +1714,7 @@ class Openshift(System):
         """
         pods = []
         for pod in self.list_pods(namespace=namespace):
-            if pod.metadata.labels.get('job-name', '') == name:
+            if pod.metadata.labels.get("job-name", "") == name:
                 pods.append(pod)
         return pods
 
@@ -1644,8 +1737,9 @@ class Openshift(System):
             options: delete options like force delete and etc
         Returns: Pod
         """
-        return self.k_api.delete_namespaced_pod(namespace=namespace, name=name,
-                                                body=options or self.kclient.V1DeleteOptions())
+        return self.k_api.delete_namespaced_pod(
+            namespace=namespace, name=name, body=options or self.kclient.V1DeleteOptions()
+        )
 
     def is_pod_running(self, namespace, name):
         """Checks whether pod is running
@@ -1661,8 +1755,9 @@ class Openshift(System):
             dc = self.o_api.read_namespaced_deployment_config(name=name, namespace=namespace)
             status = dc.status.ready_replicas
         elif self.is_stateful_set(name=name, namespace=namespace):
-            pods = self.k_api.list_namespaced_pod(namespace=namespace,
-                                                  label_selector='name={n}'.format(n=name))
+            pods = self.k_api.list_namespaced_pod(
+                namespace=namespace, label_selector=f"name={name}"
+            )
             pod_stats = [pod.status.container_statuses[-1].ready for pod in pods.items]
             status = all(pod_stats)
         else:
@@ -1721,9 +1816,6 @@ class Openshift(System):
         """
         # there are some limitations and this code isn't robust enough due to
         # https://github.com/kubernetes-client/python/issues/58
-        return self.k_api.connect_post_namespaced_pod_exec(namespace=namespace,
-                                                           name=name,
-                                                           command=cmd,
-                                                           stdout=True,
-                                                           stderr=True,
-                                                           **kwargs)
+        return self.k_api.connect_post_namespaced_pod_exec(
+            namespace=namespace, name=name, command=cmd, stdout=True, stderr=True, **kwargs
+        )

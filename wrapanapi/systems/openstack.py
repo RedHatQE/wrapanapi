@@ -1,9 +1,7 @@
-# coding: utf-8
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-
 import json
 import os
 import time
@@ -30,13 +28,20 @@ from swiftclient import client as swiftclient
 from swiftclient.exceptions import ClientException as SwiftException
 from wait_for import wait_for
 
-from wrapanapi.entities import (
-    Instance, Template, TemplateMixin, VmMixin, VmState)
-from wrapanapi.exceptions import (
-    ActionTimedOutError, ImageNotFoundError, ItemNotFound, KeystoneVersionNotSupported,
-    MultipleImagesError, MultipleInstancesError, NetworkNameNotFound, NoMoreFloatingIPs,
-    VMInstanceNotFound
-)
+from wrapanapi.entities import Instance
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
+from wrapanapi.exceptions import ActionTimedOutError
+from wrapanapi.exceptions import ImageNotFoundError
+from wrapanapi.exceptions import ItemNotFound
+from wrapanapi.exceptions import KeystoneVersionNotSupported
+from wrapanapi.exceptions import MultipleImagesError
+from wrapanapi.exceptions import MultipleInstancesError
+from wrapanapi.exceptions import NetworkNameNotFound
+from wrapanapi.exceptions import NoMoreFloatingIPs
+from wrapanapi.exceptions import VMInstanceNotFound
 from wrapanapi.systems.base import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be
@@ -54,25 +59,26 @@ def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
         return SessionClient.request(self, url, method, **kwargs)
     except Timeout:
         if retry_count >= 3:
-            self._cfme_logger.error('nova request timed out after {} retries'.format(retry_count))
+            self._cfme_logger.error(f"nova request timed out after {retry_count} retries")
             raise
         else:
             # feed back into the replaced method that supports retry_count
             retry_count += 1
-            self._cfme_logger.info('nova request timed out; retry {}'.format(retry_count))
+            self._cfme_logger.info(f"nova request timed out; retry {retry_count}")
             return self.request(url, method, retry_count=retry_count, **kwargs)
 
 
-class _SharedMethodsMixin(object):
+class _SharedMethodsMixin:
     """
     Mixin class that holds properties/methods both VM's and templates share.
 
     This should be listed first in the child class inheritance to satisfy
     the methods required by the Vm/Template abstract base class
     """
+
     @property
     def _identifying_attrs(self):
-        return {'uuid': self._uuid}
+        return {"uuid": self._uuid}
 
     @property
     def name(self):
@@ -92,20 +98,20 @@ class _SharedMethodsMixin(object):
     def creation_time(self):
         # Example vm.creation_time: 2014-08-14T23:29:30Z
         self.refresh()
-        creation_time = datetime.strptime(self.raw.created, '%Y-%m-%dT%H:%M:%SZ')
+        creation_time = datetime.strptime(self.raw.created, "%Y-%m-%dT%H:%M:%SZ")
         # create time is UTC, localize it, strip tzinfo
         return creation_time.replace(tzinfo=pytz.UTC)
 
 
 class OpenstackInstance(_SharedMethodsMixin, Instance):
     state_map = {
-        'PAUSED': VmState.PAUSED,
-        'ACTIVE': VmState.RUNNING,
-        'SHUTOFF': VmState.STOPPED,
-        'SUSPENDED': VmState.SUSPENDED,
-        'ERROR': VmState.ERROR,
-        'SHELVED': VmState.SHELVED,
-        'SHELVED_OFFLOADED': VmState.SHELVED_OFFLOADED,
+        "PAUSED": VmState.PAUSED,
+        "ACTIVE": VmState.RUNNING,
+        "SHUTOFF": VmState.STOPPED,
+        "SUSPENDED": VmState.SUSPENDED,
+        "ERROR": VmState.ERROR,
+        "SHELVED": VmState.SHELVED,
+        "SHELVED_OFFLOADED": VmState.SHELVED_OFFLOADED,
     }
 
     def __init__(self, system, raw=None, **kwargs):
@@ -117,8 +123,8 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             raw: the raw novaclient Resource object (if already obtained)
             uuid: unique ID of the instance
         """
-        super(OpenstackInstance, self).__init__(system, raw, **kwargs)
-        self._uuid = raw.id if raw else kwargs.get('uuid')
+        super().__init__(system, raw, **kwargs)
+        self._uuid = raw.id if raw else kwargs.get("uuid")
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
         self._api = self.system.api
@@ -139,33 +145,35 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         inst = self.raw
         status = self._api_state_to_vmstate(inst.status)
         if status == VmState.ERROR:
-            fault_code = 'UNKNOWN'
-            fault_msg = 'UNKNOWN'
-            if hasattr(inst, 'fault'):
-                fault_code = inst.fault['code']
-                fault_msg = inst.fault['message']
+            fault_code = "UNKNOWN"
+            fault_msg = "UNKNOWN"
+            if hasattr(inst, "fault"):
+                fault_code = inst.fault["code"]
+                fault_msg = inst.fault["message"]
             self.logger.error(
-                'Instance %s in error state, code: %s, fault message: %s',
-                self.name, fault_code, fault_msg
+                "Instance %s in error state, code: %s, fault message: %s",
+                self.name,
+                fault_code,
+                fault_msg,
             )
         return status
 
     def _get_networks(self):
         self.refresh()
         # TODO: Do we really need to access a private attr here?
-        return self.raw._info['addresses']
+        return self.raw._info["addresses"]
 
     @property
     def ip(self):
         networks = self._get_networks()
         for network_nics in networks.values():
             for nic in network_nics:
-                if nic['OS-EXT-IPS:type'] == 'floating':
-                    return str(nic['addr'])
+                if nic["OS-EXT-IPS:type"] == "floating":
+                    return str(nic["addr"])
 
     @property
     def all_ips(self):
-        """ Get all the IPs on the machine
+        """Get all the IPs on the machine
 
         Returns: (list) the addresses assigned to the machine
         """
@@ -175,7 +183,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
     @property
     def flavor(self):
         if not self._flavor:
-            flavor_id = self.raw.flavor['id']
+            flavor_id = self.raw.flavor["id"]
             self._flavor = self._api.flavors.get(flavor_id)
         return self._flavor
 
@@ -209,9 +217,11 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         # so this will loop until it really get the address. A small timeout is added to ensure
         # the instance really got that address and other process did not steal it.
         # TODO: Introduce neutron client and its create+assign?
-        allowed_exceptions = (os_exceptions.ClientException,
-                              os_exceptions.OverLimit,
-                              os_exceptions.NotFound)
+        allowed_exceptions = (
+            os_exceptions.ClientException,
+            os_exceptions.OverLimit,
+            os_exceptions.NotFound,
+        )
         while self.ip is None:
             free_ips = self.system.free_fips(floating_ip_pool)
             # We maintain 1 floating IP as a protection against race condition
@@ -226,28 +236,28 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
                 try:
                     ip = self._api.floating_ips.create(floating_ip_pool)
                 except allowed_exceptions as e:
-                    self.logger.error('Probably no more FIP slots available: %s', str(e))
+                    self.logger.error("Probably no more FIP slots available: %s", str(e))
                     free_ips = self.system.free_fips(floating_ip_pool)
                     # So, try picking one from the list (there still might be one)
                     if free_ips:
                         # There is something free. Slight risk of race condition
                         ip = free_ips[0]
                         self.logger.info(
-                            'Reused %s from pool %s because no more free spaces for new ips',
-                            ip.ip, floating_ip_pool
+                            "Reused %s from pool %s because no more free spaces for new ips",
+                            ip.ip,
+                            floating_ip_pool,
                         )
                     else:
                         # Nothing can be done
-                        raise NoMoreFloatingIPs(
-                            'Provider {} ran out of FIPs'.format(self.system.auth_url))
-                self.logger.info('Created %s in pool %s', ip.ip, floating_ip_pool)
+                        raise NoMoreFloatingIPs(f"Provider {self.system.auth_url} ran out of FIPs")
+                self.logger.info("Created %s in pool %s", ip.ip, floating_ip_pool)
             instance.add_floating_ip(ip)
 
             # Now the grace period in which a FIP theft could happen
             time.sleep(safety_timer)
 
-        self.logger.info('Instance %s got a floating IP %s', self.name, ip.ip)
-        assert self.ip == ip.ip, 'Current IP does not match reserved floating IP!'
+        self.logger.info("Instance %s got a floating IP %s", self.name, ip.ip)
+        assert self.ip == ip.ip, "Current IP does not match reserved floating IP!"
         return ip.ip
 
     def unassign_floating_ip(self):
@@ -265,24 +275,24 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             return None
         floating_ip = floating_ips[0]
         self.logger.info(
-            'Detaching floating IP %s/%s from %s', floating_ip.id, floating_ip.ip, instance.name)
+            "Detaching floating IP %s/%s from %s", floating_ip.id, floating_ip.ip, instance.name
+        )
         instance.remove_floating_ip(floating_ip)
-        wait_for(
-            lambda: self.ip is None, delay=1, timeout='1m')
+        wait_for(lambda: self.ip is None, delay=1, timeout="1m")
         return floating_ip
 
     def delete(self, delete_fip=False):
-        self.logger.info(' Deleting OpenStack instance %s', self.name)
+        self.logger.info(" Deleting OpenStack instance %s", self.name)
 
-        self.logger.info(' Unassigning floating IP instance %s', self.name)
+        self.logger.info(" Unassigning floating IP instance %s", self.name)
         if delete_fip:
             self.system.delete_floating_ip(self.unassign_floating_ip())
         else:
             self.unassign_floating_ip()
 
-        self.logger.info(' Delete in progress instance %s', self.name)
+        self.logger.info(" Delete in progress instance %s", self.name)
         self.raw.delete()
-        wait_for(lambda: not self.exists, timeout='3m', delay=5)
+        wait_for(lambda: not self.exists, timeout="3m", delay=5)
         return True
 
     def cleanup(self):
@@ -290,7 +300,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         return self.delete(delete_fip=True)
 
     def start(self):
-        self.logger.info(' Starting OpenStack instance %s', self.name)
+        self.logger.info(" Starting OpenStack instance %s", self.name)
         if self.is_running:
             return True
 
@@ -301,11 +311,11 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             instance.unpause()
         else:
             instance.start()
-        wait_for(lambda: self.is_running, message='start {}'.format(self.name))
+        wait_for(lambda: self.is_running, message=f"start {self.name}")
         return True
 
     def stop(self):
-        self.logger.info(' Stopping OpenStack instance %s', self.name)
+        self.logger.info(" Stopping OpenStack instance %s", self.name)
         if self.is_stopped:
             return True
 
@@ -354,8 +364,8 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
 
         We have to rename the instance, create a snapshot of the original name and then delete the
         instance."""
-        image_name = template_name or '{}_copy'.format(self.name)
-        self.logger.info('Marking %s as OpenStack template with name: %s', self.name, image_name)
+        image_name = template_name or f"{self.name}_copy"
+        self.logger.info("Marking %s as OpenStack template with name: %s", self.name, image_name)
         original_name = self.name
         # no new name passed, rename VM so template can take its name
         if not template_name:
@@ -369,20 +379,21 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             wait_for(lambda: self._api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
             self.delete()
             wait_for(lambda: not self.exists, num_sec=180, delay=5)
-        except Exception as e:
-            self.logger.error(
-                "Could not mark %s as a OpenStack template! (%s)", original_name, str(e))
+        except Exception:
+            self.logger.exception("Could not mark %s as a OpenStack template!", original_name)
             try:
                 self.rename(original_name)  # Clean up after ourselves
-            except Exception as e:
+            except Exception:
                 self.logger.exception(
-                    'Failed to rename %s back to original name (%s)', image_name, original_name)
+                    "Failed to rename %s back to original name (%s)", image_name, original_name
+                )
             raise
         return OpenstackImage(system=self.system, uuid=uuid)
 
     def set_meta_value(self, key, value):
         return self.raw.manager.set_meta_item(
-            self.raw, key, value if isinstance(value, str) else json.dumps(value))
+            self.raw, key, value if isinstance(value, str) else json.dumps(value)
+        )
 
     def get_meta_value(self, key):
         instance = self.raw
@@ -394,10 +405,10 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
                 # Support metadata set by others
                 return data
         except KeyError:
-            raise KeyError('Metadata {} not found in {}'.format(key, instance.name))
+            raise KeyError(f"Metadata {key} not found in {instance.name}")
 
     def get_hardware_configuration(self):
-        return {'ram': self.flavor.ram, 'cpu': self.flavor.vcpus}
+        return {"ram": self.flavor.ram, "cpu": self.flavor.vcpus}
 
     @property
     def attached_volumes(self):
@@ -411,7 +422,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
 
                mgmt.get_vm(name='instance_name').attached_volumes
         """
-        return [v['id'] for v in self.raw._info['os-extended-volumes:volumes_attached']]
+        return [v["id"] for v in self.raw._info["os-extended-volumes:volumes_attached"]]
 
 
 class OpenstackImage(_SharedMethodsMixin, Template):
@@ -424,8 +435,8 @@ class OpenstackImage(_SharedMethodsMixin, Template):
             raw: the novaclient Image resource object if already obtained, or None
             uuid: uuid of image
         """
-        super(OpenstackImage, self).__init__(system, raw, **kwargs)
-        self._uuid = raw.id if raw else kwargs.get('uuid')
+        super().__init__(system, raw, **kwargs)
+        self._uuid = raw.id if raw else kwargs.get("uuid")
         if not self._uuid:
             raise ValueError("missing required kwarg: 'uuid'")
         self._api = self.system.api
@@ -451,7 +462,8 @@ class OpenstackImage(_SharedMethodsMixin, Template):
         Keep the parameters from the original flavor
         """
         self.logger.info(
-            'RAM/CPU override of flavor %s: RAM %r MB, CPU: %r cores', flavor.name, ram, cpu)
+            "RAM/CPU override of flavor %s: RAM %r MB, CPU: %r cores", flavor.name, ram, cpu
+        )
         ram = ram or flavor.ram
         cpu = cpu or flavor.vcpus
         disk = flavor.disk
@@ -461,13 +473,18 @@ class OpenstackImage(_SharedMethodsMixin, Template):
         is_public = flavor.is_public
         try:
             new_flavor = self._api.flavors.find(
-                ram=ram, vcpus=cpu,
-                disk=disk, ephemeral=ephemeral, swap=swap,
-                rxtx_factor=rxtx_factor, is_public=is_public)
+                ram=ram,
+                vcpus=cpu,
+                disk=disk,
+                ephemeral=ephemeral,
+                swap=swap,
+                rxtx_factor=rxtx_factor,
+                is_public=is_public,
+            )
         except os_exceptions.NotFound:
             # The requested flavor was not found, create a custom one
-            self.logger.info('No suitable flavor found, creating a new one.')
-            base_flavor_name = '{}-{}M-{}C'.format(flavor.name, ram, cpu)
+            self.logger.info("No suitable flavor found, creating a new one.")
+            base_flavor_name = f"{flavor.name}-{ram}M-{cpu}C"
             flavor_name = base_flavor_name
             counter = 0
             new_flavor = None
@@ -478,25 +495,30 @@ class OpenstackImage(_SharedMethodsMixin, Template):
                 try:
                     new_flavor = self._api.flavors.create(
                         name=flavor_name,
-                        ram=ram, vcpus=cpu,
-                        disk=disk, ephemeral=ephemeral, swap=swap,
-                        rxtx_factor=rxtx_factor, is_public=is_public)
+                        ram=ram,
+                        vcpus=cpu,
+                        disk=disk,
+                        ephemeral=ephemeral,
+                        swap=swap,
+                        rxtx_factor=rxtx_factor,
+                        is_public=is_public,
+                    )
                 except os_exceptions.Conflict:
-                    self.logger.info(
-                        'Name %s is already taken, changing the name', flavor_name)
+                    self.logger.info("Name %s is already taken, changing the name", flavor_name)
                     counter += 1
-                    flavor_name = base_flavor_name + '_{}'.format(counter)
+                    flavor_name = base_flavor_name + f"_{counter}"
                 else:
                     self.logger.info(
-                        'Created a flavor %r with id %r', new_flavor.name, new_flavor.id)
+                        "Created a flavor %r with id %r", new_flavor.name, new_flavor.id
+                    )
                     flavor = new_flavor
         else:
-            self.logger.info('Found a flavor %s', new_flavor.name)
+            self.logger.info("Found a flavor %s", new_flavor.name)
             flavor = new_flavor
         return flavor
 
     def deploy(self, vm_name, **kwargs):
-        """ Deploys an OpenStack instance from a template.
+        """Deploys an OpenStack instance from a template.
 
         For all available args, see ``create`` method found here:
         http://docs.openstack.org/python-novaclient/latest/reference/api/novaclient.v2.servers.html
@@ -518,42 +540,38 @@ class OpenstackImage(_SharedMethodsMixin, Template):
         """
         power_on = kwargs.pop("power_on", True)
         nics = []
-        timeout = kwargs.pop('timeout', 900)
+        timeout = kwargs.pop("timeout", 900)
 
-        if 'flavor_name' in kwargs:
-            flavor = self._api.flavors.find(name=kwargs['flavor_name'])
-        elif 'instance_type' in kwargs:
-            flavor = self._api.flavors.find(name=kwargs['instance_type'])
-        elif 'flavor_id' in kwargs:
-            flavor = self._api.flavors.find(id=kwargs['flavor_id'])
+        if "flavor_name" in kwargs:
+            flavor = self._api.flavors.find(name=kwargs["flavor_name"])
+        elif "instance_type" in kwargs:
+            flavor = self._api.flavors.find(name=kwargs["instance_type"])
+        elif "flavor_id" in kwargs:
+            flavor = self._api.flavors.find(id=kwargs["flavor_id"])
         else:
-            flavor = self._api.flavors.find(name='m1.tiny')
-        ram = kwargs.pop('ram', None)
-        cpu = kwargs.pop('cpu', None)
+            flavor = self._api.flavors.find(name="m1.tiny")
+        ram = kwargs.pop("ram", None)
+        cpu = kwargs.pop("cpu", None)
         if ram or cpu:
             self._get_or_create_override_flavor(flavor, cpu, ram)
 
         self.logger.info(
-            ' Deploying OpenStack template %s to instance %s (%s)',
-            self.name, vm_name, flavor.name
+            " Deploying OpenStack template %s to instance %s (%s)", self.name, vm_name, flavor.name
         )
         if len(self.system.list_network()) > 1:
-            if 'network_name' not in kwargs:
-                raise NetworkNameNotFound('Must select a network name')
+            if "network_name" not in kwargs:
+                raise NetworkNameNotFound("Must select a network name")
             else:
-                net_id = self._api.networks.find(label=kwargs['network_name']).id
-                nics = [{'net-id': net_id}]
+                net_id = self._api.networks.find(label=kwargs["network_name"]).id
+                nics = [{"net-id": net_id}]
 
         image = self.raw
         new_instance = self._api.servers.create(vm_name, image, flavor, nics=nics, **kwargs)
-        instance = OpenstackInstance(
-            system=self.system,
-            uuid=new_instance.id,
-            raw=new_instance)
+        instance = OpenstackInstance(system=self.system, uuid=new_instance.id, raw=new_instance)
 
         instance.wait_for_steady_state(timeout=timeout)
-        if kwargs.get('floating_ip_pool'):
-            instance.assign_floating_ip(kwargs['floating_ip_pool'])
+        if kwargs.get("floating_ip_pool"):
+            instance.assign_floating_ip(kwargs["floating_ip_pool"])
 
         if power_on:
             instance.start()
@@ -579,8 +597,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     """
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms(filter_tenants=True)),
-        'num_template': lambda self: len(self.list_templates()),
+        "num_vm": lambda self: len(self.list_vms(filter_tenants=True)),
+        "num_template": lambda self: len(self.list_templates()),
     }
 
     can_suspend = True
@@ -589,7 +607,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def __init__(self, tenant, username, password, auth_url, **kwargs):
         self.keystone_version = kwargs.get("keystone_version")
         if not self.keystone_version:
-            parsed_keystone_version = search(r'v([2-3])$', auth_url)
+            parsed_keystone_version = search(r"v([2-3])$", auth_url)
             if parsed_keystone_version:
                 self.keystone_version = int(parsed_keystone_version.group(1))
             else:
@@ -597,12 +615,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 self.keystone_version = 2
         if int(self.keystone_version) not in (2, 3):
             raise KeystoneVersionNotSupported(self.keystone_version)
-        super(OpenstackSystem, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.tenant = tenant
         self.username = username
         self.password = password
         self.auth_url = auth_url
-        self.domain_id = kwargs['domain_id'] if self.keystone_version == 3 else None
+        self.domain_id = kwargs["domain_id"] if self.keystone_version == 3 else None
         self._session = None
         self._api = None
         self._gapi = None
@@ -615,7 +633,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     @property
     def _identifying_attrs(self):
-        return {'auth_url': self.auth_url, 'tenant': self.tenant}
+        return {"auth_url": self.auth_url, "tenant": self.tenant}
 
     @property
     def can_suspend(self):
@@ -628,11 +646,16 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     @property
     def session(self):
         if not self._session:
-            auth_kwargs = dict(auth_url=self.auth_url, username=self.username,
-                               password=self.password, project_name=self.tenant)
+            auth_kwargs = dict(
+                auth_url=self.auth_url,
+                username=self.username,
+                password=self.password,
+                project_name=self.tenant,
+            )
             if self.keystone_version == 3:
-                auth_kwargs.update(dict(user_domain_id=self.domain_id,
-                                        project_domain_id=self.domain_id))
+                auth_kwargs.update(
+                    dict(user_domain_id=self.domain_id, project_domain_id=self.domain_id)
+                )
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
         return self._session
@@ -640,23 +663,25 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     @property
     def api(self):
         if not self._api:
-            self._api = osclient.Client('2', session=self.session, service_type="compute",
-                                        timeout=30)
+            self._api = osclient.Client(
+                "2", session=self.session, service_type="compute", timeout=30
+            )
             # replace the client request method with our version that
             # can handle timeouts; uses explicit binding (versus
             # replacing the method directly on the SessionClient class)
             # so we can still call out to SessionClient's original request
             # method in the timeout handler method
             self._api.client._cfme_logger = self.logger
-            self._api.client.request = _request_timeout_handler.__get__(self._api.client,
-                                                                        SessionClient)
+            self._api.client.request = _request_timeout_handler.__get__(
+                self._api.client, SessionClient
+            )
         return self._api
 
     @property
     def gapi(self):
         """separate endpoint for glance API, novaclient.v2.images Deprecated in Nova 15.0"""
         if not self._gapi:
-            self._gapi = gClient('2', session=self.session)
+            self._gapi = gClient("2", session=self.session)
         return self._gapi
 
     @property
@@ -697,18 +722,17 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def stackapi(self):
         if not self._stackapi:
             heat_endpoint = self.kapi.session.auth.auth_ref.service_catalog.url_for(
-                service_type='orchestration'
+                service_type="orchestration"
             )
-            self._stackapi = heat_client.Client('1', heat_endpoint,
-                                                token=self.kapi.session.auth.auth_ref.auth_token,
-                                                insecure=True)
+            self._stackapi = heat_client.Client(
+                "1", heat_endpoint, token=self.kapi.session.auth.auth_ref.auth_token, insecure=True
+            )
         return self._stackapi
 
     def info(self):
-        return '%s %s' % (self.api.client.service_type, self.api.client.version)
+        return f"{self.api.client.service_type} {self.api.client.version}"
 
     def _get_tenants(self):
-
         if self.keystone_version == 3:
             return self.tenant_api.list()
         real_tenants = []
@@ -722,7 +746,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     def _get_tenant(self, **kwargs):
         if not kwargs:
-            kwargs = {'name': self.tenant}
+            kwargs = {"name": self.tenant}
         return self.tenant_api.find(**kwargs).id
 
     def _get_user(self, **kwargs):
@@ -731,20 +755,21 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def _get_role(self, **kwargs):
         return self.kapi.roles.find(**kwargs).id
 
-    def add_tenant(self, tenant_name, description=None, enabled=True, user=None, roles=None,
-                   domain=None):
-        params = dict(description=description,
-                      enabled=enabled)
+    def add_tenant(
+        self, tenant_name, description=None, enabled=True, user=None, roles=None, domain=None
+    ):
+        params = dict(description=description, enabled=enabled)
         if self.keystone_version == 2:
-            params['tenant_name'] = tenant_name
+            params["tenant_name"] = tenant_name
         elif self.keystone_version == 3:
-            params['name'] = tenant_name
-            params['domain'] = domain
+            params["name"] = tenant_name
+            params["domain"] = domain
         tenant = self.tenant_api.create(**params)
         if user and roles:
             if self.keystone_version == 3:
-                raise NotImplementedError('Role assignments for users are not implemented yet for '
-                                          'Keystone V3')
+                raise NotImplementedError(
+                    "Role assignments for users are not implemented yet for " "Keystone V3"
+                )
             user = self._get_user(name=user)
             for role in roles:
                 role_id = self._get_role(name=role)
@@ -759,7 +784,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self.tenant_api.delete(tid)
 
     def create_vm(self):
-        raise NotImplementedError('create_vm not implemented.')
+        raise NotImplementedError("create_vm not implemented.")
 
     def _generic_paginator(self, f):
         """A generic paginator for OpenStack services
@@ -794,7 +819,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return lists
 
     def list_vms(self, filter_tenants=True, all_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': all_tenants})
+        call = partial(self.api.servers.list, True, {"all_tenants": all_tenants})
         instances = self._generic_paginator(call)
         if filter_tenants and all_tenants:
             # Filter instances based on their tenant ID
@@ -859,14 +884,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             MultipleInstancesError -- more than 1 vm found
         """
         # Store the kwargs used for the exception msg's
-        kwargs = {'name': name, 'id': id, 'ip': ip}
+        kwargs = {"name": name, "id": id, "ip": ip}
         kwargs = {key: val for key, val in kwargs.items() if val is not None}
 
         matches = self.find_vms(**kwargs, all_tenants=all_tenants)
         if not matches:
-            raise VMInstanceNotFound('match criteria: {}'.format(kwargs))
+            raise VMInstanceNotFound(f"match criteria: {kwargs}")
         elif len(matches) > 1:
-            raise MultipleInstancesError('match criteria: {}'.format(kwargs))
+            raise MultipleInstancesError(f"match criteria: {kwargs}")
         return matches[0]
 
     @property
@@ -877,7 +902,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Returns:
             List of server ports objects
         """
-        return self.napi.list_ports()['ports']
+        return self.napi.list_ports()["ports"]
 
     def create_template(self, *args, **kwargs):
         raise NotImplementedError
@@ -947,8 +972,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             return
         # Wait for them
         wait_for(
-            lambda: all([not self.volume_exists(id) for id in ids]),
-            delay=0.5, num_sec=timeout)
+            lambda: all([not self.volume_exists(id) for id in ids]), delay=0.5, num_sec=timeout
+        )
 
     def volume_exists(self, id):
         try:
@@ -1031,8 +1056,10 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def volume_attachments(self, volume_id):
         """Returns a dictionary of ``{instance: device}`` relationship of the volume."""
         volume = self.capi.volumes.get(volume_id)
-        return {self.get_vm(id=attachment['server_id']).name: attachment['device']
-                for attachment in volume.attachments}
+        return {
+            self.get_vm(id=attachment["server_id"]).name: attachment["device"]
+            for attachment in volume.attachments
+        }
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
@@ -1056,11 +1083,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             if not floating_ip:
                 return False
             floating_ip = floating_ip[0]
-        self.logger.info('Deleting floating IP %s/%s', floating_ip.id, floating_ip.ip)
+        self.logger.info("Deleting floating IP %s/%s", floating_ip.id, floating_ip.ip)
         floating_ip.delete()
         wait_for(
             lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
-            delay=1, timeout='1m')
+            delay=1,
+            timeout="1m",
+        )
         return True
 
     def get_first_floating_ip(self, pool=None):
@@ -1072,24 +1101,24 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         Args:
             pool (str) -- pool to try to get IP from (optional)
         """
-        pool_name = getattr(pool, 'name', pool)  # obj attr, or passed thing (string) otherwise
+        pool_name = getattr(pool, "name", pool)  # obj attr, or passed thing (string) otherwise
         fip = None
         try:
             fip = self.api.floating_ips.create(pool_name)
         except os_exceptions.NotFound:
-            self.logger.exception('Exception while creating FIP for pool: %s', pool_name)
+            self.logger.exception("Exception while creating FIP for pool: %s", pool_name)
         else:
             if not fip:
                 self.logger.error(
                     "Unable to create new floating IP in pool %s,"
                     " trying to find an existing one that is free"
-                    " in any pool", pool_name
+                    " in any pool",
+                    pool_name,
                 )
         try:
-            fip = next(ip for ip in self.api.floating_ips.list()
-                   if ip.instance_id is None)
+            fip = next(ip for ip in self.api.floating_ips.list() if ip.instance_id is None)
         except StopIteration:
-            self.logger.error('No more Floating IPs available')
+            self.logger.error("No more Floating IPs available")
             return None
         return fip.ip
 
@@ -1114,7 +1143,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             return False
 
     def usage_and_quota(self):
-        data = self.api.limits.get().to_dict()['absolute']
+        data = self.api.limits.get().to_dict()["absolute"]
         host_cpus = 0
         host_ram = 0
         for hypervisor in self.api.hypervisors.list():
@@ -1123,13 +1152,13 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         # -1 == no limit
         return {
             # RAM
-            'ram_used': data['totalRAMUsed'],
-            'ram_total': host_ram,
-            'ram_limit': data['maxTotalRAMSize'] if data['maxTotalRAMSize'] >= 0 else None,
+            "ram_used": data["totalRAMUsed"],
+            "ram_total": host_ram,
+            "ram_limit": data["maxTotalRAMSize"] if data["maxTotalRAMSize"] >= 0 else None,
             # CPU
-            'cpu_used': data['totalCoresUsed'],
-            'cpu_total': host_cpus,
-            'cpu_limit': data['maxTotalCores'] if data['maxTotalCores'] >= 0 else None,
+            "cpu_used": data["totalCoresUsed"],
+            "cpu_total": host_cpus,
+            "cpu_limit": data["maxTotalCores"] if data["maxTotalCores"] >= 0 else None,
         }
 
     def list_containers(self):
@@ -1208,7 +1237,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         name = object_name or os.path.basename(path)
 
-        with open(path, 'rb') as obj:
+        with open(path, "rb") as obj:
             self.sapi.put_object(container_name, name, contents=obj)
 
     def delete_object(self, container_name, object_name):
@@ -1248,7 +1277,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             if e.http_reason == "Not Found":
                 raise ItemNotFound(
                     name=object_name,
-                    item_type="Swift Object in Container {}".format(container_name)
+                    item_type=f"Swift Object in Container {container_name}",
                 )
             else:
                 raise
@@ -1256,7 +1285,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         with open(path, "wb") as obj:
             obj.write(obj_contents)
 
-    def get_quota(self, quota='all'):
+    def get_quota(self, quota="all"):
         """Get quota details.
 
         Examples:
@@ -1277,10 +1306,10 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         quota = str(quota).lower()
         project_id = self._get_tenant(name=self.tenant)
         quota_values = {}
-        if quota in ['all', 'compute']:
-            quota_values.update({'compute': self.api.quotas.get(project_id).to_dict()})
-        if quota in ['all', 'volume']:
-            quota_values.update({'volume': self.capi.quotas.get(project_id).to_dict()})
-        if quota in ['all', 'network']:
-            quota_values.update({'network': self.napi.show_quota(project_id)['quota']})
+        if quota in ["all", "compute"]:
+            quota_values.update({"compute": self.api.quotas.get(project_id).to_dict()})
+        if quota in ["all", "volume"]:
+            quota_values.update({"volume": self.capi.quotas.get(project_id).to_dict()})
+        if quota in ["all", "network"]:
+            quota_values.update({"network": self.napi.show_quota(project_id)["quota"]})
         return quota_values

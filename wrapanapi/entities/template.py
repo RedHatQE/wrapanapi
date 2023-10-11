@@ -3,17 +3,20 @@ wrapanapi.entities.template
 
 Methods/classes pertaining to performing actions on a template
 """
+from abc import ABCMeta
+from abc import abstractmethod
 
-from abc import ABCMeta, abstractmethod
-
-from wrapanapi.entities.base import Entity, EntityMixin
-from wrapanapi.exceptions import MultipleItemsError, NotFoundError
+from wrapanapi.entities.base import Entity
+from wrapanapi.entities.base import EntityMixin
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import NotFoundError
 
 
 class Template(Entity, metaclass=ABCMeta):
     """
     Represents a template on a system
     """
+
     @abstractmethod
     def deploy(self, vm_name, timeout, **kwargs):
         """
@@ -27,6 +30,7 @@ class TemplateMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods a wrapanapi.systems.System that manages Templates should have
     """
+
     @abstractmethod
     def get_template(self, name, **kwargs):
         """

@@ -3,17 +3,20 @@ wrapanapi.entities.stack
 
 Orchestration stacks
 """
+from abc import ABCMeta
+from abc import abstractmethod
 
-from abc import ABCMeta, abstractmethod
-
-from wrapanapi.entities.base import Entity, EntityMixin
-from wrapanapi.exceptions import MultipleItemsError, NotFoundError
+from wrapanapi.entities.base import Entity
+from wrapanapi.entities.base import EntityMixin
+from wrapanapi.exceptions import MultipleItemsError
+from wrapanapi.exceptions import NotFoundError
 
 
 class Stack(Entity, metaclass=ABCMeta):
     """
     Defines methods/properties pertaining to stacks
     """
+
     @abstractmethod
     def get_details(self):
         """
@@ -32,6 +35,7 @@ class StackMixin(EntityMixin, metaclass=ABCMeta):
     """
     Defines methods for systems that support stacks
     """
+
     @abstractmethod
     def list_stacks(self, **kwargs):
         """

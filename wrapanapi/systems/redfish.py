@@ -1,29 +1,32 @@
-# coding: utf-8
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
-
 import redfish_client
 
-from wrapanapi.entities import PhysicalContainer, Server, ServerState
+from wrapanapi.entities import PhysicalContainer
+from wrapanapi.entities import Server
+from wrapanapi.entities import ServerState
 from wrapanapi.entities.base import Entity
-from wrapanapi.exceptions import InvalidValueException, ItemNotFound
+from wrapanapi.exceptions import InvalidValueException
+from wrapanapi.exceptions import ItemNotFound
 from wrapanapi.systems.base import System
 
 
 class RedfishItemNotFound(ItemNotFound):
     """Raised if a Redfish item is not found."""
+
     def __init__(self, name, item_type, response):
-        super(RedfishItemNotFound, self).__init__(name, item_type)
+        super().__init__(name, item_type)
         self.response = response
 
     def __str__(self):
-        return 'Could not find a {} named {}. Response:\n{}'.format(self.item_type, self.name,
-            self.response)
+        return "Could not find a {} named {}. Response:\n{}".format(
+            self.item_type, self.name, self.response
+        )
 
 
 class RedfishResource(Entity):
-    """Class representing a generic Redfish resource such as Server or Chassis. """
+    """Class representing a generic Redfish resource such as Server or Chassis."""
 
     def __init__(self, system, raw=None, **kwargs):
         """
@@ -34,11 +37,11 @@ class RedfishResource(Entity):
             raw: the root resource in the Redfish API
             odata_id: (optional) the @odata.id reference of this instance
         """
-        self._odata_id = raw['@odata.id'] if raw else kwargs.get('odata_id')
+        self._odata_id = raw["@odata.id"] if raw else kwargs.get("odata_id")
         if not self._odata_id:
             raise ValueError("missing required kwargs: 'odata_id'")
 
-        super(RedfishResource, self).__init__(system, raw, **kwargs)
+        super().__init__(system, raw, **kwargs)
 
     @property
     def _identifying_attrs(self):
@@ -48,7 +51,7 @@ class RedfishResource(Entity):
         These attributes identify the instance without needing to query the API
         for updated data.
         """
-        return {'odata_id': self._odata_id}
+        return {"odata_id": self._odata_id}
 
     def refresh(self):
         """
@@ -67,9 +70,9 @@ class RedfishResource(Entity):
     @property
     def name(self):
         """Return name from most recent raw data."""
-        name = "{} {}".format(self.raw.Manufacturer, self.raw.Name)
+        name = f"{self.raw.Manufacturer} {self.raw.Name}"
         if "SerialNumber" in self.raw:
-            name = "{} ({})".format(name, self.raw.SerialNumber)
+            name = f"{name} ({self.raw.SerialNumber})"
         return name
 
     @property
@@ -84,10 +87,10 @@ class RedfishResource(Entity):
 
 class RedfishServer(Server, RedfishResource):
     state_map = {
-        'On': ServerState.ON,
-        'Off': ServerState.OFF,
-        'PoweringOn': ServerState.POWERING_ON,
-        'PoweringOff': ServerState.POWERING_OFF,
+        "On": ServerState.ON,
+        "Off": ServerState.OFF,
+        "PoweringOn": ServerState.POWERING_ON,
+        "PoweringOff": ServerState.POWERING_OFF,
     }
 
     @property
@@ -156,53 +159,52 @@ class RedfishSystem(System):
 
     # statistics for the provider
     _stats_available = {
-        'num_server': lambda system: system.num_servers,
-        'num_chassis': lambda system: system.num_chassis,
-        'num_racks': lambda system: system.num_racks,
+        "num_server": lambda system: system.num_servers,
+        "num_chassis": lambda system: system.num_chassis,
+        "num_racks": lambda system: system.num_racks,
     }
 
     # statistics for an individual server
     _server_stats_available = {
-        'cores_capacity': lambda server: server.server_cores,
-        'memory_capacity': lambda server: server.server_memory,
+        "cores_capacity": lambda server: server.server_cores,
+        "memory_capacity": lambda server: server.server_memory,
     }
 
     _server_inventory_available = {
-        'power_state': lambda server: server.state.lower(),
+        "power_state": lambda server: server.state.lower(),
     }
 
     # rack statistics
 
-    _rack_stats_available = {
-    }
+    _rack_stats_available = {}
 
     _rack_inventory_available = {
-        'rack_name': lambda rack: rack.name,
+        "rack_name": lambda rack: rack.name,
     }
 
     _chassis_stats_available = {
-        'num_physical_servers': lambda chassis: chassis.num_servers,
+        "num_physical_servers": lambda chassis: chassis.num_servers,
     }
 
     _chassis_inventory_available = {
-        'chassis_name': lambda chassis: chassis.name,
-        'description': lambda chassis: chassis.description,
-        'identify_led_state': lambda chassis: chassis.led_state,
+        "chassis_name": lambda chassis: chassis.name,
+        "description": lambda chassis: chassis.description,
+        "identify_led_state": lambda chassis: chassis.led_state,
     }
 
     def __init__(self, hostname, username, password, security_protocol, api_port=443, **kwargs):
-        super(RedfishSystem, self).__init__(**kwargs)
-        protocol = 'http' if security_protocol == 'Non-SSL' else 'https'
-        self.url = '{}://{}:{}/'.format(protocol, hostname, api_port)
+        super().__init__(**kwargs)
+        protocol = "http" if security_protocol == "Non-SSL" else "https"
+        self.url = f"{protocol}://{hostname}:{api_port}/"
         self.kwargs = kwargs
         self.api_client = redfish_client.connect(self.url, username, password)
 
     @property
     def _identifying_attrs(self):
-        return {'url': self.url}
+        return {"url": self.url}
 
     def info(self):
-        return 'RedfishSystem url={}'.format(self.url)
+        return f"RedfishSystem url={self.url}"
 
     def server_stats(self, physical_server, requested_stats, **kwargs):
         """
@@ -220,8 +222,9 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish server
         redfish_server = self.get_server(physical_server.ems_ref)
 
-        return {stat: self._server_stats_available[stat](redfish_server)
-                for stat in requested_stats}
+        return {
+            stat: self._server_stats_available[stat](redfish_server) for stat in requested_stats
+        }
 
     def server_inventory(self, physical_server, requested_items, **kwargs):
         """
@@ -239,8 +242,9 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish server
         redfish_server = self.get_server(physical_server.ems_ref)
 
-        return {item: self._server_inventory_available[item](redfish_server)
-                for item in requested_items}
+        return {
+            item: self._server_inventory_available[item](redfish_server) for item in requested_items
+        }
 
     def rack_stats(self, physical_rack, requested_stats):
         """
@@ -258,8 +262,7 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish rack
         redfish_rack = self.get_rack(physical_rack.ems_ref)
 
-        return {stat: self._rack_stats_available[stat](redfish_rack)
-                for stat in requested_stats}
+        return {stat: self._rack_stats_available[stat](redfish_rack) for stat in requested_stats}
 
     def rack_inventory(self, physical_rack, requested_items):
         """
@@ -277,8 +280,9 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish rack
         redfish_rack = self.get_rack(physical_rack.ems_ref)
 
-        return {item: self._rack_inventory_available[item](redfish_rack)
-                for item in requested_items}
+        return {
+            item: self._rack_inventory_available[item](redfish_rack) for item in requested_items
+        }
 
     def chassis_stats(self, physical_chassis, requested_stats):
         """
@@ -296,8 +300,9 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish chassis
         redfish_chassis = self.get_chassis(physical_chassis.ems_ref)
 
-        return {stat: self._chassis_stats_available[stat](redfish_chassis)
-                for stat in requested_stats}
+        return {
+            stat: self._chassis_stats_available[stat](redfish_chassis) for stat in requested_stats
+        }
 
     def chassis_inventory(self, physical_chassis, requested_items):
         """
@@ -315,8 +320,10 @@ class RedfishSystem(System):
         # Get an instance of the requested Redfish chassis
         redfish_chassis = self.get_chassis(physical_chassis.ems_ref)
 
-        return {item: self._chassis_inventory_available[item](redfish_chassis)
-                for item in requested_items}
+        return {
+            item: self._chassis_inventory_available[item](redfish_chassis)
+            for item in requested_items
+        }
 
     def find(self, resource_id):
         """
@@ -372,8 +379,7 @@ class RedfishSystem(System):
         chassis = RedfishChassis(self, raw=self.find(resource_id))
 
         if required_types and chassis.raw.ChassisType not in required_types:
-            raise InvalidValueException(
-                "This chassis is of wrong type {}".format(chassis.raw.ChassisType))
+            raise InvalidValueException(f"This chassis is of wrong type {chassis.raw.ChassisType}")
 
         return chassis
 
@@ -390,8 +396,9 @@ class RedfishSystem(System):
         """
         rack_data = self.find(resource_id)
         if rack_data.ChassisType != "Rack":
-            raise InvalidValueException("Chassis type {} does not match that of a Rack".format(
-                rack_data.ChassisType))
+            raise InvalidValueException(
+                f"Chassis type {rack_data.ChassisType} does not match that of a Rack"
+            )
 
         return RedfishRack(self, raw=rack_data)
 
@@ -403,11 +410,15 @@ class RedfishSystem(System):
     @property
     def num_chassis(self):
         """Return the count of Physical Chassis discovered by the provider."""
-        return len([chassis for chassis in self.api_client.Chassis.Members
-            if chassis.ChassisType != "Rack"])
+        return len(
+            [
+                chassis
+                for chassis in self.api_client.Chassis.Members
+                if chassis.ChassisType != "Rack"
+            ]
+        )
 
     @property
     def num_racks(self):
         """Return the number of Physical Racks discovered by the provider."""
-        return len([rack for rack in self.api_client.Chassis.Members
-            if rack.ChassisType == "Rack"])
+        return len([rack for rack in self.api_client.Chassis.Members if rack.ChassisType == "Rack"])

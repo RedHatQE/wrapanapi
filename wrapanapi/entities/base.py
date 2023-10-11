@@ -3,11 +3,13 @@ wrapanapi.entities.base
 
 Provides method/class definitions for handling any entity on a provider
 """
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta
+from abc import abstractmethod
+from abc import abstractproperty
 from reprlib import aRepr
 
-from wrapanapi.utils import LoggerMixin
 from wrapanapi.exceptions import NotFoundError
+from wrapanapi.utils import LoggerMixin
 
 
 class Entity(LoggerMixin, metaclass=ABCMeta):
@@ -18,6 +20,7 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
     Provides properties/methods that should be applicable
     across all entities on all systems.
     """
+
     def __init__(self, system, raw=None, **kwargs):
         """
         Constructor for an entity
@@ -73,8 +76,8 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         """
         string = ""
         for key, val in self._identifying_attrs.items():
-            string = "{}{}={} ".format(string, key, val)
-        return "<{}>".format(string.strip())
+            string = f"{string}{key}={val} "
+        return f"<{string.strip()}>"
 
     def __eq__(self, other):
         """
@@ -90,8 +93,9 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         if not isinstance(other, self.__class__):
             return False
         try:
-            return (self.system == other.system and
-                    self._identifying_attrs == other._identifying_attrs)
+            return (
+                self.system == other.system and self._identifying_attrs == other._identifying_attrs
+            )
         except AttributeError:
             return False
 
@@ -105,13 +109,10 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         >
         """
         # Show object type for system and raw
-        params_repr = (
-            "system=<{sys_obj_cls}> raw=<{raw_obj_mod}.{raw_obj_cls}>"
-            .format(
-                sys_obj_cls=self.system.__class__.__name__,
-                raw_obj_mod=self._raw.__class__.__module__,
-                raw_obj_cls=self._raw.__class__.__name__
-            )
+        params_repr = "system=<{sys_obj_cls}> raw=<{raw_obj_mod}.{raw_obj_cls}>".format(
+            sys_obj_cls=self.system.__class__.__name__,
+            raw_obj_mod=self._raw.__class__.__module__,
+            raw_obj_cls=self._raw.__class__.__name__,
         )
 
         # Show kwarg key/value for each unique kwarg
@@ -119,13 +120,10 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         a_repr.maxstring = 100
         a_repr.maxother = 100
         for key, val in self._identifying_attrs.items():
-            params_repr = (
-                "{existing_params_repr}, kwargs['{kwarg_key}']={kwarg_val}"
-                .format(
-                    existing_params_repr=params_repr,
-                    kwarg_key=key,
-                    kwarg_val=a_repr.repr(val),
-                )
+            params_repr = "{existing_params_repr}, kwargs['{kwarg_key}']={kwarg_val}".format(
+                existing_params_repr=params_repr,
+                kwarg_key=key,
+                kwarg_val=a_repr.repr(val),
             )
 
         return "<{mod_name}.{class_name} {params_repr}>".format(
@@ -167,8 +165,7 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         Return all subclasses that inherit from this class
         """
         for subclass in cls.__subclasses__():
-            for nested_subclass in subclass.get_all_subclasses():
-                yield nested_subclass
+            yield from subclass.get_all_subclasses()
             yield subclass
 
     @abstractmethod
@@ -246,7 +243,7 @@ class Entity(LoggerMixin, metaclass=ABCMeta):
         self._raw = value
 
 
-class EntityMixin(object):
+class EntityMixin:
     """
     Usually an Entity also provides a mixin which defines methods/properties that should
     be defined by a wrapanapi.systems.System that manages that type of entity
@@ -259,5 +256,6 @@ class EntityMixin(object):
     However, methods for operating on a retrieved entity should be defined in the Entity class
 
     """
+
     # There may be some common methods/properties that apply at the base level in future...
     pass

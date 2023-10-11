@@ -3,6 +3,7 @@
 .pytest_cache/
 .coverage
 .venv*
+dist/
 .eggs
 *.egg-info
 .env/

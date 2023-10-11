@@ -1,8 +1,6 @@
-# coding: utf-8
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
-
 from wrapanapi.systems.base import System
 from wrapanapi.utils.random import random_name
 
@@ -21,31 +19,34 @@ class NuageSystem(System):
     _stats_available = {
         # We're returning 3rd element of .count() tuple which is formed as
         # entities.count() == (fetcher, served object, count of fetched objects)
-        'num_security_group': lambda self: self.api.policy_groups.count()[2],
+        "num_security_group": lambda self: self.api.policy_groups.count()[2],
         # Filter out 'BackHaulSubnet' and combine it with l2_domains the same way CloudForms does
-        'num_cloud_subnet': lambda self: self.api.subnets.count(
-            filter="name != 'BackHaulSubnet'")[2] + self.api.l2_domains.count()[2],
-        'num_cloud_tenant': lambda self: self.api.enterprises.count()[2],
-        'num_network_router': lambda self: self.api.domains.count()[2],
-        'num_cloud_network': lambda self: len(self.list_floating_network_resources()),
-        'num_floating_ip': lambda self: self.api.floating_ips.count()[2],
-        'num_network_port': lambda self: len(self.list_vports())
+        "num_cloud_subnet": lambda self: self.api.subnets.count(filter="name != 'BackHaulSubnet'")[
+            2
+        ]
+        + self.api.l2_domains.count()[2],
+        "num_cloud_tenant": lambda self: self.api.enterprises.count()[2],
+        "num_network_router": lambda self: self.api.domains.count()[2],
+        "num_cloud_network": lambda self: len(self.list_floating_network_resources()),
+        "num_floating_ip": lambda self: self.api.floating_ips.count()[2],
+        "num_network_port": lambda self: len(self.list_vports()),
     }
 
-    def __init__(self, hostname, username, password, api_port, api_version, security_protocol,
-                 **kwargs):
-        super(NuageSystem, self).__init__(**kwargs)
-        protocol = 'http' if 'non' in security_protocol.lower() else 'https'
+    def __init__(
+        self, hostname, username, password, api_port, api_version, security_protocol, **kwargs
+    ):
+        super().__init__(**kwargs)
+        protocol = "http" if "non" in security_protocol.lower() else "https"
         self.username = username
         self.password = password
-        self.url = '{}://{}:{}'.format(protocol, hostname, api_port)
-        self.enterprise = 'csp'
+        self.url = f"{protocol}://{hostname}:{api_port}"
+        self.enterprise = "csp"
         self.api_version = api_version
         self._api = None
 
     @property
     def vspk(self):
-        if self.api_version == 'v4_0':
+        if self.api_version == "v4_0":
             from vspk import v4_0 as vspk
         else:
             from vspk import v5_0 as vspk
@@ -58,7 +59,7 @@ class NuageSystem(System):
                 username=self.username,
                 password=self.password,
                 enterprise=self.enterprise,
-                api_url=self.url
+                api_url=self.url,
             )
             session.start()
             self._api = session.user
@@ -69,10 +70,10 @@ class NuageSystem(System):
 
     @property
     def _identifying_attrs(self):
-        return {'url': self.url}
+        return {"url": self.url}
 
     def info(self):
-        return 'NuageSystem: url={}'.format(self.url)
+        return f"NuageSystem: url={self.url}"
 
     def list_floating_network_resources(self):
         return self.api.shared_network_resources.get(filter='type is "FLOATING"')

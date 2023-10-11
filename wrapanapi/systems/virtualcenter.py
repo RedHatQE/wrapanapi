@@ -1,9 +1,7 @@
-# coding: utf-8
 """Backend management system classes
 
 Used to communicate with providers without using CFME facilities
 """
-
 import atexit
 import operator
 import re
@@ -11,91 +9,97 @@ import ssl
 import threading
 import time
 from datetime import datetime
-from distutils.version import LooseVersion
 from functools import partial
 
 import pytz
 from cached_property import threaded_cached_property
-from pyVim.connect import Disconnect, SmartConnect
-from pyVmomi import vim, vmodl
-from wait_for import TimedOutError, wait_for
+from distutils.version import LooseVersion
+from pyVim.connect import Disconnect
+from pyVim.connect import SmartConnect
+from pyVmomi import vim
+from pyVmomi import vmodl
+from wait_for import TimedOutError
+from wait_for import wait_for
 
-from wrapanapi.entities import (Template, TemplateMixin, Vm, VmMixin,
-                                VmState)
+from wrapanapi.entities import Template
+from wrapanapi.entities import TemplateMixin
+from wrapanapi.entities import Vm
+from wrapanapi.entities import VmMixin
+from wrapanapi.entities import VmState
 from wrapanapi.entities.base import Entity
-from wrapanapi.exceptions import (DatastoreNotFoundError, HostNotRemoved, NotFoundError,
-                                  VMCreationDateError, VMInstanceNotCloned,
-                                  VMInstanceNotFound, VMInstanceNotStopped,
-                                  VMInstanceNotSuspended, VMNotFoundViaIP)
+from wrapanapi.exceptions import DatastoreNotFoundError
+from wrapanapi.exceptions import HostNotRemoved
+from wrapanapi.exceptions import NotFoundError
+from wrapanapi.exceptions import VMCreationDateError
+from wrapanapi.exceptions import VMInstanceNotCloned
+from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.exceptions import VMInstanceNotStopped
+from wrapanapi.exceptions import VMInstanceNotSuspended
+from wrapanapi.exceptions import VMNotFoundViaIP
 from wrapanapi.systems.base import System
 
 
 SELECTION_SPECS = [
-    'resource_pool_traversal_spec',
-    'resource_pool_vm_traversal_spec',
-    'folder_traversal_spec',
-    'datacenter_host_traversal_spec',
-    'datacenter_vm_traversal_spec',
-    'compute_resource_rp_traversal_spec',
-    'compute_resource_host_traversal_spec',
-    'host_vm_traversal_spec',
-    'datacenter_datastore_traversal_spec'
+    "resource_pool_traversal_spec",
+    "resource_pool_vm_traversal_spec",
+    "folder_traversal_spec",
+    "datacenter_host_traversal_spec",
+    "datacenter_vm_traversal_spec",
+    "compute_resource_rp_traversal_spec",
+    "compute_resource_host_traversal_spec",
+    "host_vm_traversal_spec",
+    "datacenter_datastore_traversal_spec",
 ]
 TRAVERSAL_SPECS = [
     {
-        'name': 'resource_pool_traversal_spec',
-        'type': vim.ResourcePool,
-        'path': 'resourcePool',
-        'select_indices': [0, 1]
+        "name": "resource_pool_traversal_spec",
+        "type": vim.ResourcePool,
+        "path": "resourcePool",
+        "select_indices": [0, 1],
     },
     {
-        'name': 'resource_pool_vm_traversal_spec',
-        'type': vim.ResourcePool,
-        'path': 'vm',
-        'select_indices': []
+        "name": "resource_pool_vm_traversal_spec",
+        "type": vim.ResourcePool,
+        "path": "vm",
+        "select_indices": [],
     },
     {
-        'name': 'compute_resource_rp_traversal_spec',
-        'type': vim.ComputeResource,
-        'path': 'resourcePool',
-        'select_indices': [0, 1]
+        "name": "compute_resource_rp_traversal_spec",
+        "type": vim.ComputeResource,
+        "path": "resourcePool",
+        "select_indices": [0, 1],
     },
     {
-        'name': 'compute_resource_host_traversal_spec',
-        'type': vim.ComputeResource,
-        'path': 'host',
-        'select_indices': []
+        "name": "compute_resource_host_traversal_spec",
+        "type": vim.ComputeResource,
+        "path": "host",
+        "select_indices": [],
     },
     {
-        'name': 'datacenter_host_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'hostFolder',
-        'select_indices': [2]
+        "name": "datacenter_host_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "hostFolder",
+        "select_indices": [2],
     },
     {
-        'name': 'datacenter_datastore_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'datastoreFolder',
-        'select_indices': [2]
+        "name": "datacenter_datastore_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "datastoreFolder",
+        "select_indices": [2],
     },
     {
-        'name': 'datacenter_vm_traversal_spec',
-        'type': vim.Datacenter,
-        'path': 'vmFolder',
-        'select_indices': [2]
+        "name": "datacenter_vm_traversal_spec",
+        "type": vim.Datacenter,
+        "path": "vmFolder",
+        "select_indices": [2],
     },
+    {"name": "host_vm_traversal_spec", "type": vim.HostSystem, "path": "vm", "select_indices": [2]},
     {
-        'name': 'host_vm_traversal_spec',
-        'type': vim.HostSystem,
-        'path': 'vm',
-        'select_indices': [2]
+        "name": "folder_traversal_spec",
+        "type": vim.Folder,
+        "path": "childEntity",
+        "select_indices": [2, 3, 4, 5, 6, 7, 1, 8],
     },
-    {
-        'name': 'folder_traversal_spec',
-        'type': vim.Folder,
-        'path': 'childEntity',
-        'select_indices': [2, 3, 4, 5, 6, 7, 1, 8]
-    }
 ]
 
 
@@ -104,16 +108,15 @@ def get_task_error_message(task):
     function will figure out the error message.
     """
     message = "faultCause='{}', faultMessage='{}', localizedMessage='{}'".format(
-        task.info.error.faultCause if hasattr(task.info.error, 'faultCause') else "",
-        task.info.error.faultMessage if hasattr(task.info.error, 'faultMessage') else "",
-        task.info.error.localizedMessage if hasattr(task.info.error, 'localizedMessage') else ""
+        task.info.error.faultCause if hasattr(task.info.error, "faultCause") else "",
+        task.info.error.faultMessage if hasattr(task.info.error, "faultMessage") else "",
+        task.info.error.localizedMessage if hasattr(task.info.error, "localizedMessage") else "",
     )
     return message
 
 
 def progress_log_callback(logger, source, destination, progress):
-    logger.info("Provisioning progress {}->{}: {}".format(
-        source, destination, str(progress)))
+    logger.info(f"Provisioning progress {source}->{destination}: {str(progress)}")
 
 
 class VMWareVMOrTemplate(Entity):
@@ -125,6 +128,7 @@ class VMWareVMOrTemplate(Entity):
 
     A template will have 'config.template'==True
     """
+
     def __init__(self, system, raw=None, **kwargs):
         """
         Construct a VMWareVirtualMachine instance
@@ -134,14 +138,14 @@ class VMWareVMOrTemplate(Entity):
             raw: pyVmomi.vim.VirtualMachine object
             name: name of VM
         """
-        super(VMWareVMOrTemplate, self).__init__(system, raw, **kwargs)
-        self._name = raw.name if raw else kwargs.get('name')
+        super().__init__(system, raw, **kwargs)
+        self._name = raw.name if raw else kwargs.get("name")
         if not self._name:
             raise ValueError("missing required kwarg 'name'")
 
     @property
     def _identifying_attrs(self):
-        return {'name': self._name}
+        return {"name": self._name}
 
     @property
     def name(self):
@@ -167,14 +171,14 @@ class VMWareVMOrTemplate(Entity):
 
     @staticmethod
     def _get_loc_of_vm(source_template, progress_callback):
-        """ Get the location where the inventory object will be stored"""
+        """Get the location where the inventory object will be stored"""
         folder = getattr(source_template.parent.parent, "vmParent", None) or source_template.parent
-        progress_callback("Picked folder `{}`".format(folder.name))
+        progress_callback(f"Picked folder `{folder.name}`")
         return folder
 
     @staticmethod
     def _set_vm_clone_spec(mark_template, power_on, vm_reloc_spec, cpu, ram):
-        """Set properties for Virtual Machine Cloning Operation specification """
+        """Set properties for Virtual Machine Cloning Operation specification"""
 
         vm_clone_spec = vim.VirtualMachineCloneSpec()
 
@@ -197,7 +201,7 @@ class VMWareVMOrTemplate(Entity):
         task = self.raw.Destroy_Task()
 
         try:
-            wait_for(lambda: self.system.get_task_status(task) == 'success', delay=3, timeout="4m")
+            wait_for(lambda: self.system.get_task_status(task) == "success", delay=3, timeout="4m")
         except TimedOutError:
             self.logger.warn("Hit TimedOutError waiting for VM '%s' delete task", self.name)
             if self.exists:
@@ -230,14 +234,16 @@ class VMWareVMOrTemplate(Entity):
     def get_hardware_configuration(self):
         self.refresh()
         return {
-            'ram': self.raw.config.hardware.memoryMB,
-            'cpu': self.raw.config.hardware.numCPU,
+            "ram": self.raw.config.hardware.memoryMB,
+            "cpu": self.raw.config.hardware.numCPU,
         }
 
     def get_datastore_path(self, vm_config_datastore):
-        datastore_url = [str(datastore.url)
-                         for datastore in self.raw.config.datastoreUrl
-                         if datastore.name in vm_config_datastore]
+        datastore_url = [
+            str(datastore.url)
+            for datastore in self.raw.config.datastoreUrl
+            if datastore.name in vm_config_datastore
+        ]
         return datastore_url.pop()
 
     def get_config_files_path(self):
@@ -246,44 +252,49 @@ class VMWareVMOrTemplate(Entity):
         return str(vmfilespath)
 
     def pick_datastore(self, allowed_datastores):
-        """ Pick a datastore based on free space.
-         Args:
-             allowed_datastores: A list of allowed datastore names that can be deployed on
-         Returns:
-             pyVmomi.vim.Datastore: The managed object of the datastore.
+        """Pick a datastore based on free space.
+        Args:
+            allowed_datastores: A list of allowed datastore names that can be deployed on
+        Returns:
+            pyVmomi.vim.Datastore: The managed object of the datastore.
         """
         possible_datastores = [
-            ds for ds in self.system.get_obj_list(vim.Datastore)
-            if ds.name in allowed_datastores and ds.summary.accessible and
-            ds.summary.multipleHostAccess and ds.overallStatus != "red"]
+            ds
+            for ds in self.system.get_obj_list(vim.Datastore)
+            if ds.name in allowed_datastores
+            and ds.summary.accessible
+            and ds.summary.multipleHostAccess
+            and ds.overallStatus != "red"
+        ]
         if not possible_datastores:
-            raise DatastoreNotFoundError(item_type='datastores')
+            raise DatastoreNotFoundError(item_type="datastores")
         possible_datastores.sort(
-            key=lambda ds: float(ds.summary.freeSpace) / float(ds.summary.capacity),
-            reverse=True)
+            key=lambda ds: float(ds.summary.freeSpace) / float(ds.summary.capacity), reverse=True
+        )
         return possible_datastores[0]
 
     def pick_datastore_cluster(self):
-        """ Pick a datastore cluster based on free space.
+        """Pick a datastore cluster based on free space.
         Returns:
              pyVmomi.vim.StoragePod: The managed object of the datastore cluster.
         """
         # avoid datastore clusters with no datastores in them and that are in a 'red' status
         possible_datastore_clusters = [
-            dsc for dsc in self.system.get_obj_list(vim.StoragePod)
+            dsc
+            for dsc in self.system.get_obj_list(vim.StoragePod)
             if dsc.overallStatus != "red" and bool(dsc.childEntity)
         ]
 
         if not possible_datastore_clusters:
-            raise DatastoreNotFoundError(item_type='datastore clusters')
+            raise DatastoreNotFoundError(item_type="datastore clusters")
         # choose the datastore cluster with the most freespace
         possible_datastore_clusters.sort(
-            key=lambda dsc: float(dsc.summary.freeSpace) / float(dsc.summary.capacity),
-            reverse=True)
+            key=lambda dsc: float(dsc.summary.freeSpace) / float(dsc.summary.capacity), reverse=True
+        )
         return possible_datastore_clusters[0]
 
     def _get_resource_pool(self, resource_pool_name=None):
-        """ Returns a resource pool managed object for a specified name.
+        """Returns a resource pool managed object for a specified name.
 
         Args:
             resource_pool_name (string): The name of the resource pool. If None, first one will be
@@ -299,7 +310,7 @@ class VMWareVMOrTemplate(Entity):
             return self.system.get_obj_list(vim.ResourcePool)[0]
 
     def _get_cluster_compute_resource(self, resource_name=None):
-        """ Returns a Compute Cluster Resource managed object. If a name is specified,
+        """Returns a Compute Cluster Resource managed object. If a name is specified,
         a vim.ClusterComputeResource object is returned for the specific resource. If no name is
         specified, the method checks if there are is a default resource specified and returns the
         object of the resource. Finally,  if there is no name or defaults specified, it queries
@@ -313,14 +324,16 @@ class VMWareVMOrTemplate(Entity):
         if resource_name is not None:
             return self.system.get_obj(vim.ClusterComputeResource, resource_name)
         elif self.system.default_cluster_compute_resource is not None:
-            return self.system.get_obj(vim.ClusterComputeResource,
-                                       self.system.default_cluster_compute_resource)
+            return self.system.get_obj(
+                vim.ClusterComputeResource, self.system.default_cluster_compute_resource
+            )
         else:
             return self.system.get_obj_list(vim.ClusterComputeResource)[0]
 
-    def _set_vm_relocate_spec(self, resource_pool, host, sparse, progress_callback,
-                              deploy_on_ds_cluster):
-        """Set properties for Virtual Machine Relocate Operation specification """
+    def _set_vm_relocate_spec(
+        self, resource_pool, host, sparse, progress_callback, deploy_on_ds_cluster
+    ):
+        """Set properties for Virtual Machine Relocate Operation specification"""
 
         vm_reloc_spec = vim.VirtualMachineRelocateSpec()
 
@@ -334,11 +347,12 @@ class VMWareVMOrTemplate(Entity):
                 vm_reloc_spec.pool = self._get_cluster_compute_resource(resource_pool).resourcePool
             else:
                 vm_reloc_spec.pool = self._get_resource_pool(resource_pool)
-        progress_callback("Picked resource pool `{}`".format(vm_reloc_spec.pool.name))
+        progress_callback(f"Picked resource pool `{vm_reloc_spec.pool.name}`")
 
         # Target Host for the VM, this could be none
-        vm_reloc_spec.host = (host if isinstance(host, vim.HostSystem)
-                              else self.system.get_obj(vim.HostSystem, host))
+        vm_reloc_spec.host = (
+            host if isinstance(host, vim.HostSystem) else self.system.get_obj(vim.HostSystem, host)
+        )
         if sparse:
             vm_reloc_spec.transform = vim.VirtualMachineRelocateTransformation().sparse
             progress_callback("Transformation has been set to sparse")
@@ -348,49 +362,92 @@ class VMWareVMOrTemplate(Entity):
 
         return vm_reloc_spec
 
-    def _clone_on_datastore(self, destination, resource_pool, datastore, power_on, sparse,
-                            mark_template, progress_callback, cpu, ram, relocate, host,
-                            source_template, deploy_on_ds_cluster):
+    def _clone_on_datastore(
+        self,
+        destination,
+        resource_pool,
+        datastore,
+        power_on,
+        sparse,
+        mark_template,
+        progress_callback,
+        cpu,
+        ram,
+        relocate,
+        host,
+        source_template,
+        deploy_on_ds_cluster,
+    ):
         """Set all required parameters for a clone or relocate on a datastore"""
 
-        vm_reloc_spec = self._set_vm_relocate_spec(resource_pool=resource_pool, host=host,
-                                                   sparse=sparse,
-                                                   progress_callback=progress_callback,
-                                                   deploy_on_ds_cluster=deploy_on_ds_cluster)
+        vm_reloc_spec = self._set_vm_relocate_spec(
+            resource_pool=resource_pool,
+            host=host,
+            sparse=sparse,
+            progress_callback=progress_callback,
+            deploy_on_ds_cluster=deploy_on_ds_cluster,
+        )
 
         # Set the datastore property
         vm_reloc_spec.datastore = datastore
 
-        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, mark_template=mark_template,
-                                                cpu=cpu, ram=ram, vm_reloc_spec=vm_reloc_spec)
+        vm_clone_spec = self._set_vm_clone_spec(
+            power_on=power_on,
+            mark_template=mark_template,
+            cpu=cpu,
+            ram=ram,
+            vm_reloc_spec=vm_reloc_spec,
+        )
 
         # Get the location of the new VM
-        folder = self._get_loc_of_vm(source_template=source_template,
-                                     progress_callback=progress_callback)
+        folder = self._get_loc_of_vm(
+            source_template=source_template, progress_callback=progress_callback
+        )
 
         if relocate:
             action = source_template.RelocateVM_Task
         else:
             action = source_template.CloneVM_Task
-        action_args = dict(spec=vm_reloc_spec) if relocate else dict(folder=folder,
-                                                                     name=destination,
-                                                                     spec=vm_clone_spec)
+        action_args = (
+            dict(spec=vm_reloc_spec)
+            if relocate
+            else dict(folder=folder, name=destination, spec=vm_clone_spec)
+        )
 
         return action(**action_args)
 
-    def _clone_on_datastore_cluster(self, destination, resource_pool, datastore, power_on, sparse,
-                                    mark_template, progress_callback, cpu, ram, host,
-                                    source_template, deploy_on_ds_cluster):
+    def _clone_on_datastore_cluster(
+        self,
+        destination,
+        resource_pool,
+        datastore,
+        power_on,
+        sparse,
+        mark_template,
+        progress_callback,
+        cpu,
+        ram,
+        host,
+        source_template,
+        deploy_on_ds_cluster,
+    ):
         """Set all required parameters for a clone or relocate on a datastore cluster"""
 
-        vm_reloc_spec = self._set_vm_relocate_spec(resource_pool=resource_pool, host=host,
-                                                   sparse=sparse,
-                                                   progress_callback=progress_callback,
-                                                   deploy_on_ds_cluster=deploy_on_ds_cluster)
+        vm_reloc_spec = self._set_vm_relocate_spec(
+            resource_pool=resource_pool,
+            host=host,
+            sparse=sparse,
+            progress_callback=progress_callback,
+            deploy_on_ds_cluster=deploy_on_ds_cluster,
+        )
 
-        vm_clone_spec = self._set_vm_clone_spec(power_on=power_on, mark_template=mark_template,
-                                                cpu=cpu, ram=ram,
-                                                vm_reloc_spec=vm_reloc_spec)
+        vm_clone_spec = self._set_vm_clone_spec(
+            power_on=power_on,
+            mark_template=mark_template,
+            cpu=cpu,
+            ram=ram,
+            vm_reloc_spec=vm_reloc_spec,
+        )
 
         # Create the StoragePlaceSpec object that will be passed to the RecommendDatastores method
         storage_spec = vim.StoragePlacementSpec()
@@ -399,10 +456,11 @@ class VMWareVMOrTemplate(Entity):
         # Specification for moving or copying a VM to a different storage pod
         pod_spec = vim.StorageDrsPodSelectionSpec(storagePod=datastore)
 
-        storage_spec.type = 'clone'
+        storage_spec.type = "clone"
         storage_spec.cloneName = destination
-        storage_spec.folder = self._get_loc_of_vm(source_template=source_template,
-                                                  progress_callback=progress_callback)
+        storage_spec.folder = self._get_loc_of_vm(
+            source_template=source_template, progress_callback=progress_callback
+        )
         storage_spec.podSelectionSpec = pod_spec
         storage_spec.vm = source_template
         storage_spec.cloneSpec = vm_clone_spec
@@ -412,20 +470,35 @@ class VMWareVMOrTemplate(Entity):
         # For SDRS-enabled pods, this API is intended to replace RelocateVM_Task and CloneVM_Task
         # SDRS is required for managing aggregated resources of a datastore cluster
         result = self.system.content.storageResourceManager.RecommendDatastores(
-            storageSpec=storage_spec)
+            storageSpec=storage_spec
+        )
 
         if result:
             key = result.recommendations[0].key
         else:
-            raise ValueError(
-                "RecommendDatastore task failed to provide host for  {}".format(destination))
+            raise ValueError(f"RecommendDatastore task failed to provide host for  {destination}")
 
         return self.system.content.storageResourceManager.ApplyStorageDrsRecommendation_Task(
-            key=key)
+            key=key
+        )
 
-    def _clone(self, destination, resource_pool=None, datastore=None, power_on=True, sparse=False,
-               mark_template=False, provision_timeout=1800, progress_callback=None,
-               allowed_datastores=None, cpu=None, ram=None, relocate=False, host=None, **kwargs):
+    def _clone(
+        self,
+        destination,
+        resource_pool=None,
+        datastore=None,
+        power_on=True,
+        sparse=False,
+        mark_template=False,
+        provision_timeout=1800,
+        progress_callback=None,
+        allowed_datastores=None,
+        cpu=None,
+        ram=None,
+        relocate=False,
+        host=None,
+        **kwargs,
+    ):
         """
         Clone this template to a VM
         When relocate is True, relocated (migrated) with VMRelocateSpec instead of being cloned
@@ -463,11 +536,10 @@ class VMWareVMOrTemplate(Entity):
         except VMInstanceNotFound:
             vm = None
         if vm and not relocate:
-            raise Exception("VM/template of the name {} already present!".format(destination))
+            raise Exception(f"VM/template of the name {destination} already present!")
 
         if progress_callback is None:
-            progress_callback = partial(
-                progress_log_callback, self.logger, self.name, destination)
+            progress_callback = partial(progress_log_callback, self.logger, self.name, destination)
 
         source_template = self.raw
 
@@ -491,29 +563,39 @@ class VMWareVMOrTemplate(Entity):
                 else:
                     picked_datastore = datastores
 
-        progress_callback("Picked datastore `{}`".format(picked_datastore.name))
+        progress_callback(f"Picked datastore `{picked_datastore.name}`")
 
-        task_args = dict(destination=destination, resource_pool=resource_pool,
-                         datastore=picked_datastore, power_on=power_on, sparse=sparse,
-                         mark_template=mark_template, progress_callback=progress_callback, cpu=cpu,
-                         ram=ram, relocate=relocate, host=host, source_template=source_template,
-                         deploy_on_ds_cluster=False)
+        task_args = dict(
+            destination=destination,
+            resource_pool=resource_pool,
+            datastore=picked_datastore,
+            power_on=power_on,
+            sparse=sparse,
+            mark_template=mark_template,
+            progress_callback=progress_callback,
+            cpu=cpu,
+            ram=ram,
+            relocate=relocate,
+            host=host,
+            source_template=source_template,
+            deploy_on_ds_cluster=False,
+        )
 
         if isinstance(picked_datastore, vim.Datastore):
             task = self._clone_on_datastore(**task_args)
         elif isinstance(picked_datastore, vim.StoragePod):
-            task_args['deploy_on_ds_cluster'] = True
-            task_args.pop('relocate')
+            task_args["deploy_on_ds_cluster"] = True
+            task_args.pop("relocate")
             task = self._clone_on_datastore_cluster(**task_args)
         else:
-            raise NotImplementedError("{} not supported for datastore".format(picked_datastore))
+            raise NotImplementedError(f"{picked_datastore} not supported for datastore")
 
         def _check(store=[task]):
             try:
-                if hasattr(store[0].info, 'progress') and store[0].info.progress is not None:
-                    progress_callback("{}/{}%".format(store[0].info.state, store[0].info.progress))
+                if hasattr(store[0].info, "progress") and store[0].info.progress is not None:
+                    progress_callback(f"{store[0].info.state}/{store[0].info.progress}%")
                 else:
-                    progress_callback("{}".format(store[0].info.state))
+                    progress_callback(f"{store[0].info.state}")
             except AttributeError:
                 pass
             if store[0].info.state not in {"queued", "running"}:
@@ -523,10 +605,9 @@ class VMWareVMOrTemplate(Entity):
 
         wait_for(_check, num_sec=provision_timeout, delay=4)
 
-        if task.info.state != 'success':
+        if task.info.state != "success":
             self.logger.error(
-                "Clone VM from VM/template '%s' failed: %s",
-                self.name, get_task_error_message(task)
+                "Clone VM from VM/template '%s' failed: %s", self.name, get_task_error_message(task)
             )
             raise VMInstanceNotCloned(destination)
         if mark_template:
@@ -557,7 +638,7 @@ class VMWareVMOrTemplate(Entity):
             (bool, task_result): Tuple containing boolean True if task ended in success,
                                  and the contents of task.result or task.error depending on state
         """
-        provision_type = provision_type if provision_type in ['thick', 'thin'] else 'thin'
+        provision_type = provision_type if provision_type in ["thick", "thin"] else "thin"
         self.refresh()
 
         # if passed unit matches existing device unit, match these values too
@@ -565,8 +646,10 @@ class VMWareVMOrTemplate(Entity):
         controller_key = None
         unit_number = None
         virtual_disk_devices = [
-            device for device
-            in self.raw.config.hardware.device if isinstance(device, vim.vm.device.VirtualDisk)]
+            device
+            for device in self.raw.config.hardware.device
+            if isinstance(device, vim.vm.device.VirtualDisk)
+        ]
         for dev in virtual_disk_devices:
             if unit == int(dev.unitNumber):
                 # user specified unit matching existing disk, match key too
@@ -577,12 +660,12 @@ class VMWareVMOrTemplate(Entity):
             controller_key = dev.controllerKey
 
         if not (controller_key or unit_number):
-            raise ValueError('Could not identify VirtualDisk device on given vm')
+            raise ValueError("Could not identify VirtualDisk device on given vm")
 
         # create disk backing specification
         backing_spec = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
-        backing_spec.diskMode = 'persistent'
-        backing_spec.thinProvisioned = (provision_type == 'thin')
+        backing_spec.diskMode = "persistent"
+        backing_spec.thinProvisioned = provision_type == "thin"
 
         # create disk specification, attaching backing
         disk_spec = vim.vm.device.VirtualDisk()
@@ -595,7 +678,7 @@ class VMWareVMOrTemplate(Entity):
 
         # create device specification, attaching disk
         device_spec = vim.vm.device.VirtualDeviceSpec()
-        device_spec.fileOperation = 'create'
+        device_spec.fileOperation = "create"
         device_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
         device_spec.device = disk_spec
 
@@ -607,13 +690,13 @@ class VMWareVMOrTemplate(Entity):
         task = self.raw.ReconfigVM_Task(spec=vm_spec)
 
         try:
-            wait_for(lambda: task.info.state not in ['running', 'queued'])
+            wait_for(lambda: task.info.state not in ["running", "queued"])
         except TimedOutError:
-            self.logger.exception('Task did not go to success state: %s', task)
+            self.logger.exception("Task did not go to success state: %s", task)
         finally:
-            if task.info.state == 'success':
+            if task.info.state == "success":
                 result = (True, task.info.result)
-            elif task.info.state == 'error':
+            elif task.info.state == "error":
                 result = (False, task.info.error)
             else:  # shouldn't happen
                 result = (None, None)
@@ -622,9 +705,9 @@ class VMWareVMOrTemplate(Entity):
 
 class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
     state_map = {
-        'poweredOn': VmState.RUNNING,
-        'poweredOff': VmState.STOPPED,
-        'suspended': VmState.SUSPENDED,
+        "poweredOn": VmState.RUNNING,
+        "poweredOff": VmState.STOPPED,
+        "suspended": VmState.SUSPENDED,
     }
 
     def refresh(self):
@@ -637,11 +720,11 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
 
     @property
     def ip(self):
-        ipv4_re = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+        ipv4_re = r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
         self.refresh()
         try:
             ip_address = self.raw.summary.guest.ipAddress
-            if not re.match(ipv4_re, ip_address) or ip_address == '127.0.0.1':
+            if not re.match(ipv4_re, ip_address) or ip_address == "127.0.0.1":
                 ip_address = None
             return ip_address
         except (AttributeError, TypeError):
@@ -669,8 +752,10 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
 
         filter_spec = vim.event.EventFilterSpec(
             entity=vim.event.EventFilterSpec.ByEntity(
-                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self),
-            eventTypeId=['VmDeployedEvent', 'VmCreatedEvent'])
+                entity=vm, recursion=vim.event.EventFilterSpec.RecursionOption.self
+            ),
+            eventTypeId=["VmDeployedEvent", "VmCreatedEvent"],
+        )
         collector = self.system.content.eventManager.CreateCollectorForEvents(filter=filter_spec)
         collector.SetCollectorPageSize(1000)  # max allowed value
         events = collector.latestPage
@@ -682,7 +767,7 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
             # no events found for VM, fallback to last boot time
             creation_time = vm.runtime.bootTime
             if not creation_time:
-                raise VMCreationDateError('Could not find a creation date for {}'.format(self.name))
+                raise VMCreationDateError(f"Could not find a creation date for {self.name}")
         # localize and make tz-naive
         return creation_time.astimezone(pytz.UTC)
 
@@ -772,7 +857,7 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
 
     def delete(self):
         self.ensure_state(VmState.STOPPED)
-        return super(VMWareVirtualMachine, self).delete()
+        return super().delete()
 
     def mark_as_template(self, template_name=None, **kwargs):
         self.ensure_state(VmState.STOPPED)
@@ -784,7 +869,7 @@ class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
         return template
 
     def clone(self, vm_name, **kwargs):
-        kwargs['destination'] = vm_name
+        kwargs["destination"] = vm_name
         self.ensure_state(VmState.STOPPED)
         return self._clone(**kwargs)
 
@@ -827,21 +912,22 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         https://developercenter.vmware.com/web/dp/doc/preview?id=155
 
     """
+
     _api = None
 
     _stats_available = {
-        'num_vm': lambda self: len(self.list_vms()),
-        'num_host': lambda self: len(self.list_host()),
-        'num_cluster': lambda self: len(self.list_cluster()),
-        'num_template': lambda self: len(self.list_templates()),
-        'num_datastore': lambda self: len(self.list_datastore()),
+        "num_vm": lambda self: len(self.list_vms()),
+        "num_host": lambda self: len(self.list_host()),
+        "num_cluster": lambda self: len(self.list_cluster()),
+        "num_template": lambda self: len(self.list_templates()),
+        "num_datastore": lambda self: len(self.list_datastore()),
     }
 
     can_suspend = True
     can_pause = False
 
     def __init__(self, hostname, username, password, **kwargs):
-        super(VMWareSystem, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.hostname = hostname
         self.username = username
         self.password = password
@@ -852,7 +938,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
 
     @property
     def _identifying_attrs(self):
-        return {'hostname': self.hostname}
+        return {"hostname": self.hostname}
 
     @property
     def can_suspend(self):
@@ -867,11 +953,10 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         Send a 'current time' request to vCenter every 10 min as a
         connection keep-alive
         """
+
         def _keepalive():
             while True:
-                self.logger.debug(
-                    "vCenter keep-alive: %s", self.service_instance.CurrentTime()
-                )
+                self.logger.debug("vCenter keep-alive: %s", self.service_instance.CurrentTime())
                 time.sleep(600)
 
         t = threading.Thread(target=_keepalive)
@@ -889,10 +974,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             context = ssl._create_unverified_context()
             context.verify_mode = ssl.CERT_NONE
             si = SmartConnect(
-                host=self.hostname,
-                user=self.username,
-                pwd=self.password,
-                sslContext=context
+                host=self.hostname, user=self.username, pwd=self.password, sslContext=context
             )
         except Exception:
             self.logger.error("Failed to connect to vCenter")
@@ -901,10 +983,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         # Disconnect at teardown
         atexit.register(Disconnect, si)
 
-        self.logger.info(
-            "Connected to vCenter host %s as user %s",
-            self.hostname, self.username
-        )
+        self.logger.info("Connected to vCenter host %s as user %s", self.hostname, self.username)
 
         self._start_keepalive()
         return si
@@ -951,7 +1030,8 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def _search_folders_for_vm(self, name):
         # First get all VM folders
         container = self.content.viewManager.CreateContainerView(
-            self.content.rootFolder, [vim.Folder], True)
+            self.content.rootFolder, [vim.Folder], True
+        )
         folders = container.view
         container.Destroy()
 
@@ -988,17 +1068,18 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def _build_filter_spec(self, begin_entity, property_spec):
         """Build a search spec for full inventory traversal, adapted from psphere"""
         # Create selection specs
-        selection_specs = [vmodl.query.PropertyCollector.SelectionSpec(name=ss)
-                           for ss in SELECTION_SPECS]
+        selection_specs = [
+            vmodl.query.PropertyCollector.SelectionSpec(name=ss) for ss in SELECTION_SPECS
+        ]
         # Create traversal specs
         traversal_specs = []
         for spec_values in TRAVERSAL_SPECS:
             spec = vmodl.query.PropertyCollector.TraversalSpec()
-            spec.name = spec_values['name']
-            spec.type = spec_values['type']
-            spec.path = spec_values['path']
-            if spec_values.get('select_indices'):
-                spec.selectSet = [selection_specs[i] for i in spec_values['select_indices']]
+            spec.name = spec_values["name"]
+            spec.type = spec_values["type"]
+            spec.path = spec_values["path"]
+            if spec_values.get("select_indices"):
+                spec.selectSet = [selection_specs[i] for i in spec_values["select_indices"]]
             traversal_specs.append(spec)
         # Create an object spec
         obj_spec = vmodl.query.PropertyCollector.ObjectSpec()
@@ -1029,12 +1110,13 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         try:
             filter_ = property_collector.CreateFilter(filter_spec, True)
         except vmodl.fault.ManagedObjectNotFound:
-            self.logger.warning('ManagedObjectNotFound when creating filter from spec {}'
-                                .format(filter_spec))
+            self.logger.warning(
+                f"ManagedObjectNotFound when creating filter from spec {filter_spec}"
+            )
             return
         update = property_collector.WaitForUpdates(None)
         if not update or not update.filterSet or not update.filterSet[0]:
-            self.logger.warning('No object found when updating %s', str(obj))
+            self.logger.warning("No object found when updating %s", str(obj))
             return
         if filter_:
             filter_.Destroy()
@@ -1055,10 +1137,9 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             VMWareVirtualMachine object, VMWareTemplate object, or None
         """
         if not name:
-            raise ValueError('Invalid name: {}'.format(name))
+            raise ValueError(f"Invalid name: {name}")
         if name not in self._vm_obj_cache or force:
-            self.logger.debug(
-                "Searching all vm folders for vm/template '%s'", name)
+            self.logger.debug("Searching all vm folders for vm/template '%s'", name)
             vm_obj = self._search_folders_for_vm(name)
             if not vm_obj:
                 raise VMInstanceNotFound(name)
@@ -1091,7 +1172,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         if not vm:
             raise VMInstanceNotFound(name)
         if isinstance(vm, VMWareTemplate):
-            raise Exception("Looking for VM but found template of name '{}'".format(name))
+            raise Exception(f"Looking for VM but found template of name '{name}'")
         return vm
 
     def _list_vms_or_templates(self, template=False, inaccessible=False):
@@ -1108,8 +1189,10 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
         property_spec.pathSet = [
-            'name', 'config.template',
-            'config.uuid', 'runtime.connectionState'
+            "name",
+            "config.template",
+            "config.uuid",
+            "runtime.connectionState",
         ]
         property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
@@ -1126,15 +1209,15 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             # object already "knows" the answer in its cached object
             # content. So we just pull the value straight out of the cache.
             vm_props = {p.name: p.val for p in object_content.propSet}
-            if vm_props.get('config.template') == get_template:
-                if (vm_props.get('runtime.connectionState') == "inaccessible" and
-                        inaccessible) or vm_props.get(
-                            'runtime.connectionState') != "inaccessible":
-                    obj_list.append(vm_props['name'])
+            if vm_props.get("config.template") == get_template:
+                if (
+                    vm_props.get("runtime.connectionState") == "inaccessible" and inaccessible
+                ) or vm_props.get("runtime.connectionState") != "inaccessible":
+                    obj_list.append(vm_props["name"])
         return obj_list
 
     def get_vm_from_ip(self, ip):
-        """ Gets the name of a vm from its IP.
+        """Gets the name of a vm from its IP.
 
         Args:
             ip: The ip address of the vm.
@@ -1156,19 +1239,20 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
                 except Exception:
                     pass
         if boot_times:
-            newest_boot_time = sorted(list(boot_times.items()), key=operator.itemgetter(1),
-                                      reverse=True)[0]
+            newest_boot_time = sorted(
+                list(boot_times.items()), key=operator.itemgetter(1), reverse=True
+            )[0]
             newest_vm = newest_boot_time[0]
             return VMWareVirtualMachine(system=self, name=newest_vm.name, raw=newest_vm)
         else:
-            raise VMNotFoundViaIP('The requested IP is not known as a VM')
+            raise VMNotFoundViaIP("The requested IP is not known as a VM")
 
     def is_host_connected(self, host_name):
         host = self.get_obj(vim.HostSystem, name=host_name)
         return host.summary.runtime.connectionState == "connected"
 
     def create_vm(self, vm_name):
-        raise NotImplementedError('This function has not yet been implemented.')
+        raise NotImplementedError("This function has not yet been implemented.")
 
     def list_vms(self, inaccessible=False):
         return [
@@ -1194,9 +1278,9 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def get_template(self, name, force=False):
         vm = self._get_vm_or_template(name, force)
         if not vm:
-            raise NotFoundError("template: {}".format(name))
+            raise NotFoundError(f"template: {name}")
         if isinstance(vm, VMWareVirtualMachine):
-            raise Exception("Looking for template but found VM of name '{}'".format(name))
+            raise Exception(f"Looking for template but found VM of name '{name}'")
         return vm
 
     def list_host(self):
@@ -1228,7 +1312,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
     def info(self):
         # NOTE: Can't find these two methods in either psphere or suds
         # return '{} {}'.format(self.api.get_server_type(), self.api.get_api_version())
-        return '{} {}'.format(self.content.about.apiType, self.content.about.apiVersion)
+        return f"{self.content.about.apiType} {self.content.about.apiVersion}"
 
     def disconnect(self):
         pass
@@ -1244,7 +1328,7 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
             string: pyVmomi.vim.TaskInfo.state value if the task is not queued/running/None
         """
         task = self.get_updated_obj(task)
-        if task.info.state not in ['queued', 'running', None]:
+        if task.info.state not in ["queued", "running", None]:
             return task.info.state
 
     def get_task_status(self, task):
@@ -1263,14 +1347,13 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         task = host.DisconnectHost_Task()
         status, _ = wait_for(self._task_wait, [task])
 
-        if status != 'success':
-            raise HostNotRemoved("Host {} not removed: {}".format(
-                host_name, get_task_error_message(task)))
+        if status != "success":
+            raise HostNotRemoved(f"Host {host_name} not removed: {get_task_error_message(task)}")
 
         task = host.Destroy_Task()
         status, _ = wait_for(self._task_wait, [task], fail_condition=None)
 
-        return status == 'success'
+        return status == "success"
 
     def usage_and_quota(self):
         installed_ram = 0
@@ -1283,28 +1366,28 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
 
         property_spec = vmodl.query.PropertyCollector.PropertySpec()
         property_spec.all = False
-        property_spec.pathSet = ['name', 'config.template']
+        property_spec.pathSet = ["name", "config.template"]
         property_spec.type = vim.VirtualMachine
         pfs = self._build_filter_spec(self.content.rootFolder, property_spec)
         object_contents = self.content.propertyCollector.RetrieveProperties(specSet=[pfs])
         for vm in object_contents:
             vm_props = {p.name: p.val for p in vm.propSet}
-            if vm_props.get('config.template'):
+            if vm_props.get("config.template"):
                 continue
-            if vm.obj.summary.runtime.powerState.lower() != 'poweredon':
+            if vm.obj.summary.runtime.powerState.lower() != "poweredon":
                 continue
             used_ram += vm.obj.summary.config.memorySizeMB
             used_cpu += vm.obj.summary.config.numCpu
 
         return {
             # RAM
-            'ram_used': used_ram,
-            'ram_total': installed_ram,
-            'ram_limit': None,
+            "ram_used": used_ram,
+            "ram_total": installed_ram,
+            "ram_limit": None,
             # CPU
-            'cpu_used': used_cpu,
-            'cpu_total': installed_cpu,
-            'cpu_limit': None,
+            "cpu_used": used_cpu,
+            "cpu_total": installed_cpu,
+            "cpu_limit": None,
         }
 
     def get_network(self, network_name):
@@ -1333,7 +1416,6 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         elif name in self.list_datastore_cluster():
             datastore = self.get_obj(vimtype=vim.StoragePod, name=name)
         else:
-            raise ValueError("{ds} was not found as a datastore on {p}".format(
-                ds=name, p=self.hostname))
+            raise ValueError(f"{name} was not found as a datastore on {self.hostname}")
 
         return datastore
