@@ -22,6 +22,7 @@ Node = namedtuple("Node", ["uuid", "name", "power_state", "provision_state"])
 # Note: This same mechanism may be required for keystone and cinder
 # clients, but hopefully won't be.
 
+
 # monkeypatch method to add retry support to openstack
 def _request_timeout_handler(self, url, method, retry_count=0, **kwargs):
     try:

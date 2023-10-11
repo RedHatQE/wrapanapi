@@ -91,7 +91,9 @@ class AzureInstance(Instance):
         """
         try:
             vm = self._api.get(
-                resource_group_name=self._resource_group, vm_name=self._name, expand="instanceView"
+                resource_group_name=self._resource_group,
+                vm_name=self._name,
+                expand="instanceView",
             )
         except CloudError as e:
             if e.response.status_code == 404:
@@ -164,7 +166,10 @@ class AzureInstance(Instance):
             pub_ip_id = ip_config_obj.public_ip_address.id
         except AttributeError:
             self.logger.error(
-                "VM '%s' doesn't have public IP on %s:%s", self.name, if_name, ip_config_name
+                "VM '%s' doesn't have public IP on %s:%s",
+                self.name,
+                if_name,
+                ip_config_name,
             )
             return None
 
@@ -278,7 +283,9 @@ class AzureInstance(Instance):
         self._wait_on_operation(operation)
         self.logger.info("Capturing VM '%s'", self.name)
         operation = self._api.capture(
-            resource_group_name=self._resource_group, vm_name=self.name, parameters=params
+            resource_group_name=self._resource_group,
+            vm_name=self.name,
+            parameters=params,
         )
         return self._wait_on_operation(operation)
 
@@ -364,14 +371,19 @@ class AzureBlobImage(Template):
         vm_size = vm_settings["vm_size"]
         if vm_size not in vm_sizes:
             raise ValueError(
-                "wrong vm size %s passed. possible size: %s", vm_size, ",".join(vm_sizes)
+                "wrong vm size %s passed. possible size: %s",
+                vm_size,
+                ",".join(vm_sizes),
             )
 
         storage_container = vm_settings["storage_container"]
         # nsg_name = vm_settings['network_nsg']  # todo: check whether nsg is necessary at all
 
         # allocating public ip address for new vm
-        public_ip_params = {"location": location, "public_ip_allocation_method": "Dynamic"}
+        public_ip_params = {
+            "location": location,
+            "public_ip_allocation_method": "Dynamic",
+        }
         public_ip = self.system.network_client.public_ip_addresses.create_or_update(
             resource_group_name=resource_group,
             public_ip_address_name=vm_name,
@@ -412,7 +424,11 @@ class AzureBlobImage(Template):
         nic_params = {
             "location": location,
             "ip_configurations": [
-                {"name": vm_name, "public_ip_address": public_ip, "subnet": {"id": vsubnet.id}}
+                {
+                    "name": vm_name,
+                    "public_ip_address": public_ip,
+                    "subnet": {"id": vsubnet.id},
+                }
             ],
         }
 
@@ -432,7 +448,11 @@ class AzureBlobImage(Template):
         # preparing os disk
         # todo: replace with copy disk operation
         self.system.copy_blob_image(
-            self.name, vm_name, vm_settings["storage_account"], self._container, storage_container
+            self.name,
+            vm_name,
+            vm_settings["storage_account"],
+            self._container,
+            storage_container,
         )
         image_uri = self.system.container_client.make_blob_url(
             container_name=storage_container, blob_name=vm_name
@@ -452,10 +472,15 @@ class AzureBlobImage(Template):
             "network_profile": {"network_interfaces": [{"id": nic.id}]},
         }
         vm = self.system.compute_client.virtual_machines.create_or_update(
-            resource_group_name=resource_group, vm_name=vm_name, parameters=vm_parameters
+            resource_group_name=resource_group,
+            vm_name=vm_name,
+            parameters=vm_parameters,
         ).result()
         vm = AzureInstance(
-            system=self.system, name=vm.name, resource_group=vm_settings["resource_group"], raw=vm
+            system=self.system,
+            name=vm.name,
+            resource_group=vm_settings["resource_group"],
+            raw=vm,
         )
         vm.wait_for_state(VmState.RUNNING)
         return vm
@@ -908,7 +933,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             discs = self.list_free_discs(resource_group=self.resource_group)
             for disc_name in discs:
                 operation = self.compute_client.disks.delete(
-                    resource_group_name=resource_group or self.resource_group, disk_name=disc_name
+                    resource_group_name=resource_group or self.resource_group,
+                    disk_name=disc_name,
                 )
                 operation.wait()
                 self.logger.info('"%s" disc removed', disc_name)
@@ -1015,7 +1041,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             container_name=template_container, blob_name=template
         )
         operation = container_client.copy_blob(
-            container_name=storage_container, blob_name=vm_name + ".vhd", copy_source=src_uri
+            container_name=storage_container,
+            blob_name=vm_name + ".vhd",
+            copy_source=src_uri,
         )
         wait_for(lambda: operation.status != "pending", timeout="10m", delay=15)
         # copy operation obj.status->str
@@ -1030,7 +1058,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             if "SnapshotsPresent" in str(e) and remove_snapshots:
                 self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
                 container_client.delete_blob(
-                    container_name=container.name, blob_name=blob.name, delete_snapshots="include"
+                    container_name=container.name,
+                    blob_name=blob.name,
+                    delete_snapshots="include",
                 )
             else:
                 raise
@@ -1111,7 +1141,10 @@ class AzureSystem(System, VmMixin, TemplateMixin):
                     continue
                 matches.append(
                     AzureBlobImage(
-                        system=self, name=img_name, container=found_container_name, raw=image
+                        system=self,
+                        name=img_name,
+                        container=found_container_name,
+                        raw=image,
                     )
                 )
         return matches
@@ -1131,12 +1164,16 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         Args:
             resource_group (str): Name of the resource group
-            free_images (bool): Whether to collect image which do not have any resource(VM) linked to it
+            free_images (bool): Whether to collect image which do not have
+                                any resource(VM) linked to it
         """
         resource_group = resource_group or self.resource_group
         image_list = list(
             self.resource_client.resources.list(
-                filter=f"resourceType eq 'Microsoft.Compute/images' and resourceGroup eq '{resource_group}'"
+                filter=(
+                    "resourceType eq 'Microsoft.Compute/images' "
+                    f"and resourceGroup eq '{resource_group}'"
+                )
             )
         )
 
@@ -1151,8 +1188,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         for vm_name in vm_list:
             images_used_by_vm.append(
                 self.compute_client.virtual_machines.get(
-                    resource_group_name=resource_group,
-                    vm_name=vm_name
+                    resource_group_name=resource_group, vm_name=vm_name
                 ).storage_profile.image_reference.id
             )
 
@@ -1195,7 +1231,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
         deps = self.resource_client.deployments
         operation = deps.delete(
-            resource_group_name=resource_group or self.resource_group, deployment_name=stack_name
+            resource_group_name=resource_group or self.resource_group,
+            deployment_name=stack_name,
         )
         operation.wait()
         self.logger.info(
@@ -1230,7 +1267,9 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         resource_group = resource_group or self.resource_group
         for image in image_list:
             self.logger.info("Deleting '%s' from '%s'", image, resource_group)
-            response = self.compute_client.images.delete(resource_group_name=resource_group, image_name=image)
+            response = self.compute_client.images.delete(
+                resource_group_name=resource_group, image_name=image
+            )
             result.append((image, response))
         return result
 
@@ -1243,7 +1282,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             "pips": [],
         }
         dep_op_list = self.resource_client.deployment_operations.list(
-            resource_group_name=resource_group or self.resource_group, deployment_name=stack_name
+            resource_group_name=resource_group or self.resource_group,
+            deployment_name=stack_name,
         )
         for dep in dep_op_list:
             if dep.properties.target_resource:

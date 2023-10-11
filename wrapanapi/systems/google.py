@@ -658,7 +658,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                 projects.extend(IMAGE_PROJECTS)
         for project in projects:
             results.extend(
-                GoogleCloudImage(system=self, raw=image, project=project, name=image['name'])
+                GoogleCloudImage(system=self, raw=image, project=project, name=image["name"])
                 for image in images.list(
                     project=project,
                     filter=filter_expr,

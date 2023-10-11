@@ -99,7 +99,6 @@ def test_vm(provider_crud, test_template):
 
 
 def test_sanity(provider_crud, test_template, test_vm):
-
     template = test_template
     vm = test_vm
     mgmt = provider_crud.mgmt

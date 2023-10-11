@@ -733,7 +733,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return f"{self.api.client.service_type} {self.api.client.version}"
 
     def _get_tenants(self):
-
         if self.keystone_version == 3:
             return self.tenant_api.list()
         real_tenants = []
@@ -820,7 +819,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         return lists
 
     def list_vms(self, filter_tenants=True, all_tenants=True):
-        call = partial(self.api.servers.list, True, {'all_tenants': all_tenants})
+        call = partial(self.api.servers.list, True, {"all_tenants": all_tenants})
         instances = self._generic_paginator(call)
         if filter_tenants and all_tenants:
             # Filter instances based on their tenant ID

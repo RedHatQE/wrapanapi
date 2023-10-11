@@ -927,7 +927,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
             image_list (list): ["imageID_1", "imageID_2"]
         """
         for image in image_list:
-            img = EC2Image(system=self, raw=self.ec2_resource.Image(image)).delete()
+            EC2Image(system=self, raw=self.ec2_resource.Image(image)).delete()
 
     def find_templates(
         self,

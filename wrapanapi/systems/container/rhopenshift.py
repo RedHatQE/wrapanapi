@@ -112,7 +112,6 @@ def drop_item(struct, key):
 
 @reconnect(unauthenticated_error_handler)
 class Openshift(System):
-
     _stats_available = {
         "num_container": lambda self: len(self.list_container()),
         "num_pod": lambda self: len(self.list_pods()),

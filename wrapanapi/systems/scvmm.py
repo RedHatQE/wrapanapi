@@ -156,7 +156,6 @@ class _LogStrMixin:
 
 
 class SCVirtualMachine(Vm, _LogStrMixin):
-
     state_map = {
         "Running": VmState.RUNNING,
         "PowerOff": VmState.STOPPED,
