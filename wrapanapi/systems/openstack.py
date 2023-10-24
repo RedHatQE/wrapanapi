@@ -582,7 +582,8 @@ class OpenstackImage(_SharedMethodsMixin, Template):
 class OpenstackSystem(System, VmMixin, TemplateMixin):
     """Openstack management system
 
-    Uses novaclient.
+    Uses novaclient. If using openstack auth_url version 3 (URL ending in v3)
+    then domain_id or domain_name is required (you can use both).
 
     Args:
         tenant: The tenant to log in with.
@@ -592,6 +593,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     Keywords:
         domain_id: required only if using openstack auth_url version 3 (URL ending in v3)
+        domain_name: required only if using openstack auth_url version 3 (URL ending in v3)
 
     Returns: A :py:class:`OpenstackSystem` object.
     """
@@ -620,7 +622,8 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         self.username = username
         self.password = password
         self.auth_url = auth_url
-        self.domain_id = kwargs["domain_id"] if self.keystone_version == 3 else None
+        self.domain_id = kwargs.get("domain_id") if self.keystone_version == 3 else None
+        self.domain_name = kwargs.get("domain_name") if self.keystone_version == 3 else None
         self._session = None
         self._api = None
         self._gapi = None
@@ -654,7 +657,12 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             )
             if self.keystone_version == 3:
                 auth_kwargs.update(
-                    dict(user_domain_id=self.domain_id, project_domain_id=self.domain_id)
+                    dict(
+                        user_domain_id=self.domain_id,
+                        user_domain_name=self.domain_name,
+                        project_domain_id=self.domain_id,
+                        project_domain_name=self.domain_name,
+                    )
                 )
             pass_auth = Password(**auth_kwargs)
             self._session = Session(auth=pass_auth, verify=False)
