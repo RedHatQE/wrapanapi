@@ -1,6 +1,7 @@
 import base64
 import os
 import re
+import typing
 
 import boto3
 from boto3 import client as boto3client
@@ -482,6 +483,70 @@ class EBSVolume(_TagMixin, _SharedMethodsMixin, Volume):
         return self.delete()
 
 
+class ResourceExplorerResource:
+    """
+    This class represents a resource returned by Resource Explorer.
+    """
+
+    def __init__(self, arn, region, resource_type, service, properties=[]):
+        self.arn = arn
+        self.region = region
+        self.resource_type = resource_type
+        self.service = service
+        self.properties = properties
+
+    def get_tag_value(self, key) -> str:
+        """
+        Returns a tag value for a given tag key.
+        Tags are taken from the resource properties.
+
+        Args:
+            key: a tag key
+        """
+        tags = self.get_tags(regex=f"^{key}$")
+        if len(tags) > 0:
+            return tags[0].get("Value")
+        return None
+
+    def get_tags(self, regex="") -> typing.List[dict]:
+        """
+        Returns a list of tags (a dict with keys 'Key' and 'Value').
+        Tags are taken from the resource properties.
+
+        Args:
+            regex: a regular expressions for keys, default is ""
+        """
+        list = []
+        for property in self.properties:
+            data = property.get("Data")
+            for tag in data:
+                key = tag.get("Key")
+                if re.match(regex, key):
+                    list.append(tag)
+        return list
+
+    @property
+    def id(self) -> str:
+        """
+        Returns the last part of the arn.
+        This part is used as id in aws cli.
+        """
+        if self.arn:
+            return self.arn.split(":")[-1]
+        return None
+
+    @property
+    def name(self) -> str:
+        """
+        Returns a name for the resource derived from the associated tag with key 'Name'.
+        If there is no such tag then the name is the id from arn.
+        """
+        name = self.get_tag_value("Name")
+        if not name:
+            name = self.id
+        return name
+
+
 class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
     """EC2 Management System, powered by boto
 
@@ -535,6 +600,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.ssm_connection = boto3client("ssm", **connection_kwargs)
         self.sns_connection = boto3client("sns", **connection_kwargs)
         self.cw_events_connection = boto3client("events", **connection_kwargs)
+        self.resource_explorer_connection = boto3client("resource-explorer-2", **connection_kwargs)
 
         self.kwargs = kwargs
 
@@ -1744,3 +1810,36 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.remove_all_unused_nics()
         self.remove_all_unused_volumes()
         self.remove_all_unused_ips()
+
+    def list_resources(self, query="", view="") -> typing.List[ResourceExplorerResource]:
+        """
+        Lists resources using AWS Resource Explorer (resource-explorer-2).
+
+        Args:
+            query: keywords and filters for resources; default is "" (all)
+            view: arn of the view to use for the query; default is "" (default view)
+
+        Return:
+            a list of resources satisfying the query
+
+        Examples:
+            Use query "tag.key:kubernetes.io/cluster/*" to list OCP resources
+        """
+        args = {"QueryString": query}
+        if view:
+            args["ViewArn"] = view
+        list = []
+        paginator = self.resource_explorer_connection.get_paginator("search")
+        page_iterator = paginator.paginate(**args)
+        for page in page_iterator:
+            resources = page.get("Resources")
+            for r in resources:
+                resource = ResourceExplorerResource(
+                    arn=r.get("Arn"),
+                    region=r.get("Region"),
+                    service=r.get("Service"),
+                    properties=r.get("Properties"),
+                    resource_type=r.get("ResourceType"),
+                )
+                list.append(resource)
+        return list
