@@ -923,9 +923,6 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         "num_datastore": lambda self: len(self.list_datastore()),
     }
 
-    can_suspend = True
-    can_pause = False
-
     def __init__(self, hostname, username, password, **kwargs):
         super().__init__(**kwargs)
         self.hostname = hostname

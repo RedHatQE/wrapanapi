@@ -571,9 +571,6 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         "num_template": lambda self: len(self.list_templates()),
     }
 
-    can_suspend = False
-    can_pause = False
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._username = kwargs.get("username")

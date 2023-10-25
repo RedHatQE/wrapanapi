@@ -603,9 +603,6 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         "num_template": lambda self: len(self.list_templates()),
     }
 
-    can_suspend = True
-    can_pause = True
-
     def __init__(self, tenant, username, password, auth_url, **kwargs):
         self.keystone_version = kwargs.get("keystone_version")
         if not self.keystone_version:

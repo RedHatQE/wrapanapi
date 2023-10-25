@@ -494,9 +494,6 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         "num_template": lambda self: len(list(self.list_compute_images())),
     }
 
-    can_suspend = True
-    can_pause = False
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.client_id = kwargs.get("username")
