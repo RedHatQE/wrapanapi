@@ -526,6 +526,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.sqs_connection = boto3client("sqs", **connection_kwargs)
         self.elb_connection = boto3client("elb", **connection_kwargs)
         self.s3_connection = boto3resource("s3", **connection_kwargs)
+        self.s3_client = boto3client("s3", **connection_kwargs)
         self.ec2_connection = boto3client("ec2", **connection_kwargs)
         self.ec2_resource = boto3resource("ec2", **connection_kwargs)
         self.ecr_connection = boto3client("ecr", **connection_kwargs)
