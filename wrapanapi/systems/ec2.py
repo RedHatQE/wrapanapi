@@ -1,7 +1,6 @@
 import base64
 import os
 import re
-import typing
 
 import boto3
 from boto3 import client as boto3client
@@ -508,7 +507,7 @@ class ResourceExplorerResource:
             return tags[0].get("Value")
         return None
 
-    def get_tags(self, regex="") -> typing.List[dict]:
+    def get_tags(self, regex="") -> list[dict]:
         """
         Returns a list of tags (a dict with keys 'Key' and 'Value').
         Tags are taken from the resource properties.
@@ -1808,7 +1807,7 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         self.remove_all_unused_volumes()
         self.remove_all_unused_ips()
 
-    def list_resources(self, query="", view="") -> typing.List[ResourceExplorerResource]:
+    def list_resources(self, query="", view="") -> list[ResourceExplorerResource]:
         """
         Lists resources using AWS Resource Explorer (resource-explorer-2).
 
