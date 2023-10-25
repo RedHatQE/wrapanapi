@@ -441,9 +441,6 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         "num_template": lambda self: len(self.list_templates()),
     }
 
-    can_suspend = False
-    can_pause = False
-
     default_scope = ["https://www.googleapis.com/auth/cloud-platform"]
 
     def __init__(self, project=None, zone=None, file_type=None, **kwargs):

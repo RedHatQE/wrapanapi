@@ -788,8 +788,6 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         "num_datastore": lambda self: len(self.list_datastore()),
     }
 
-    can_suspend = True
-    can_pause = False
     # Over-ride default steady_wait_time
     steady_wait_time = 6 * 60
 

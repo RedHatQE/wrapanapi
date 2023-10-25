@@ -534,9 +534,6 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         "num_template": lambda self: len(self.list_templates()),
     }
 
-    can_suspend = True
-    can_pause = False
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.host = kwargs["hostname"]

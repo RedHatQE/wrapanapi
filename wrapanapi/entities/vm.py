@@ -460,10 +460,6 @@ class VmMixin(EntityMixin, metaclass=ABCMeta):
     Defines methods or properties a wrapanapi.systems.System that manages Vm's should have
     """
 
-    # Implementations must define whether this system can suspend (True/False)
-    can_suspend = None
-    # Implementations must define whether this system can pause (True/False)
-    can_pause = None
     # Implementations may override the amount of sec to wait for a VM to reach steady state
     steady_wait_time = 180
 
@@ -485,11 +481,19 @@ class VmMixin(EntityMixin, metaclass=ABCMeta):
 
     @abstractproperty
     def can_suspend(self):
-        """Return True if this system can suspend VM's/instances, False if not."""
+        """
+        Return True if this system can suspend VM's/instances, False if not.
+
+        Implementations must define whether this system can suspend (True/False)
+        """
 
     @abstractproperty
     def can_pause(self):
-        """Return True if this system can pause VM's/instances, False if not."""
+        """
+        Return True if this system can pause VM's/instances, False if not.
+
+        Implementations must define whether this system can pause (True/False)
+        """
 
     @abstractmethod
     def get_vm(self, name, **kwargs):
