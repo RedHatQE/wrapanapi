@@ -37,6 +37,7 @@ keywords = [
     "api",
     "cloud",
 ]
+requires-python = ">=3.9"
 dependencies = [
     "azure-storage-common>=1.0",
     "azure<5.0.0",
