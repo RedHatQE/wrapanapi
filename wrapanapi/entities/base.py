@@ -3,9 +3,8 @@ wrapanapi.entities.base
 
 Provides method/class definitions for handling any entity on a provider
 """
-from abc import ABCMeta
-from abc import abstractmethod
-from abc import abstractproperty
+
+from abc import ABCMeta, abstractmethod, abstractproperty
 from reprlib import aRepr
 
 from wrapanapi.exceptions import NotFoundError

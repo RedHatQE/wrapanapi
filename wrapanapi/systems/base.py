@@ -2,9 +2,8 @@
 
 Used to communicate with providers without using CFME facilities
 """
-from abc import ABCMeta
-from abc import abstractmethod
-from abc import abstractproperty
+
+from abc import ABCMeta, abstractmethod, abstractproperty
 
 from wrapanapi.utils import LoggerMixin
 

@@ -5,6 +5,7 @@ Implements classes and methods related to physical entities such as racks,
 blocks, sleds, chassis or enclosures that contain other physical entities such
 as physical servers.
 """
+
 from abc import ABCMeta
 
 from wrapanapi.entities.base import Entity

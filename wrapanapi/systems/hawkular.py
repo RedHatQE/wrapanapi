@@ -10,8 +10,7 @@ from urllib.parse import unquote as urlunquote
 
 from packaging import version
 
-from wrapanapi.clients import ContainerClient
-from wrapanapi.clients import HawkularWebsocketClient
+from wrapanapi.clients import ContainerClient, HawkularWebsocketClient
 from wrapanapi.systems.base import System
 
 """

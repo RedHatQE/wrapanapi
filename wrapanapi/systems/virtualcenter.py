@@ -2,6 +2,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+
 import atexit
 import operator
 import re
@@ -9,35 +10,29 @@ import ssl
 import threading
 import time
 from datetime import datetime
+from distutils.version import LooseVersion
 from functools import partial
 
 import pytz
 from cached_property import threaded_cached_property
-from distutils.version import LooseVersion
-from pyVim.connect import Disconnect
-from pyVim.connect import SmartConnect
-from pyVmomi import vim
-from pyVmomi import vmodl
-from wait_for import TimedOutError
-from wait_for import wait_for
+from pyVim.connect import Disconnect, SmartConnect
+from pyVmomi import vim, vmodl
+from wait_for import TimedOutError, wait_for
 
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import Vm
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
+from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
 from wrapanapi.entities.base import Entity
-from wrapanapi.exceptions import DatastoreNotFoundError
-from wrapanapi.exceptions import HostNotRemoved
-from wrapanapi.exceptions import NotFoundError
-from wrapanapi.exceptions import VMCreationDateError
-from wrapanapi.exceptions import VMInstanceNotCloned
-from wrapanapi.exceptions import VMInstanceNotFound
-from wrapanapi.exceptions import VMInstanceNotStopped
-from wrapanapi.exceptions import VMInstanceNotSuspended
-from wrapanapi.exceptions import VMNotFoundViaIP
+from wrapanapi.exceptions import (
+    DatastoreNotFoundError,
+    HostNotRemoved,
+    NotFoundError,
+    VMCreationDateError,
+    VMInstanceNotCloned,
+    VMInstanceNotFound,
+    VMInstanceNotStopped,
+    VMInstanceNotSuspended,
+    VMNotFoundViaIP,
+)
 from wrapanapi.systems.base import System
-
 
 SELECTION_SPECS = [
     "resource_pool_traversal_spec",

@@ -3,8 +3,8 @@ wrapanapi.entities.instance
 
 Instances which run on cloud providers
 """
-from abc import ABCMeta
-from abc import abstractproperty
+
+from abc import ABCMeta, abstractproperty
 
 from .vm import Vm
 

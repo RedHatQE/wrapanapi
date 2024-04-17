@@ -1,14 +1,12 @@
 """Backend management system classes
 Used to communicate with providers without using CFME facilities
 """
+
 import redfish_client
 
-from wrapanapi.entities import PhysicalContainer
-from wrapanapi.entities import Server
-from wrapanapi.entities import ServerState
+from wrapanapi.entities import PhysicalContainer, Server, ServerState
 from wrapanapi.entities.base import Entity
-from wrapanapi.exceptions import InvalidValueException
-from wrapanapi.exceptions import ItemNotFound
+from wrapanapi.exceptions import InvalidValueException, ItemNotFound
 from wrapanapi.systems.base import System
 
 

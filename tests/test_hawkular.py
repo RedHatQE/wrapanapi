@@ -1,4 +1,5 @@
 """Unit tests for Hawkular client."""
+
 import json
 import os
 from random import sample
@@ -8,10 +9,7 @@ from urllib.parse import urlparse
 import pytest
 
 from wrapanapi.systems import HawkularSystem
-from wrapanapi.systems.hawkular import CanonicalPath
-from wrapanapi.systems.hawkular import Resource
-from wrapanapi.systems.hawkular import ResourceData
-from wrapanapi.systems.hawkular import ResourceType
+from wrapanapi.systems.hawkular import CanonicalPath, Resource, ResourceData, ResourceType
 
 
 def fake_urlopen(c_client, url, headers, params):

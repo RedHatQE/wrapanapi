@@ -2,22 +2,18 @@ import copy
 import json
 import string
 from collections.abc import Iterable
-from functools import partial
-from functools import wraps
+from functools import partial, wraps
 from random import choice
 
 import inflection
 import yaml
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
-from miq_version import TemplateName
-from miq_version import Version
+from miq_version import TemplateName, Version
 from openshift import client as ociclient
-from wait_for import TimedOutError
-from wait_for import wait_for
+from wait_for import TimedOutError, wait_for
 
 from wrapanapi.systems.base import System
-
 
 # this service allows to access db outside of openshift
 common_service = """

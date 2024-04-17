@@ -8,19 +8,19 @@ from boto3 import resource as boto3resource
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from wrapanapi.entities import Instance
-from wrapanapi.entities import Network
-from wrapanapi.entities import NetworkMixin
-from wrapanapi.entities import Stack
-from wrapanapi.entities import StackMixin
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.entities import Volume
-from wrapanapi.exceptions import ActionTimedOutError
-from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.exceptions import NotFoundError
+from wrapanapi.entities import (
+    Instance,
+    Network,
+    NetworkMixin,
+    Stack,
+    StackMixin,
+    Template,
+    TemplateMixin,
+    VmMixin,
+    VmState,
+    Volume,
+)
+from wrapanapi.exceptions import ActionTimedOutError, MultipleItemsError, NotFoundError
 from wrapanapi.systems.base import System
 
 

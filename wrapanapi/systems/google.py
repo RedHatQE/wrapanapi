@@ -1,6 +1,7 @@
 """
 Defines System and Entity classes related to the Google Cloud platform
 """
+
 import os
 import random
 import time
@@ -15,15 +16,13 @@ from googleapiclient.http import MediaFileUpload
 from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
-from wrapanapi.entities import Instance
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.exceptions import ImageNotFoundError
-from wrapanapi.exceptions import MultipleInstancesError
-from wrapanapi.exceptions import NotFoundError
-from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
+from wrapanapi.exceptions import (
+    ImageNotFoundError,
+    MultipleInstancesError,
+    NotFoundError,
+    VMInstanceNotFound,
+)
 from wrapanapi.systems.base import System
 
 # Retry transport and file IO errors.

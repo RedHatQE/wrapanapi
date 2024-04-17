@@ -2,9 +2,9 @@
 
 Used to communicate with providers without using CFME facilities
 """
+
 import os
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytz
 from azure.common import AzureConflictHttpError
@@ -13,8 +13,7 @@ from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
-from azure.mgmt.network.models import NetworkSecurityGroup
-from azure.mgmt.network.models import SecurityRule
+from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
 from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
@@ -24,14 +23,8 @@ from cached_property import cached_property
 from dateutil import parser
 from wait_for import wait_for
 
-from wrapanapi.entities import Instance
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.exceptions import ImageNotFoundError
-from wrapanapi.exceptions import MultipleImagesError
-from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
+from wrapanapi.exceptions import ImageNotFoundError, MultipleImagesError, VMInstanceNotFound
 from wrapanapi.systems.base import System
 
 
