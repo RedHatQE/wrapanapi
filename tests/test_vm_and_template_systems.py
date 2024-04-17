@@ -6,6 +6,7 @@ TODO: Possibly mock this out, remove reliance on 'cfme', etc.
 If running within a cfme venv, disable the cfme plugins like so:
    $ pytest test_vm_and_template_systems.py -p no:cfme -s
 """
+
 import datetime
 import logging
 
@@ -17,10 +18,7 @@ import wrapanapi
 from wrapanapi import VmState
 from wrapanapi.entities import StackMixin
 from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.systems.ec2 import EC2Image
-from wrapanapi.systems.ec2 import EC2Instance
-from wrapanapi.systems.ec2 import StackStates
-
+from wrapanapi.systems.ec2 import EC2Image, EC2Instance, StackStates
 
 log = logging.getLogger("wrapanapi.tests.test_vm_and_template_systems")
 

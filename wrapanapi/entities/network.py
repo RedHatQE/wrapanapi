@@ -3,13 +3,11 @@ wrapanapi.entities.network
 
 Networks
 """
-from abc import ABCMeta
-from abc import abstractmethod
 
-from wrapanapi.entities.base import Entity
-from wrapanapi.entities.base import EntityMixin
-from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.exceptions import NotFoundError
+from abc import ABCMeta, abstractmethod
+
+from wrapanapi.entities.base import Entity, EntityMixin
+from wrapanapi.exceptions import MultipleItemsError, NotFoundError
 
 
 class Network(Entity, metaclass=ABCMeta):

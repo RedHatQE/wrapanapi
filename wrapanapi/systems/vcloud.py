@@ -1,5 +1,4 @@
-from pyvcloud.vcd.client import BasicLoginCredentials
-from pyvcloud.vcd.client import Client
+from pyvcloud.vcd.client import BasicLoginCredentials, Client
 from pyvcloud.vcd.org import Org
 from pyvcloud.vcd.vapp import VApp
 from pyvcloud.vcd.vdc import VDC

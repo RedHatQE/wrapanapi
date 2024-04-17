@@ -3,8 +3,8 @@ wrapanapi.entities.server
 
 Implements classes and methods related to actions performed on (physical) servers
 """
-from abc import ABCMeta
-from abc import abstractmethod
+
+from abc import ABCMeta, abstractmethod
 
 from wrapanapi.entities.base import Entity
 

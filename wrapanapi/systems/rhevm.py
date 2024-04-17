@@ -2,27 +2,23 @@
 
 Used to communicate with providers without using CFME facilities
 """
+
 import fauxfactory
 import pytz
-from ovirtsdk4 import Connection
-from ovirtsdk4 import Error
+from ovirtsdk4 import Connection, Error, types
 from ovirtsdk4 import NotFoundError as OVirtNotFoundError
-from ovirtsdk4 import types
-from wait_for import TimedOutError
-from wait_for import wait_for
+from wait_for import TimedOutError, wait_for
 
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import Vm
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.exceptions import ItemNotFound
-from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.exceptions import NotFoundError
-from wrapanapi.exceptions import ResourceAlreadyExistsException
-from wrapanapi.exceptions import VMInstanceNotFound
-from wrapanapi.exceptions import VMInstanceNotSuspended
-from wrapanapi.exceptions import VMNotFoundViaIP
+from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
+from wrapanapi.exceptions import (
+    ItemNotFound,
+    MultipleItemsError,
+    NotFoundError,
+    ResourceAlreadyExistsException,
+    VMInstanceNotFound,
+    VMInstanceNotSuspended,
+    VMNotFoundViaIP,
+)
 from wrapanapi.systems.base import System
 
 

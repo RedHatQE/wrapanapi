@@ -2,6 +2,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+
 import json
 import re
 import time
@@ -14,16 +15,9 @@ import winrm
 from cached_property import cached_property
 from wait_for import wait_for
 
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import Vm
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.exceptions import ImageNotFoundError
-from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState
+from wrapanapi.exceptions import ImageNotFoundError, MultipleItemsError, VMInstanceNotFound
 from wrapanapi.systems.base import System
-
 
 WINDOWS_TZ_INFO = {
     "AUS Central Standard Time": "Australia/Darwin",
@@ -325,9 +319,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $vm_new = Get-SCVirtualMachine -ID "{src_vm}" -VMMServer $scvmm_server
             $vm_host = Get-SCVMHost -VMMServer $scvmm_server -ComputerName "{vm_host}"
             New-SCVirtualMachine -Name "{vm_name}" -VM $vm_new -VMHost $vm_host -Path "{path}"
-        """.format(
-            vm_name=vm_name, src_vm=self._id, vm_host=vm_host, path=path
-        )
+        """.format(vm_name=vm_name, src_vm=self._id, vm_host=vm_host, path=path)
         if start_vm:
             script = f"{script} -StartVM"
         self._run_script(script)
@@ -357,9 +349,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         script = """
             $vm = Get-SCVirtualMachine -ID "{scvmm_vm_id}"
             New-SCVMCheckpoint -VM $vm
-        """.format(
-            scvmm_vm_id=self._id
-        )
+        """.format(scvmm_vm_id=self._id)
         self.system.run_script(script)
 
     def set_checkpoint_type(self, check_type="Standard"):
@@ -398,9 +388,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
             $DVDDrives = Get-SCVirtualDVDDrive -VM $VM
             foreach ($drive in $DVDDrives) {{$drive | Remove-SCVirtualDVDDrivce}}
             Write-Host "number_dvds_disconnected: " + $DVDDrives.length
-        """.format(
-            self._id
-        )
+        """.format(self._id)
         output = self._run_script(script)
         output = output.splitlines()
         num_removed_line = [line for line in output if "number_dvds_disconnected:" in line]
@@ -416,9 +404,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         script = """
             $VM = Get-SCVirtualMachine -ID \"{id}\" -VMMServer $scvmm_server
             New-SCVMTemplate -Name \"{name}\" -VM $VM -LibraryServer \"{ls}\" -SharePath \"{lp}\"
-        """.format(
-            id=self._id, name=name, ls=library_server, lp=library_share
-        )
+        """.format(id=self._id, name=name, ls=library_server, lp=library_share)
         self.logger.info("Creating SCVMM Template '%s' from VM '%s'", name, self._log_str)
         self._run_script(script)
         self.system.update_scvmm_library()
@@ -482,9 +468,7 @@ class SCVMTemplate(Template, _LogStrMixin):
             $vmc = New-SCVMConfiguration -VMTemplate $tpl -Name "{vm_name}" -VMHostGroup $vm_hg
             Update-SCVMConfiguration -VMConfiguration $vmc
             New-SCVirtualMachine -Name "{vm_name}" -VMConfiguration $vmc
-        """.format(
-            id=self._id, vm_name=vm_name, host_group=host_group
-        )
+        """.format(id=self._id, vm_name=vm_name, host_group=host_group)
         if kwargs:
             self.logger.warn("deploy() ignored kwargs: %s", kwargs)
         if vm_cpu:
@@ -509,9 +493,7 @@ class SCVMTemplate(Template, _LogStrMixin):
         script = """
             $Template = Get-SCVMTemplate -ID \"{id}\" -VMMServer $scvmm_server
             Remove-SCVMTemplate -VMTemplate $Template -Force
-        """.format(
-            id=self._id
-        )
+        """.format(id=self._id)
         self.logger.info("Removing SCVMM VM Template '%s'", self._log_str)
         self._run_script(script)
         self.system.update_scvmm_library()
@@ -575,9 +557,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         $secpasswd = ConvertTo-SecureString "{}" -AsPlainText -Force
         $mycreds = New-Object System.Management.Automation.PSCredential ("{}\\{}", $secpasswd)
         $scvmm_server = Get-SCVMMServer -Computername localhost -Credential $mycreds
-        """.format(
-                self.password, self.domain, self.user
-            )
+        """.format(self.password, self.domain, self.user)
         )
 
     @cached_property
@@ -752,9 +732,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $lib = Get-SCLibraryShare
             Read-SCLibraryShare -LibraryShare $lib[0] -Path {path} -RunAsynchronously
-        """.format(
-            path=path
-        )
+        """.format(path=path)
         self.run_script(script)
 
     def unzip_archive(self, path, dest):
@@ -765,9 +743,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             $dest = "{dest}"
             Add-Type -assembly "system.io.compression.filesystem"
             [io.compression.zipfile]::ExtractToDirectory($path, $dest)
-        """.format(
-            path=path, dest=dest
-        )
+        """.format(path=path, dest=dest)
         self.run_script(script)
 
     def download_file(self, url, name, dest="L:\\Library\\VHDs\\", unzip=False):
@@ -778,9 +754,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
             $output = "{dest}{name}"
             $wc = New-Object System.Net.WebClient
             $wc.DownloadFile($url, $output)
-        """.format(
-            url=url, name=name, dest=dest
-        )
+        """.format(url=url, name=name, dest=dest)
         self.run_script(script)
         if unzip:
             self.unzip_archive(f"{dest}{name}", dest)
@@ -793,9 +767,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $fname = "{dest}{name}"
             Remove-Item -Path $fname
-        """.format(
-            name=name, dest=dest
-        )
+        """.format(name=name, dest=dest)
         self.run_script(script)
         self.update_scvmm_library(dest)
 
@@ -804,9 +776,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $app_package = Get-SCApplicationPackage -Name "{}"
             Remove-SCApplicationPackage -ApplicationPackage $app_package
-        """.format(
-            name
-        )
+        """.format(name)
         self.run_script(script)
 
     def delete_vhd(self, name):
@@ -815,9 +785,7 @@ class SCVMMSystem(System, VmMixin, TemplateMixin):
         script = """
             $vhd = Get-SCVirtualHardDisk -Name "{}"
             Remove-SCVirtualHardDisk -VirtualHardDisk $vhd
-        """.format(
-            name
-        )
+        """.format(name)
         self.run_script(script)
 
     class PowerShellScriptError(Exception):

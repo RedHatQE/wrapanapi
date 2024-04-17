@@ -12,3 +12,4 @@ dist/
 .tox/
 AUTHORS
 ChangeLog
+vcd_sdk.log

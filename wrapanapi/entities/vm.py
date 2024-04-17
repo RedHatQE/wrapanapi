@@ -3,20 +3,16 @@ wrapanapi.entities.vm
 
 Methods/classes pertaining to performing actions on a VM/instance
 """
+
 import time
-from abc import ABCMeta
-from abc import abstractmethod
-from abc import abstractproperty
+from abc import ABCMeta, abstractmethod, abstractproperty
 
 from cached_property import cached_property_with_ttl
-from wait_for import TimedOutError
-from wait_for import wait_for
+from wait_for import TimedOutError, wait_for
 
 from wrapanapi.const import CACHED_PROPERTY_TTL
-from wrapanapi.entities.base import Entity
-from wrapanapi.entities.base import EntityMixin
-from wrapanapi.exceptions import MultipleItemsError
-from wrapanapi.exceptions import NotFoundError
+from wrapanapi.entities.base import Entity, EntityMixin
+from wrapanapi.exceptions import MultipleItemsError, NotFoundError
 
 
 class VmState:

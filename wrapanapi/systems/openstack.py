@@ -2,6 +2,7 @@
 
 Used to communicate with providers without using CFME facilities
 """
+
 import json
 import os
 import time
@@ -28,20 +29,18 @@ from swiftclient import client as swiftclient
 from swiftclient.exceptions import ClientException as SwiftException
 from wait_for import wait_for
 
-from wrapanapi.entities import Instance
-from wrapanapi.entities import Template
-from wrapanapi.entities import TemplateMixin
-from wrapanapi.entities import VmMixin
-from wrapanapi.entities import VmState
-from wrapanapi.exceptions import ActionTimedOutError
-from wrapanapi.exceptions import ImageNotFoundError
-from wrapanapi.exceptions import ItemNotFound
-from wrapanapi.exceptions import KeystoneVersionNotSupported
-from wrapanapi.exceptions import MultipleImagesError
-from wrapanapi.exceptions import MultipleInstancesError
-from wrapanapi.exceptions import NetworkNameNotFound
-from wrapanapi.exceptions import NoMoreFloatingIPs
-from wrapanapi.exceptions import VMInstanceNotFound
+from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
+from wrapanapi.exceptions import (
+    ActionTimedOutError,
+    ImageNotFoundError,
+    ItemNotFound,
+    KeystoneVersionNotSupported,
+    MultipleImagesError,
+    MultipleInstancesError,
+    NetworkNameNotFound,
+    NoMoreFloatingIPs,
+    VMInstanceNotFound,
+)
 from wrapanapi.systems.base import System
 
 # TODO The following monkeypatch nonsense is criminal, and would be

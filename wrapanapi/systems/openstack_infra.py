@@ -11,7 +11,6 @@ from requests.exceptions import Timeout
 from wrapanapi.exceptions import KeystoneVersionNotSupported
 from wrapanapi.systems.base import System
 
-
 Node = namedtuple("Node", ["uuid", "name", "power_state", "provision_state"])
 
 
