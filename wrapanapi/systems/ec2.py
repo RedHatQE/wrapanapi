@@ -503,15 +503,13 @@ class ResourceExplorerResource:
         self.service = service
         self.properties = properties
 
-        if self.resource_type == EC2_INSTANCE:
-            if kwargs:
-                system = kwargs.get("system")
-                if system:
-                    kwargs["raw"] = system.ec2_resource.Instance(self.id)
-                kwargs["uuid"] = self.id
-                # When Calling the raw ec2_instance with non-matching AWS Client Region,
-                # the API call fails with a 'ClientError' (InvalidInstanceID.NotFound)
-                self.ec2_instance = EC2Instance(**kwargs)
+        if self.resource_type == EC2_INSTANCE and kwargs:
+            if system := kwargs.get("system"):
+                kwargs["raw"] = system.ec2_resource.Instance(self.id)
+            kwargs["uuid"] = self.id
+            # When Calling the raw ec2_instance with non-matching AWS Client Region,
+            # the API call fails with a 'ClientError' (InvalidInstanceID.NotFound)
+            self.ec2_instance = EC2Instance(**kwargs)
 
     def __repr__(self):
         return f"{type(self)} Id: {self.id}, Type: {self.resource_type}"
@@ -552,8 +550,14 @@ class ResourceExplorerResource:
         Returns the last part of the arn.
         This part is used as id in aws cli.
         """
+        # According to the docs:
+        # https://docs.aws.amazon.com/quicksight/latest/APIReference/qs-arn-format.html
+        # ARNs can end in either scheme: {ARN_VALUE}:resource-id, {ARN_VALUE}/resource-id
         if self.arn:
-            return self.arn.split(":")[-1].split("/")[-1]
+            arn = self.arn.split(":")[-1]
+            if "/" in arn:
+                arn = arn.split("/")[-1]
+            return arn
         return None
 
     @property
