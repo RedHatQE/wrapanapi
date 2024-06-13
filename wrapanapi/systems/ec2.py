@@ -511,6 +511,22 @@ class ResourceExplorerResource:
             # the API call fails with a 'ClientError' (InvalidInstanceID.NotFound)
             self.ec2_instance = EC2Instance(**kwargs)
 
+    @property
+    def id(self) -> str:
+        """
+        Returns the last part of the arn.
+        This part is used as id in aws cli.
+        """
+        # According to the docs:
+        # https://docs.aws.amazon.com/quicksight/latest/APIReference/qs-arn-format.html
+        # ARNs can end in either scheme: {ARN_VALUE}:resource-id, {ARN_VALUE}/resource-id
+        if self.arn:
+            arn = self.arn.split(":")[-1]
+            if "/" in arn:
+                arn = arn.split("/")[-1]
+            return arn
+        return None
+
     def __repr__(self):
         return f"{type(self)} Id: {self.id}, Type: {self.resource_type}"
 
@@ -543,22 +559,6 @@ class ResourceExplorerResource:
                 if re.match(regex, key):
                     list.append(tag)
         return list
-
-    @property
-    def id(self) -> str:
-        """
-        Returns the last part of the arn.
-        This part is used as id in aws cli.
-        """
-        # According to the docs:
-        # https://docs.aws.amazon.com/quicksight/latest/APIReference/qs-arn-format.html
-        # ARNs can end in either scheme: {ARN_VALUE}:resource-id, {ARN_VALUE}/resource-id
-        if self.arn:
-            arn = self.arn.split(":")[-1]
-            if "/" in arn:
-                arn = arn.split("/")[-1]
-            return arn
-        return None
 
     @property
     def name(self) -> str:
