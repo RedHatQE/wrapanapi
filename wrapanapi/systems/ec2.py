@@ -1,6 +1,7 @@
 import base64
 import os
 import re
+from datetime import datetime
 
 import boto3
 from boto3 import client as boto3client
@@ -8,6 +9,7 @@ from boto3 import resource as boto3resource
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from wrapanapi.const import EC2_INSTANCE
 from wrapanapi.entities import (
     Instance,
     Network,
@@ -113,10 +115,17 @@ class EC2Instance(_TagMixin, _SharedMethodsMixin, Instance):
 
         self._api = self.system.ec2_connection
 
+    def __repr__(self):
+        return f"{type(self)} Id: {self.id}, Name: {self.name}"
+
+    @property
+    def id(self):
+        return self.raw.id
+
     @property
     def name(self):
         tag_value = self.get_tag_value("Name")
-        return getattr(self.raw, "name", None) or tag_value if tag_value else self.raw.id
+        return getattr(self.raw, "name", None) or tag_value if tag_value else self.id
 
     def _get_state(self):
         self.refresh()
@@ -487,12 +496,39 @@ class ResourceExplorerResource:
     This class represents a resource returned by Resource Explorer.
     """
 
-    def __init__(self, arn, region, resource_type, service, properties=[]):
+    def __init__(self, arn, region, resource_type, service, properties, **kwargs):
         self.arn = arn
         self.region = region
         self.resource_type = resource_type
         self.service = service
         self.properties = properties
+
+        if self.resource_type == EC2_INSTANCE and kwargs:
+            if system := kwargs.get("system"):
+                kwargs["raw"] = system.ec2_resource.Instance(self.id)
+            kwargs["uuid"] = self.id
+            # When Calling the raw ec2_instance with non-matching AWS Client Region,
+            # the API call fails with a 'ClientError' (InvalidInstanceID.NotFound)
+            self.ec2_instance = EC2Instance(**kwargs)
+
+    @property
+    def id(self) -> str:
+        """
+        Returns the last part of the arn.
+        This part is used as id in aws cli.
+        """
+        # According to the docs:
+        # https://docs.aws.amazon.com/quicksight/latest/APIReference/qs-arn-format.html
+        # ARNs can end in either scheme: {ARN_VALUE}:resource-id, {ARN_VALUE}/resource-id
+        if self.arn:
+            arn = self.arn.split(":")[-1]
+            if "/" in arn:
+                arn = arn.split("/")[-1]
+            return arn
+        return None
+
+    def __repr__(self):
+        return f"{type(self)} Id: {self.id}, Type: {self.resource_type}"
 
     def get_tag_value(self, key) -> str:
         """
@@ -525,16 +561,6 @@ class ResourceExplorerResource:
         return list
 
     @property
-    def id(self) -> str:
-        """
-        Returns the last part of the arn.
-        This part is used as id in aws cli.
-        """
-        if self.arn:
-            return self.arn.split(":")[-1]
-        return None
-
-    @property
     def name(self) -> str:
         """
         Returns a name for the resource derived from the associated tag with key 'Name'.
@@ -544,6 +570,23 @@ class ResourceExplorerResource:
         if not name:
             name = self.id
         return name
+
+    @property
+    def date_modified(self) -> datetime:
+        """
+        Returns the time reference of the "LastReportedAt" tag, by the latest value.
+        If the tag doesn't exist, returns the current time.
+        Used for filtering resources by the latest modified time recorded.
+
+        Example:
+            datetime.datetime(2019, 3, 13, 14, 45, 33, tzinfo=tzutc())
+        """
+        modified_date = None
+        if self.properties:
+            modified_date = max(self.properties, key=lambda x: x == "LastReportedAt").get(
+                "LastReportedAt"
+            )
+        return modified_date
 
 
 class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
@@ -667,9 +710,10 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         instances = list()
         for reservation in reservations:
             for instance in reservation.get("Instances"):
+                instance_id = instance.get("InstanceId")
                 instances.append(
                     EC2Instance(
-                        system=self, raw=self.ec2_resource.Instance(instance.get("InstanceId"))
+                        system=self, raw=self.ec2_resource.Instance(instance_id), uuid=instance_id
                     )
                 )
         return instances
@@ -1814,28 +1858,43 @@ class EC2System(System, VmMixin, TemplateMixin, StackMixin, NetworkMixin):
         Args:
             query: keywords and filters for resources; default is "" (all)
             view: arn of the view to use for the query; default is "" (default view)
-
         Return:
             a list of resources satisfying the query
 
         Examples:
             Use query "tag.key:kubernetes.io/cluster/*" to list OCP resources
         """
+        resource_list = []
+        kwargs = {"system": self}
         args = {"QueryString": query}
         if view:
             args["ViewArn"] = view
-        list = []
+
         paginator = self.resource_explorer_connection.get_paginator("search")
         page_iterator = paginator.paginate(**args)
-        for page in page_iterator:
-            resources = page.get("Resources")
-            for r in resources:
-                resource = ResourceExplorerResource(
-                    arn=r.get("Arn"),
-                    region=r.get("Region"),
-                    service=r.get("Service"),
-                    properties=r.get("Properties"),
-                    resource_type=r.get("ResourceType"),
+
+        try:
+            for page in page_iterator:
+                resources = page.get("Resources")
+                for r in resources:
+                    resource = ResourceExplorerResource(
+                        arn=r.get("Arn"),
+                        region=r.get("Region"),
+                        service=r.get("Service"),
+                        properties=r.get("Properties"),
+                        resource_type=r.get("ResourceType"),
+                        **kwargs,
+                    )
+                    resource_list.append(resource)
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "UnauthorizedException":
+                # Raised when the client uses a region that is not defined as an
+                # Index Aggregator in the Resource Explorer. Official docs:
+                # https://docs.aws.amazon.com/resource-explorer/latest/userguide/manage-aggregator-region.html
+                self.logger.info(
+                    f"Region {self._region_name} is not an Index Aggregator. "
+                    f"Cannot fetch resources with current client."
                 )
-                list.append(resource)
-        return list
+            else:
+                raise error
+        return resource_list
