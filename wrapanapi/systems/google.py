@@ -154,7 +154,7 @@ class GoogleCloudInstance(Instance):
         ).execute()
 
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation["name"]),
+            lambda: self.system.is_zone_operation_done(operation["name"], zone=self.zone),
             delay=0.5,
             num_sec=timeout,
             message=f"Delete {self.name}",
@@ -186,7 +186,7 @@ class GoogleCloudInstance(Instance):
             project=self._project, zone=self.zone, instance=self.name
         ).execute()
         wait_for(
-            lambda: self.system.is_zone_operation_done(operation["name"]),
+            lambda: self.system.is_zone_operation_done(operation["name"], zone=self.zone),
             message=f"stop operation done {self.name}",
             timeout=360,
         )
