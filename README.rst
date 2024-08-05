@@ -1,25 +1,3 @@
-.. image:: https://landscape.io/github/ManageIQ/wrapanapi/master/landscape.svg?style=fla
-   :scale: 50 %
-   :alt: Health Status
-   :align: left
-   :target: (https://landscape.io/github/ManageIQ/wrapanapi/master
-.. image:: https://coveralls.io/repos/ManageIQ/wrapanapi/badge.svg?branch=master&service=github
-   :scale: 50 %
-   :alt: Coverage Status
-   :align: left
-   :target: https://coveralls.io/github/ManageIQ/wrapanapi?branch=master
-.. image:: https://travis-ci.org/ManageIQ/wrapanapi.svg
-   :scale: 50 %
-   :alt: Build Status
-   :align: left
-   :target: https://travis-ci.org/ManageIQ/wrapanapi
-.. image:: https://img.shields.io/pypi/pyversions/wrapanapi.svg
-   :scale: 50 %
-   :alt: Python Supported Versions
-   :align: left
-   :target: https://pypi.org/project/wrapanapi/
-
-
 wrapanapi
 ==========
 
