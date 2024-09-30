@@ -9,6 +9,7 @@ wrapanapi is a simple virtualization client with support (in varying degrees) fo
 * Red Hat Openstack (RHOS)
 * Red Hat Openshift
 * Openshift
+* Podman
 * VMware vCenter
 * Microsoft SCVMM
 * Microsoft Azure
