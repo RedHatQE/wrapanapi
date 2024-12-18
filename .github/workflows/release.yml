@@ -1,5 +1,5 @@
 # CI stages to execute against Pull Requests
-name: Release to PyPi
+name: Release
 
 on:
   push:
@@ -40,9 +40,9 @@ jobs:
         if: failure()
         run: git diff
 
-  release_to_pypi:
+  release:
     needs: codechecks
-    name: Release to PyPi
+    name: Release to PyPi and Github
     runs-on: ubuntu-latest
 
     steps:
@@ -66,3 +66,9 @@ jobs:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip_existing: true
+
+      - name: Release on Github
+        uses: meeDamian/github-release@2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          gzip: folders
