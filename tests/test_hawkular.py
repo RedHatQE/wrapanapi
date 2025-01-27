@@ -291,9 +291,9 @@ def test_list_server_datasource(provider):
         assert datasource.id
         assert datasource.name
         assert datasource.path
-    assert (
-        found | provider.inventory._stats_available["num_datasource"](provider.inventory) > 0
-    ), "No any datasource is listed for any of feeds, but they exists"
+    assert found | provider.inventory._stats_available["num_datasource"](provider.inventory) > 0, (
+        "No any datasource is listed for any of feeds, but they exists"
+    )
 
 
 def test_path(provider):

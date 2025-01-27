@@ -772,7 +772,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         if user and roles:
             if self.keystone_version == 3:
                 raise NotImplementedError(
-                    "Role assignments for users are not implemented yet for " "Keystone V3"
+                    "Role assignments for users are not implemented yet for Keystone V3"
                 )
             user = self._get_user(name=user)
             for role in roles:

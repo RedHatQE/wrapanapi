@@ -1273,7 +1273,7 @@ class Openshift(System):
 
         else:
             raise ValueError(
-                "This name %s is not found among " "deployment configs or stateful sets", name
+                "This name %s is not found among deployment configs or stateful sets", name
             )
         self.logger.info("scaling entity %s to %s replicas", name, replicas)
         wait_for(check_scale_value, timeout=wait, fail_condition=lambda val: val != replicas)
@@ -1432,7 +1432,7 @@ class Openshift(System):
         pods = self.k_api.list_namespaced_pod(namespace=vm_name).items
         if pods:
             self.logger.info(
-                ("some pods are still " "running: {}").format([pod.metadata.name for pod in pods])
+                ("some pods are still running: {}").format([pod.metadata.name for pod in pods])
             )
         return not bool(pods)
 

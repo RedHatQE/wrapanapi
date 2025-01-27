@@ -1240,8 +1240,9 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         active = types.StorageDomainStatus.ACTIVE
         if desired_state is None:
             raise ValueError(
-                "Invalid state [{}] passed for setting storage domain, "
-                "value values are {}".format(state, list(types.StorageDomainStatus))
+                "Invalid state [{}] passed for setting storage domain, value values are {}".format(
+                    state, list(types.StorageDomainStatus)
+                )
             )
         for datacenter in self._data_centers_service.list():
             for domain in self.api.follow_link(datacenter.storage_domains):
