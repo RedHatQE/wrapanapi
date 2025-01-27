@@ -784,7 +784,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def list_security_group_ports(self, sec_group_name, resource_group=None):
         resource_group = resource_group or self.resource_group
         self.logger.info(
-            'Attempting to List ports from Azure security group "%s"' 'in resource group "%s"',
+            'Attempting to List ports from Azure security group "%s"in resource group "%s"',
             sec_group_name,
             resource_group,
         )
@@ -974,9 +974,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         **kwargs,
     ):
         resource_group = resource_group or self.resource_group
-        self.logger.info(
-            "Attempting to Create New Azure Security Group " "Rule '%s'.", secgroup_name
-        )
+        self.logger.info("Attempting to Create New Azure Security Group Rule '%s'.", secgroup_name)
 
         parameters = NetworkSecurityGroup(location=self.region)
         parameters.security_rules = [
