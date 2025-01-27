@@ -697,6 +697,21 @@ class VMWareVMOrTemplate(Entity):
                 result = (None, None)
         return result
 
+    def get_virtual_device_type_names(self):
+        """
+        Retrieves the names of all subclasses of vim.vm.device.VirtualDevice.
+
+        Returns:
+            list: A list of class names (as strings) representing the types of virtual devices.
+        """
+        # Get all subclasses of vim.vm.device.VirtualDevice
+        subclasses = vim.vm.device.VirtualDevice.__subclasses__()
+
+        # Extract only the class names (not fully qualified names) and return
+        class_names = [cls.__name__.split(".")[-1] for cls in subclasses]
+
+        return class_names
+
 
 class VMWareVirtualMachine(VMWareVMOrTemplate, Vm):
     state_map = {
