@@ -622,6 +622,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         return vm_list
 
     def list_vms(self, resource_group=None):
+        resource_group = resource_group or self.resource_group
         return self.find_vms(resource_group=resource_group)
 
     def get_vm(self, name):
