@@ -57,7 +57,7 @@ dependencies = [
     "openshift==0.3.4",
     "ovirt-engine-sdk-python~=4.3",
     "packaging",
-    "podman>5.0.0",
+    "podman==5.2.0",
     "py3winrm==0.0.1",
     "python-cinderclient",
     "python-glanceclient",
