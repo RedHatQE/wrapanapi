@@ -65,7 +65,7 @@ dependencies = [
     "python-ironicclient",
     "python-keystoneclient",
     "python-neutronclient==6.12.0",
-    "python-novaclient==7.1.2",
+    "python-novaclient==11.0.0",
     "python-swiftclient",
     "pyvcloud==23.0.4",
     "pyvmomi>=6.5.0.2017.5.post1",
