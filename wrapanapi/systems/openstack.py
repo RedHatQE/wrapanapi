@@ -23,31 +23,6 @@ from neutronclient.v2_0 import client as neutronclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
-# FloatingIP class removed from novaclient 11.0.0+, using neutron client instead
-class FloatingIP:
-    """Compatibility class for FloatingIP objects from neutron client."""
-    def __init__(self, neutron_client, floating_ip_dict):
-        self._neutron_client = neutron_client
-        self._data = floating_ip_dict
-        
-    @property
-    def id(self):
-        return self._data['id']
-    
-    @property 
-    def ip(self):
-        return self._data['floating_ip_address']
-    
-    @property
-    def fixed_ip(self):
-        return self._data.get('fixed_ip_address')
-    
-    @property
-    def instance_id(self):
-        return self._data.get('port_id')  # In neutron, instance is associated via port
-    
-    def delete(self):
-        self._neutron_client.delete_floatingip(self.id)
 from requests.exceptions import Timeout
 from swiftclient import client as swiftclient
 from swiftclient.exceptions import ClientException as SwiftException
@@ -66,6 +41,35 @@ from wrapanapi.exceptions import (
     VMInstanceNotFound,
 )
 from wrapanapi.systems.base import System
+
+
+# FloatingIP class removed from novaclient 11.0.0+, using neutron client instead
+class FloatingIP:
+    """Compatibility class for FloatingIP objects from neutron client."""
+
+    def __init__(self, neutron_client, floating_ip_dict):
+        self._neutron_client = neutron_client
+        self._data = floating_ip_dict
+
+    @property
+    def id(self):
+        return self._data["id"]
+
+    @property
+    def ip(self):
+        return self._data["floating_ip_address"]
+
+    @property
+    def fixed_ip(self):
+        return self._data.get("fixed_ip_address")
+
+    @property
+    def instance_id(self):
+        return self._data.get("port_id")  # In neutron, instance is associated via port
+
+    def delete(self):
+        self._neutron_client.delete_floatingip(self.id)
+
 
 # TODO The following monkeypatch nonsense is criminal, and would be
 # greatly simplified if openstack made it easier to specify a custom
@@ -768,43 +772,44 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         """List floating IPs using neutron client with optional filters."""
         # Convert nova-style filters to neutron-style filters
         neutron_filters = {}
-        
-        if 'ip' in filters:
-            neutron_filters['floating_ip_address'] = filters['ip']
-        if 'fixed_ip' in filters:
-            if filters['fixed_ip'] is None:
+
+        if "ip" in filters:
+            neutron_filters["floating_ip_address"] = filters["ip"]
+        if "fixed_ip" in filters:
+            if filters["fixed_ip"] is None:
                 # In neutron, unassigned floating IPs have fixed_ip_address as None or empty
-                # We'll filter these in post-processing since neutron doesn't support None filtering directly
-                pass  
+                # We'll filter these in post-processing since neutron doesn't support
+                # None filtering directly
+                pass
             else:
-                neutron_filters['fixed_ip_address'] = filters['fixed_ip']
-        if 'pool' in filters:
+                neutron_filters["fixed_ip_address"] = filters["fixed_ip"]
+        if "pool" in filters:
             # Pool in nova corresponds to network in neutron
             # We need to look up the network by name if it's provided
-            if filters['pool']:
-                networks = self.napi.list_networks(name=filters['pool'])['networks']
+            if filters["pool"]:
+                networks = self.napi.list_networks(name=filters["pool"])["networks"]
                 if networks:
-                    neutron_filters['floating_network_id'] = networks[0]['id']
-        
-        floating_ips = self.napi.list_floatingips(**neutron_filters)['floatingips']
+                    neutron_filters["floating_network_id"] = networks[0]["id"]
+
+        floating_ips = self.napi.list_floatingips(**neutron_filters)["floatingips"]
         result = [self._neutron_to_floating_ip(fip) for fip in floating_ips]
-        
+
         # Post-process for fixed_ip=None case
-        if 'fixed_ip' in filters and filters['fixed_ip'] is None:
-            result = [fip for fip in result if fip.fixed_ip is None or fip.fixed_ip == '']
-            
+        if "fixed_ip" in filters and filters["fixed_ip"] is None:
+            result = [fip for fip in result if fip.fixed_ip is None or fip.fixed_ip == ""]
+
         return result
 
     def _create_floating_ip(self, pool_name):
         """Create floating IP using neutron client."""
         # Find the external network by name
-        networks = self.napi.list_networks(name=pool_name, **{'router:external': True})['networks']
+        networks = self.napi.list_networks(name=pool_name, **{"router:external": True})["networks"]
         if not networks:
             raise Exception(f"External network '{pool_name}' not found")
-        
-        network_id = networks[0]['id']
-        body = {'floatingip': {'floating_network_id': network_id}}
-        fip = self.napi.create_floatingip(body)['floatingip']
+
+        network_id = networks[0]["id"]
+        body = {"floatingip": {"floating_network_id": network_id}}
+        fip = self.napi.create_floatingip(body)["floatingip"]
         return self._neutron_to_floating_ip(fip)
 
     def _get_tenants(self):
