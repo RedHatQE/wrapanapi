@@ -23,7 +23,31 @@ from neutronclient.v2_0 import client as neutronclient
 from novaclient import client as osclient
 from novaclient import exceptions as os_exceptions
 from novaclient.client import SessionClient
-from novaclient.v2.floating_ips import FloatingIP
+# FloatingIP class removed from novaclient 11.0.0+, using neutron client instead
+class FloatingIP:
+    """Compatibility class for FloatingIP objects from neutron client."""
+    def __init__(self, neutron_client, floating_ip_dict):
+        self._neutron_client = neutron_client
+        self._data = floating_ip_dict
+        
+    @property
+    def id(self):
+        return self._data['id']
+    
+    @property 
+    def ip(self):
+        return self._data['floating_ip_address']
+    
+    @property
+    def fixed_ip(self):
+        return self._data.get('fixed_ip_address')
+    
+    @property
+    def instance_id(self):
+        return self._data.get('port_id')  # In neutron, instance is associated via port
+    
+    def delete(self):
+        self._neutron_client.delete_floatingip(self.id)
 from requests.exceptions import Timeout
 from swiftclient import client as swiftclient
 from swiftclient.exceptions import ClientException as SwiftException
@@ -233,7 +257,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             else:
                 # There is one or none, so create one.
                 try:
-                    ip = self._api.floating_ips.create(floating_ip_pool)
+                    ip = self.system._create_floating_ip(floating_ip_pool)
                 except allowed_exceptions as e:
                     self.logger.error("Probably no more FIP slots available: %s", str(e))
                     free_ips = self.system.free_fips(floating_ip_pool)
@@ -269,7 +293,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         ip_addr = self.ip
         if ip_addr is None:
             return None
-        floating_ips = self._api.floating_ips.findall(ip=ip_addr)
+        floating_ips = self.system._list_floating_ips(ip=ip_addr)
         if not floating_ips:
             return None
         floating_ip = floating_ips[0]
@@ -736,6 +760,53 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
     def info(self):
         return f"{self.api.client.service_type} {self.api.client.version}"
 
+    def _neutron_to_floating_ip(self, neutron_fip):
+        """Convert neutron floating IP dict to FloatingIP object."""
+        return FloatingIP(self.napi, neutron_fip)
+
+    def _list_floating_ips(self, **filters):
+        """List floating IPs using neutron client with optional filters."""
+        # Convert nova-style filters to neutron-style filters
+        neutron_filters = {}
+        
+        if 'ip' in filters:
+            neutron_filters['floating_ip_address'] = filters['ip']
+        if 'fixed_ip' in filters:
+            if filters['fixed_ip'] is None:
+                # In neutron, unassigned floating IPs have fixed_ip_address as None or empty
+                # We'll filter these in post-processing since neutron doesn't support None filtering directly
+                pass  
+            else:
+                neutron_filters['fixed_ip_address'] = filters['fixed_ip']
+        if 'pool' in filters:
+            # Pool in nova corresponds to network in neutron
+            # We need to look up the network by name if it's provided
+            if filters['pool']:
+                networks = self.napi.list_networks(name=filters['pool'])['networks']
+                if networks:
+                    neutron_filters['floating_network_id'] = networks[0]['id']
+        
+        floating_ips = self.napi.list_floatingips(**neutron_filters)['floatingips']
+        result = [self._neutron_to_floating_ip(fip) for fip in floating_ips]
+        
+        # Post-process for fixed_ip=None case
+        if 'fixed_ip' in filters and filters['fixed_ip'] is None:
+            result = [fip for fip in result if fip.fixed_ip is None or fip.fixed_ip == '']
+            
+        return result
+
+    def _create_floating_ip(self, pool_name):
+        """Create floating IP using neutron client."""
+        # Find the external network by name
+        networks = self.napi.list_networks(name=pool_name, **{'router:external': True})['networks']
+        if not networks:
+            raise Exception(f"External network '{pool_name}' not found")
+        
+        network_id = networks[0]['id']
+        body = {'floatingip': {'floating_network_id': network_id}}
+        fip = self.napi.create_floatingip(body)['floatingip']
+        return self._neutron_to_floating_ip(fip)
+
     def _get_tenants(self):
         if self.keystone_version == 3:
             return self.tenant_api.list()
@@ -1067,7 +1138,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
-        return sorted(self.api.floating_ips.findall(fixed_ip=None, pool=pool), key=lambda ip: ip.ip)
+        return sorted(self._list_floating_ips(fixed_ip=None, pool=pool), key=lambda ip: ip.ip)
 
     def delete_floating_ip(self, floating_ip):
         """Deletes an existing FIP.
@@ -1083,14 +1154,14 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             # To be able to chain with unassign_floating_ip, which can return None
             return False
         if not isinstance(floating_ip, FloatingIP):
-            floating_ip = self.api.floating_ips.findall(ip=floating_ip)
+            floating_ip = self._list_floating_ips(ip=floating_ip)
             if not floating_ip:
                 return False
             floating_ip = floating_ip[0]
         self.logger.info("Deleting floating IP %s/%s", floating_ip.id, floating_ip.ip)
         floating_ip.delete()
         wait_for(
-            lambda: len(self.api.floating_ips.findall(ip=floating_ip.ip)) == 0,
+            lambda: len(self._list_floating_ips(ip=floating_ip.ip)) == 0,
             delay=1,
             timeout="1m",
         )
@@ -1108,7 +1179,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         pool_name = getattr(pool, "name", pool)  # obj attr, or passed thing (string) otherwise
         fip = None
         try:
-            fip = self.api.floating_ips.create(pool_name)
+            fip = self._create_floating_ip(pool_name)
         except os_exceptions.NotFound:
             self.logger.exception("Exception while creating FIP for pool: %s", pool_name)
         else:
@@ -1120,7 +1191,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                     pool_name,
                 )
         try:
-            fip = next(ip for ip in self.api.floating_ips.list() if ip.instance_id is None)
+            fip = next(ip for ip in self._list_floating_ips() if ip.instance_id is None)
         except StopIteration:
             self.logger.error("No more Floating IPs available")
             return None
