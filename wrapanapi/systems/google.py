@@ -10,10 +10,10 @@ from json import dumps as json_dumps
 import httplib2
 import iso8601
 import pytz
+from google.oauth2 import service_account
 from googleapiclient import errors
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from oauth2client.service_account import ServiceAccountCredentials
 from wait_for import wait_for
 
 from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
@@ -469,24 +469,33 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         cache_discovery = kwargs.get("cache_discovery", False)
 
         if "service_account" in kwargs:
-            service_account = kwargs.get("service_account").copy()
-            service_account["private_key"] = service_account["private_key"].replace("\\n", "\n")
-            service_account["type"] = service_account.get("type", "service_account")  # default it
-            credentials = ServiceAccountCredentials.from_json_keyfile_dict(
-                service_account, scopes=scope
+            service_account_info = kwargs.get("service_account").copy()
+            service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+            service_account_info["type"] = service_account_info.get("type", "service_account")  # default it
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info, scopes=scope
             )
         elif file_type == "json":
             file_path = kwargs.get("file_path", None)
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(file_path, scopes=scope)
+            if not file_path:
+                raise ValueError("file_path is required when file_type='json'")
+            credentials = service_account.Credentials.from_service_account_file(file_path, scopes=scope)
         elif file_type == "p12":
-            file_path = kwargs.get("file_path", None)
-            client_email = kwargs.get("client_email", None)
-            credentials = ServiceAccountCredentials.from_p12_keyfile(
-                client_email, file_path, scopes=scope
+            # P12 format is not directly supported by google-auth library
+            # Users should convert P12 files to JSON format for compatibility
+            raise NotImplementedError(
+                "P12 keyfile format is no longer supported with google-auth library. "
+                "Please convert your P12 file to JSON format. You can use the Google Cloud Console "
+                "or gcloud CLI to generate a new JSON service account key."
             )
-        http_auth = credentials.authorize(httplib2.Http())
-        self._compute = build("compute", "v1", http=http_auth, cache_discovery=cache_discovery)
-        self._storage = build("storage", "v1", http=http_auth, cache_discovery=cache_discovery)
+        else:
+            raise ValueError("Must provide either 'service_account' dict or 'file_path' with file_type='json'")
+        
+        # Create authorized HTTP transport
+        # Note: http_auth variable kept for compatibility but not used with newer API
+        http_auth = credentials
+        self._compute = build("compute", "v1", credentials=credentials, cache_discovery=cache_discovery)
+        self._storage = build("storage", "v1", credentials=credentials, cache_discovery=cache_discovery)
         self._instances = self._compute.instances()
         self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
