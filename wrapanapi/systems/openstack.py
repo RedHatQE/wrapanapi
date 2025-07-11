@@ -43,7 +43,6 @@ from wrapanapi.exceptions import (
 )
 from wrapanapi.systems.base import System
 
-
 # TODO The following monkeypatch nonsense is criminal, and would be
 # greatly simplified if openstack made it easier to specify a custom
 # client class. This is a trivial PR that they're likely to accept.
@@ -230,7 +229,9 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             if len(free_ips) > 1:
                 # There are 2 and more ips, so we will take the first one (eldest)
                 ip = free_ips[0]
-                self.logger.info("Reusing %s from pool %s", ip.floating_ip_address, floating_ip_pool)
+                self.logger.info(
+                    "Reusing %s from pool %s", ip.floating_ip_address, floating_ip_pool
+                )
             else:
                 # There is one or none, so create one.
                 try:
@@ -252,7 +253,9 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
                         raise NoMoreFloatingIPs(f"Provider {self.system.auth_url} ran out of FIPs")
                 self.logger.info("Created %s in pool %s", ip.floating_ip_address, floating_ip_pool)
             # Use openstacksdk to associate floating IP with server
-            self.system.openstack_conn.compute.add_floating_ip_to_server(instance, ip.floating_ip_address)
+            self.system.openstack_conn.compute.add_floating_ip_to_server(
+                instance, ip.floating_ip_address
+            )
 
             # Now the grace period in which a FIP theft could happen
             time.sleep(safety_timer)
@@ -276,10 +279,15 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
             return None
         floating_ip = floating_ips[0]
         self.logger.info(
-            "Detaching floating IP %s/%s from %s", floating_ip.id, floating_ip.floating_ip_address, instance.name
+            "Detaching floating IP %s/%s from %s",
+            floating_ip.id,
+            floating_ip.floating_ip_address,
+            instance.name,
         )
         # Use openstacksdk to disassociate floating IP from server
-        self.system.openstack_conn.compute.remove_floating_ip_from_server(instance, floating_ip.floating_ip_address)
+        self.system.openstack_conn.compute.remove_floating_ip_from_server(
+            instance, floating_ip.floating_ip_address
+        )
         wait_for(lambda: self.ip is None, delay=1, timeout="1m")
         return floating_ip
 
@@ -773,7 +781,9 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
                 openstack_filters["fixed_ip_address"] = filters["fixed_ip"]
         if "pool" in filters and filters["pool"]:
             # Pool in nova corresponds to network in openstack sdk
-            networks = list(self.openstack_conn.network.networks(name=filters["pool"], is_router_external=True))
+            networks = list(
+                self.openstack_conn.network.networks(name=filters["pool"], is_router_external=True)
+            )
             if networks:
                 openstack_filters["floating_network_id"] = networks[0].id
 
@@ -781,14 +791,20 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
         # Post-process for fixed_ip=None case (unassigned floating IPs)
         if "fixed_ip" in filters and filters["fixed_ip"] is None:
-            floating_ips = [fip for fip in floating_ips if fip.fixed_ip_address is None or fip.fixed_ip_address == ""]
+            floating_ips = [
+                fip
+                for fip in floating_ips
+                if fip.fixed_ip_address is None or fip.fixed_ip_address == ""
+            ]
 
         return floating_ips
 
     def _create_floating_ip(self, pool_name):
         """Create floating IP using openstacksdk."""
         # Find the external network by name
-        networks = list(self.openstack_conn.network.networks(name=pool_name, is_router_external=True))
+        networks = list(
+            self.openstack_conn.network.networks(name=pool_name, is_router_external=True)
+        )
         if not networks:
             raise Exception(f"External network '{pool_name}' not found")
 
@@ -1127,7 +1143,9 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     def free_fips(self, pool):
         """Returns list of free floating IPs sorted by ip address."""
-        return sorted(self._list_floating_ips(fixed_ip=None, pool=pool), key=lambda ip: ip.floating_ip_address)
+        return sorted(
+            self._list_floating_ips(fixed_ip=None, pool=pool), key=lambda ip: ip.floating_ip_address
+        )
 
     def delete_floating_ip(self, floating_ip):
         """Deletes an existing FIP.
@@ -1148,7 +1166,9 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             if not floating_ip_list:
                 return False
             floating_ip = floating_ip_list[0]
-        self.logger.info("Deleting floating IP %s/%s", floating_ip.id, floating_ip.floating_ip_address)
+        self.logger.info(
+            "Deleting floating IP %s/%s", floating_ip.id, floating_ip.floating_ip_address
+        )
         self.openstack_conn.network.delete_floating_ip(floating_ip)
         wait_for(
             lambda: len(self._list_floating_ips(ip=floating_ip.floating_ip_address)) == 0,
