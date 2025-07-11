@@ -470,8 +470,12 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
 
         if "service_account" in kwargs:
             service_account_info = kwargs.get("service_account").copy()
-            service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
-            service_account_info["type"] = service_account_info.get("type", "service_account")  # default it
+            service_account_info["private_key"] = service_account_info["private_key"].replace(
+                "\\n", "\n"
+            )
+            service_account_info["type"] = service_account_info.get(
+                "type", "service_account"
+            )  # default it
             credentials = service_account.Credentials.from_service_account_info(
                 service_account_info, scopes=scope
             )
@@ -479,7 +483,9 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
             file_path = kwargs.get("file_path", None)
             if not file_path:
                 raise ValueError("file_path is required when file_type='json'")
-            credentials = service_account.Credentials.from_service_account_file(file_path, scopes=scope)
+            credentials = service_account.Credentials.from_service_account_file(
+                file_path, scopes=scope
+            )
         elif file_type == "p12":
             # P12 format is not directly supported by google-auth library
             # Users should convert P12 files to JSON format for compatibility
@@ -489,13 +495,19 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
                 "or gcloud CLI to generate a new JSON service account key."
             )
         else:
-            raise ValueError("Must provide either 'service_account' dict or 'file_path' with file_type='json'")
-        
+            raise ValueError(
+                "Must provide either 'service_account' dict or 'file_path' with file_type='json'"
+            )
+
         # Create authorized HTTP transport
         # Note: http_auth variable kept for compatibility but not used with newer API
-        http_auth = credentials
-        self._compute = build("compute", "v1", credentials=credentials, cache_discovery=cache_discovery)
-        self._storage = build("storage", "v1", credentials=credentials, cache_discovery=cache_discovery)
+        http_auth = credentials  # noqa: F841
+        self._compute = build(
+            "compute", "v1", credentials=credentials, cache_discovery=cache_discovery
+        )
+        self._storage = build(
+            "storage", "v1", credentials=credentials, cache_discovery=cache_discovery
+        )
         self._instances = self._compute.instances()
         self._forwarding_rules = self._compute.forwardingRules()
         self._buckets = self._storage.buckets()
