@@ -39,8 +39,14 @@ keywords = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "azure-storage-common>=1.0",
-    "azure==4.0.0",
+    "azure-common",
+    "azure-mgmt-compute",
+    "azure-mgmt-iothub",
+    "azure-mgmt-network",
+    "azure-mgmt-resource",
+    "azure-mgmt-storage",
+    "azure-storage-blob",
+    "azure-storage-common",
     "boto",
     "boto3",
     "botocore",
