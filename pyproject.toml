@@ -39,7 +39,6 @@ keywords = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "pyopenssl==24.2.1",
     "azure-storage-common>=1.0",
     "azure==4.0.0",
     "boto",
@@ -49,11 +48,11 @@ dependencies = [
     "dateparser",
     "fauxfactory",
     "google-api-python-client",
+    "google-auth",
     "google-compute-engine",
     "inflection",
     "lxml",
     "miq-version",
-    "oauth2client",
     "openshift==0.3.4",
     "ovirt-engine-sdk-python~=4.3",
     "packaging",
