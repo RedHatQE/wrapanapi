@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import pytz
 from azure.common import AzureConflictHttpError
-from azure.common.credentials import ServicePrincipalCredentials
+from azure.identity import ClientSecretCredential
 from azure.common.exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
@@ -500,8 +500,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.orphaned_discs_path = "Microsoft.Compute/Images/templates/"
         self.region = kwargs["provisioning"]["region_api"].replace(" ", "").lower()
 
-        self.credentials = ServicePrincipalCredentials(
-            client_id=self.client_id, secret=self.client_secret, tenant=self.tenant
+        self.credentials = ClientSecretCredential(
+            tenant_id=self.tenant, client_id=self.client_id, client_secret=self.client_secret
         )
 
     @property
