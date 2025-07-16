@@ -39,7 +39,7 @@ keywords = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "azure-common",
+    "azure-core",
     "azure-identity",
     "azure-mgmt-compute",
     "azure-mgmt-iothub",
@@ -60,6 +60,7 @@ dependencies = [
     "inflection",
     "lxml",
     "miq-version",
+    "msrestazure",
     "openshift==0.3.4",
     "ovirt-engine-sdk-python~=4.3",
     "packaging",
