@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import pytz
 from azure.core.exceptions import HttpResponseError
 from azure.identity import ClientSecretCredential
-from msrestazure.azure_exceptions import CloudError
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
@@ -21,6 +20,7 @@ from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlobServiceClient
 from cached_property import cached_property
 from dateutil import parser
+from msrestazure.azure_exceptions import CloudError
 from wait_for import wait_for
 
 from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
@@ -1018,16 +1018,16 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             if container.name.startswith("bootdiagnostics-test"):
                 self.logger.info("Removing container '%s'", container.name)
                 blob_service_client.delete_container(container.name)
-        self.logger.info(
-            "All diags containers are removed from '%s'", self.storage_account
-        )
+        self.logger.info("All diags containers are removed from '%s'", self.storage_account)
 
     def copy_blob_image(
         self, template, vm_name, storage_account, template_container, storage_container
     ):
         # todo: weird method to refactor it later
         account_url = f"https://{storage_account}.blob.core.windows.net"
-        blob_service_client = BlobServiceClient(account_url=account_url, credential=self.storage_key)
+        blob_service_client = BlobServiceClient(
+            account_url=account_url, credential=self.storage_key
+        )
         src_uri = blob_service_client.get_blob_client(
             container=template_container, blob=template
         ).url
@@ -1036,7 +1036,11 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             blob=vm_name + ".vhd",
         )
         operation = dest_blob_client.start_copy_from_url(src_uri)
-        wait_for(lambda: dest_blob_client.get_blob_properties().copy.status != "pending", timeout="10m", delay=15)
+        wait_for(
+            lambda: dest_blob_client.get_blob_properties().copy.status != "pending",
+            timeout="10m",
+            delay=15,
+        )
         # copy operation obj.status->str
         return dest_blob_client.get_blob_properties().copy.status
 
