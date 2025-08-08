@@ -7,12 +7,12 @@ import json
 import re
 import time
 from datetime import datetime
+from functools import cached_property
 from textwrap import dedent
 
 import pytz
 import tzlocal
 import winrm
-from functools import cached_property
 from wait_for import wait_for
 
 from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState

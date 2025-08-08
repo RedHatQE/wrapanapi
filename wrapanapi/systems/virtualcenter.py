@@ -11,10 +11,9 @@ import threading
 import time
 from datetime import datetime
 from distutils.version import LooseVersion
-from functools import partial
+from functools import cached_property, partial
 
 import pytz
-from functools import cached_property
 from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim, vmodl
 from wait_for import TimedOutError, wait_for

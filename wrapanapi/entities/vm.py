@@ -6,51 +6,9 @@ Methods/classes pertaining to performing actions on a VM/instance
 
 import time
 from abc import ABCMeta, abstractmethod, abstractproperty
-from functools import cached_property
 
+from cached_property import cached_property_with_ttl
 from wait_for import TimedOutError, wait_for
-
-
-class cached_property_with_ttl:
-    """A property that is cached for a given TTL (time-to-live) in seconds."""
-    
-    def __init__(self, ttl):
-        self.ttl = ttl
-        
-    def __call__(self, func):
-        self.func = func
-        self.__doc__ = func.__doc__
-        self.__name__ = func.__name__
-        return self
-        
-    def __get__(self, obj, objtype=None):
-        if obj is None:
-            return self
-            
-        attr_name = f'_{self.__name__}_cached'
-        time_attr_name = f'_{self.__name__}_cached_time'
-        
-        current_time = time.time()
-        
-        if (hasattr(obj, attr_name) and hasattr(obj, time_attr_name) and 
-            current_time - getattr(obj, time_attr_name) < self.ttl):
-            return getattr(obj, attr_name)
-            
-        value = self.func(obj)
-        setattr(obj, attr_name, value)
-        setattr(obj, time_attr_name, current_time)
-        return value
-        
-    def __set__(self, obj, value):
-        raise AttributeError("can't set attribute")
-        
-    def __delete__(self, obj):
-        attr_name = f'_{self.__name__}_cached'
-        time_attr_name = f'_{self.__name__}_cached_time'
-        if hasattr(obj, attr_name):
-            delattr(obj, attr_name)
-        if hasattr(obj, time_attr_name):
-            delattr(obj, time_attr_name)
 
 from wrapanapi.const import CACHED_PROPERTY_TTL
 from wrapanapi.entities.base import Entity, EntityMixin
