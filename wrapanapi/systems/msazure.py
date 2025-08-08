@@ -7,9 +7,8 @@ import os
 from datetime import datetime, timedelta
 
 import pytz
-from azure.common import AzureConflictHttpError
-from azure.common.credentials import ServicePrincipalCredentials
-from azure.common.exceptions import CloudError
+from azure.core.exceptions import HttpResponseError
+from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
@@ -18,9 +17,10 @@ from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
-from azure.storage.blob import BlockBlobService
+from azure.storage.blob import BlobServiceClient
 from cached_property import cached_property
 from dateutil import parser
+from msrestazure.azure_exceptions import CloudError
 from wait_for import wait_for
 
 from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
@@ -327,11 +327,11 @@ class AzureBlobImage(Template):
 
         There doesn't seem to be a uuid associated with Azure Blobs
         """
-        return self._api.make_blob_url(self._container, self._name)
+        return self._api.get_blob_client(self._container, self._name).url
 
     def refresh(self):
         try:
-            self.raw = self._api.get_blob_properties(self._container, self._name)
+            self.raw = self._api.get_blob_client(self._container, self._name).get_blob_properties()
         except CloudError as e:
             if e.response.status_code == 404:
                 raise ImageNotFoundError(self._name)
@@ -341,10 +341,10 @@ class AzureBlobImage(Template):
         kwargs = {}
         if delete_snapshots:
             kwargs["delete_snapshots"] = "include"
-        self._api.delete_blob(self._container, self.name, **kwargs)
+        self._api.get_blob_client(self._container, self.name).delete_blob(**kwargs)
 
     def delete_snapshots_only(self):
-        self._api.delete_blob(self._container, self.name, delete_snapshots="only")
+        self._api.get_blob_client(self._container, self.name).delete_blob(delete_snapshots="only")
 
     def cleanup(self):
         return self.delete()
@@ -447,9 +447,9 @@ class AzureBlobImage(Template):
             self._container,
             storage_container,
         )
-        image_uri = self.system.container_client.make_blob_url(
+        image_uri = self.system.container_client.get_blob_client(
             container_name=storage_container, blob_name=vm_name
-        )
+        ).url
         # creating virtual machine
         vm_parameters = {
             "location": location,
@@ -500,8 +500,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         self.orphaned_discs_path = "Microsoft.Compute/Images/templates/"
         self.region = kwargs["provisioning"]["region_api"].replace(" ", "").lower()
 
-        self.credentials = ServicePrincipalCredentials(
-            client_id=self.client_id, secret=self.client_secret, tenant=self.tenant
+        self.credentials = ClientSecretCredential(
+            tenant_id=self.tenant, client_id=self.client_id, client_secret=self.client_secret
         )
 
     @property
@@ -560,7 +560,8 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
     @cached_property
     def container_client(self):
-        return BlockBlobService(self.storage_account, self.storage_key)
+        account_url = f"https://{self.storage_account}.blob.core.windows.net"
+        return BlobServiceClient(account_url=account_url, credential=self.storage_key)
 
     @cached_property
     def subscription_client(self):
@@ -1007,48 +1008,51 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     def does_load_balancer_exist(self, lb_name):
         return lb_name in self.list_load_balancer()
 
-    def remove_diags_container(self, container_client=None):
+    def remove_diags_container(self, blob_service_client=None):
         """
-        If None (default) container_client provided, the instance's
+        If None (default) blob_service_client provided, the instance's
         container_client is used instead
         """
-        container_client = container_client or self.container_client
-        for container in container_client.list_containers():
+        blob_service_client = blob_service_client or self.container_client
+        for container in blob_service_client.list_containers():
             if container.name.startswith("bootdiagnostics-test"):
                 self.logger.info("Removing container '%s'", container.name)
-                self.container_client.delete_container(container_name=container.name)
-        self.logger.info(
-            "All diags containers are removed from '%s'", container_client.account_name
-        )
+                blob_service_client.delete_container(container.name)
+        self.logger.info("All diags containers are removed from '%s'", self.storage_account)
 
     def copy_blob_image(
         self, template, vm_name, storage_account, template_container, storage_container
     ):
         # todo: weird method to refactor it later
-        container_client = BlockBlobService(storage_account, self.storage_key)
-        src_uri = container_client.make_blob_url(
-            container_name=template_container, blob_name=template
+        account_url = f"https://{storage_account}.blob.core.windows.net"
+        blob_service_client = BlobServiceClient(
+            account_url=account_url, credential=self.storage_key
         )
-        operation = container_client.copy_blob(
-            container_name=storage_container,
-            blob_name=vm_name + ".vhd",
-            copy_source=src_uri,
+        src_uri = blob_service_client.get_blob_client(
+            container=template_container, blob=template
+        ).url
+        dest_blob_client = blob_service_client.get_blob_client(
+            container=storage_container,
+            blob=vm_name + ".vhd",
         )
-        wait_for(lambda: operation.status != "pending", timeout="10m", delay=15)
+        dest_blob_client.start_copy_from_url(src_uri)
+        wait_for(
+            lambda: dest_blob_client.get_blob_properties().copy.status != "pending",
+            timeout="10m",
+            delay=15,
+        )
         # copy operation obj.status->str
-        return operation.status
+        return dest_blob_client.get_blob_properties().copy.status
 
-    def _remove_container_blob(self, container_client, container, blob, remove_snapshots=True):
+    def _remove_container_blob(self, blob_service_client, container, blob, remove_snapshots=True):
         # Redundant with AzureBlobImage.delete(), but used below in self.remove_unused_blobs()
         self.logger.info("Removing Blob '%s' from containter '%s'", blob.name, container.name)
         try:
-            container_client.delete_blob(container_name=container.name, blob_name=blob.name)
-        except AzureConflictHttpError as e:
+            blob_service_client.get_blob_client(container.name, blob.name).delete_blob()
+        except HttpResponseError as e:
             if "SnapshotsPresent" in str(e) and remove_snapshots:
                 self.logger.warn("Blob '%s' has snapshots present, removing them", blob.name)
-                container_client.delete_blob(
-                    container_name=container.name,
-                    blob_name=blob.name,
+                blob_service_client.get_blob_client(container.name, blob.name).delete_blob(
                     delete_snapshots="include",
                 )
             else:
@@ -1070,19 +1074,20 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             removed_blobs[resource_group][storage_account] = {}
             # removing unmanaged disks
             key = self.get_storage_account_key(storage_account, resource_group)
-            container_client = BlockBlobService(storage_account, key)
-            for container in container_client.list_containers():
+            account_url = f"https://{storage_account}.blob.core.windows.net"
+            blob_service_client = BlobServiceClient(account_url=account_url, credential=key)
+            for container in blob_service_client.list_containers():
                 removed_blobs[resource_group][storage_account][container.name] = []
-                for blob in container_client.list_blobs(
-                    container_name=container.name, prefix="test"
+                for blob in blob_service_client.get_container_client(container.name).list_blobs(
+                    name_starts_with="test"
                 ):
-                    if blob.properties.lease.status == "unlocked":
-                        self._remove_container_blob(container_client, container, blob)
+                    if blob.lease.state == "available":
+                        self._remove_container_blob(blob_service_client, container, blob)
                         removed_blobs[resource_group][storage_account][container.name].append(
                             blob.name
                         )
             # also delete unused 'bootdiag' containers
-            self.remove_diags_container(container_client)
+            self.remove_diags_container(blob_service_client)
 
         # removing managed disks
         removed_disks = []
@@ -1122,7 +1127,11 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             found_container_name = found_container.name
             if container and found_container_name.lower() != container.lower():
                 continue
-            for image in self.container_client.list_blobs(found_container_name, prefix=prefix):
+            container_client = self.container_client.get_container_client(found_container_name)
+            blob_kwargs = {}
+            if prefix:
+                blob_kwargs["name_starts_with"] = prefix
+            for image in container_client.list_blobs(**blob_kwargs):
                 img_name = image.name
                 if only_vhd and (not img_name.endswith(".vhd") and not img_name.endswith(".vhdx")):
                     continue
