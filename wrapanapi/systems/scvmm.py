@@ -12,7 +12,7 @@ from textwrap import dedent
 import pytz
 import tzlocal
 import winrm
-from cached_property import cached_property
+from functools import cached_property
 from wait_for import wait_for
 
 from wrapanapi.entities import Template, TemplateMixin, Vm, VmMixin, VmState

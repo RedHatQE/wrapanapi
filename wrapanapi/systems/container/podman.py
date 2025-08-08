@@ -2,7 +2,7 @@ from abc import ABCMeta
 from datetime import datetime
 
 from podman import PodmanClient
-from proto.utils import cached_property
+from functools import cached_property
 
 from wrapanapi.entities.base import Entity
 from wrapanapi.systems.base import System

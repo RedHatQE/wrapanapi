@@ -51,7 +51,6 @@ dependencies = [
     "boto",
     "boto3",
     "botocore",
-    "cached_property",
     "dateparser",
     "fauxfactory",
     "google-api-python-client",
