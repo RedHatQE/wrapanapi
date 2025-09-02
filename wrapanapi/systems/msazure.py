@@ -5,6 +5,7 @@ Used to communicate with providers without using CFME facilities
 
 import os
 from datetime import datetime, timedelta
+from functools import cached_property
 
 import pytz
 from azure.core.exceptions import HttpResponseError
@@ -18,7 +19,6 @@ from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlobServiceClient
-from cached_property import cached_property
 from dateutil import parser
 from msrestazure.azure_exceptions import CloudError
 from wait_for import wait_for
