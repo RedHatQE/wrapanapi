@@ -11,10 +11,9 @@ import threading
 import time
 from datetime import datetime
 from distutils.version import LooseVersion
-from functools import partial
+from functools import cached_property, partial
 
 import pytz
-from cached_property import threaded_cached_property
 from pyVim.connect import Disconnect, SmartConnect
 from pyVmomi import vim, vmodl
 from wait_for import TimedOutError, wait_for
@@ -995,13 +994,13 @@ class VMWareSystem(System, VmMixin, TemplateMixin):
         self._start_keepalive()
         return si
 
-    @threaded_cached_property
+    @cached_property
     def service_instance(self):
         """An instance of the service"""
         self.logger.debug("Attempting to initiate vCenter service instance")
         return self._create_service_instance()
 
-    @threaded_cached_property
+    @cached_property
     def content(self):
         self.logger.debug("calling RetrieveContent()... this might take awhile")
         return self.service_instance.RetrieveContent()
