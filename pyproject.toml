@@ -47,7 +47,6 @@ dependencies = [
     "azure-mgmt-resource",
     "azure-mgmt-storage",
     "azure-storage-blob",
-    "azure-storage-common",
     "boto",
     "boto3",
     "botocore",
