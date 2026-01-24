@@ -11,6 +11,8 @@ import pytest
 from wrapanapi.systems import HawkularSystem
 from wrapanapi.systems.hawkular import CanonicalPath, Resource, ResourceData, ResourceType
 
+random.seed(17)
+
 
 def fake_urlopen(c_client, url, headers, params):
     """
