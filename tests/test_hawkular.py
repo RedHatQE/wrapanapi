@@ -11,7 +11,6 @@ import pytest
 from wrapanapi.systems import HawkularSystem
 from wrapanapi.systems.hawkular import CanonicalPath, Resource, ResourceData, ResourceType
 
-
 seed(17)
 
 
