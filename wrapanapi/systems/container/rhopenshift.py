@@ -10,8 +10,20 @@ import yaml
 from kubernetes import client as kubeclient
 from kubernetes.client.rest import ApiException
 from miq_version import TemplateName, Version
-from openshift import client as ociclient
 from wait_for import TimedOutError, wait_for
+
+# Try to import openshift client module
+# In openshift>=0.13, the static client module was removed in favor of the dynamic client
+# For backward compatibility, we attempt the import but allow it to fail gracefully
+try:
+    from openshift import client as ociclient
+
+    _OPENSHIFT_CLIENT_AVAILABLE = True
+except (ImportError, AttributeError):
+    # openshift.client module doesn't exist in openshift>=0.13
+    # The OpenShift functionality will not work until code is migrated to dynamic client
+    ociclient = None
+    _OPENSHIFT_CLIENT_AVAILABLE = False
 
 from wrapanapi.systems.base import System
 
@@ -196,6 +208,14 @@ class Openshift(System):
         return {"hostname": self.hostname, "port": self.port}
 
     def _connect(self):
+        if not _OPENSHIFT_CLIENT_AVAILABLE or ociclient is None:
+            raise ImportError(
+                "The openshift.client module is not available. "
+                "OpenShift requires openshift<=0.13 which is incompatible with Python 3.9+, "
+                "or the code needs to be migrated to use the openshift.dynamic client API. "
+                "See https://github.com/openshift/openshift-restclient-python for guidance."
+            )
+
         url = "{proto}://{host}:{port}".format(
             proto=self.protocol, host=self.hostname, port=self.port
         )
