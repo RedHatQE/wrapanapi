@@ -8,24 +8,62 @@ from datetime import datetime, timedelta
 from functools import cached_property
 
 import pytz
-from azure.core.exceptions import HttpResponseError
-from azure.identity import ClientSecretCredential
-from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.iothub import IotHubClient
-from azure.mgmt.network import NetworkManagementClient
-from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
-from azure.mgmt.resource.resources import ResourceManagementClient
-from azure.mgmt.storage import StorageManagementClient
-from azure.mgmt.subscription import SubscriptionClient
-from azure.mgmt.subscription.models import SubscriptionState
-from azure.storage.blob import BlobServiceClient
 from dateutil import parser
-from msrestazure.azure_exceptions import CloudError
 from wait_for import wait_for
 
 from wrapanapi.entities import Instance, Template, TemplateMixin, VmMixin, VmState
 from wrapanapi.exceptions import ImageNotFoundError, MultipleImagesError, VMInstanceNotFound
 from wrapanapi.systems.base import System
+
+# Lazy imports for Azure dependencies to avoid import errors when Azure packages
+# are not properly installed or when users don't need Azure functionality
+_azure_imports_loaded = False
+
+
+def _ensure_azure_imports():
+    """Lazily import Azure dependencies only when needed."""
+    global _azure_imports_loaded
+    global HttpResponseError, ClientSecretCredential, ComputeManagementClient
+    global IotHubClient, NetworkManagementClient, NetworkSecurityGroup, SecurityRule
+    global ResourceManagementClient, StorageManagementClient, SubscriptionClient
+    global SubscriptionState, BlobServiceClient, CloudError
+
+    if not _azure_imports_loaded:
+        from azure.core.exceptions import HttpResponseError as _HttpResponseError
+        from azure.identity import ClientSecretCredential as _ClientSecretCredential
+        from azure.mgmt.compute import ComputeManagementClient as _ComputeManagementClient
+        from azure.mgmt.iothub import IotHubClient as _IotHubClient
+        from azure.mgmt.network import NetworkManagementClient as _NetworkManagementClient
+        from azure.mgmt.network.models import (
+            NetworkSecurityGroup as _NetworkSecurityGroup,
+        )
+        from azure.mgmt.network.models import (
+            SecurityRule as _SecurityRule,
+        )
+        from azure.mgmt.resource.resources import (
+            ResourceManagementClient as _ResourceManagementClient,
+        )
+        from azure.mgmt.storage import StorageManagementClient as _StorageManagementClient
+        from azure.mgmt.subscription import SubscriptionClient as _SubscriptionClient
+        from azure.mgmt.subscription.models import SubscriptionState as _SubscriptionState
+        from azure.storage.blob import BlobServiceClient as _BlobServiceClient
+        from msrestazure.azure_exceptions import CloudError as _CloudError
+
+        HttpResponseError = _HttpResponseError
+        ClientSecretCredential = _ClientSecretCredential
+        ComputeManagementClient = _ComputeManagementClient
+        IotHubClient = _IotHubClient
+        NetworkManagementClient = _NetworkManagementClient
+        NetworkSecurityGroup = _NetworkSecurityGroup
+        SecurityRule = _SecurityRule
+        ResourceManagementClient = _ResourceManagementClient
+        StorageManagementClient = _StorageManagementClient
+        SubscriptionClient = _SubscriptionClient
+        SubscriptionState = _SubscriptionState
+        BlobServiceClient = _BlobServiceClient
+        CloudError = _CloudError
+
+        _azure_imports_loaded = True
 
 
 class AzureInstance(Instance):
@@ -47,6 +85,7 @@ class AzureInstance(Instance):
             name: name of instance
             resource_group: name of resource group this instance is in
         """
+        _ensure_azure_imports()
         self._resource_group = kwargs.get("resource_group")
         self._name = kwargs.get("name")
         if not self._name or not self._resource_group:
@@ -304,6 +343,7 @@ class AzureBlobImage(Template):
             name: name of template
             container: container the template is stored in
         """
+        _ensure_azure_imports()
         self._name = kwargs.get("name")
         self._container = kwargs.get("container")
         if not self._name or not self._container:
@@ -488,6 +528,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
     }
 
     def __init__(self, **kwargs):
+        _ensure_azure_imports()
         super().__init__(**kwargs)
         self.client_id = kwargs.get("username")
         self.client_secret = kwargs.get("password")
