@@ -14,10 +14,10 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.iothub import IotHubClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import NetworkSecurityGroup, SecurityRule
-from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.resource.resources import ResourceManagementClient
-from azure.mgmt.resource.subscriptions.models import SubscriptionState
 from azure.mgmt.storage import StorageManagementClient
+from azure.mgmt.subscription import SubscriptionClient
+from azure.mgmt.subscription.models import SubscriptionState
 from azure.storage.blob import BlobServiceClient
 from dateutil import parser
 from msrestazure.azure_exceptions import CloudError
