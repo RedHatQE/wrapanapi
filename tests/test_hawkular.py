@@ -2,7 +2,7 @@
 
 import json
 import os
-from random import sample
+from random import sample, seed
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -10,6 +10,8 @@ import pytest
 
 from wrapanapi.systems import HawkularSystem
 from wrapanapi.systems.hawkular import CanonicalPath, Resource, ResourceData, ResourceType
+
+seed(17)
 
 
 def fake_urlopen(c_client, url, headers, params):
