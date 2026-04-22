@@ -2,7 +2,7 @@
 
 import json
 import os
-from random import sample
+from random import Random
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -102,7 +102,7 @@ def datasource(provider):
     datasources = provider.inventory.list_server_datasource()
     assert len(datasources) > 0, "No resource data is listed for any of datasources"
     new_datasource = None
-    for datasource in sample(datasources, 1):
+    for datasource in Random(17).sample(datasources, 1):
         r_data = _read_resource_data(provider, datasource)
         assert r_data
 
