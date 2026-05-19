@@ -241,7 +241,9 @@ class AzureInstance(Instance):
 
     def delete(self):
         self.logger.info("deleting vm '%s'", self.name)
-        operation = self._api.delete(resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.begin_delete(
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         return self._wait_on_operation(operation)
 
     def cleanup(self):
@@ -265,7 +267,9 @@ class AzureInstance(Instance):
 
     def start(self):
         self.logger.info("starting vm '%s'", self.name)
-        operation = self._api.start(resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.begin_start(
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.RUNNING)
             return True
@@ -273,7 +277,7 @@ class AzureInstance(Instance):
 
     def stop(self):
         self.logger.info("stopping vm '%s'", self.name)
-        operation = self._api.deallocate(
+        operation = self._api.begin_deallocate(
             resource_group_name=self._resource_group, vm_name=self.name
         )
         if self._wait_on_operation(operation):
@@ -283,7 +287,9 @@ class AzureInstance(Instance):
 
     def restart(self):
         self.logger.info("restarting vm '%s'", self.name)
-        operation = self._api.restart(resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.begin_restart(
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.RUNNING)
             return True
@@ -291,7 +297,9 @@ class AzureInstance(Instance):
 
     def suspend(self):
         self.logger.info("suspending vm '%s'", self.name)
-        operation = self._api.power_off(resource_group_name=self._resource_group, vm_name=self.name)
+        operation = self._api.begin_power_off(
+            resource_group_name=self._resource_group, vm_name=self.name
+        )
         if self._wait_on_operation(operation):
             self.wait_for_state(VmState.SUSPENDED)
             return True
@@ -314,7 +322,7 @@ class AzureInstance(Instance):
         )
         self._wait_on_operation(operation)
         self.logger.info("Capturing VM '%s'", self.name)
-        operation = self._api.capture(
+        operation = self._api.begin_capture(
             resource_group_name=self._resource_group,
             vm_name=self.name,
             parameters=params,
@@ -417,7 +425,7 @@ class AzureBlobImage(Template):
             "location": location,
             "public_ip_allocation_method": "Dynamic",
         }
-        public_ip = self.system.network_client.public_ip_addresses.create_or_update(
+        public_ip = self.system.network_client.public_ip_addresses.begin_create_or_update(
             resource_group_name=resource_group,
             public_ip_address_name=vm_name,
             parameters=public_ip_params,
@@ -430,7 +438,7 @@ class AzureBlobImage(Template):
                 "location": location,
                 "address_space": {"address_prefixes": [address_space]},
             }
-            virtual_networks.create_or_update(
+            virtual_networks.begin_create_or_update(
                 resource_group_name=resource_group,
                 virtual_network_name=vnet_name,
                 parameters=vnet_params,
@@ -440,7 +448,7 @@ class AzureBlobImage(Template):
         subnet_name = "default"
         subnets = self.system.network_client.subnets
         if subnet_name not in [v.name for v in subnets.list(resource_group, vnet_name)]:
-            vsubnet = subnets.create_or_update(
+            vsubnet = subnets.begin_create_or_update(
                 resource_group_name=resource_group,
                 virtual_network_name=vnet_name,
                 subnet_name="default",
@@ -466,7 +474,7 @@ class AzureBlobImage(Template):
         }
 
         def _create_or_update_nic():
-            return self.system.network_client.network_interfaces.create_or_update(
+            return self.system.network_client.network_interfaces.begin_create_or_update(
                 resource_group_name=resource_group,
                 network_interface_name=vm_name,
                 parameters=nic_params,
@@ -504,7 +512,7 @@ class AzureBlobImage(Template):
             },
             "network_profile": {"network_interfaces": [{"id": nic.id}]},
         }
-        vm = self.system.compute_client.virtual_machines.create_or_update(
+        vm = self.system.compute_client.virtual_machines.begin_create_or_update(
             resource_group_name=resource_group,
             vm_name=vm_name,
             parameters=vm_parameters,
@@ -888,7 +896,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
         resources = self._list_resources(resource_group, hours_old)
         if resources:
-            self.resource_client.resource_groups.delete(resource_group)
+            self.resource_client.resource_groups.begin_delete(resource_group)
 
     def remove_nics_by_search(self, nic_template=None, resource_group=None):
         """
@@ -904,7 +912,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
 
         for nic in nic_list:
             try:
-                operation = self.network_client.network_interfaces.delete(
+                operation = self.network_client.network_interfaces.begin_delete(
                     resource_group_name=resource_group or self.resource_group,
                     network_interface_name=nic,
                 )
@@ -932,7 +940,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         )
 
         for pip in pip_list:
-            operation = self.network_client.public_ip_addresses.delete(
+            operation = self.network_client.public_ip_addresses.begin_delete(
                 resource_group_name=resource_group or self.resource_group,
                 public_ip_address_name=pip,
             )
@@ -965,7 +973,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             self.logger.info("Attempting to find all the unattached disks and delete.")
             discs = self.list_free_discs(resource_group=self.resource_group)
             for disc_name in discs:
-                operation = self.compute_client.disks.delete(
+                operation = self.compute_client.disks.begin_delete(
                     resource_group_name=resource_group or self.resource_group,
                     disk_name=disc_name,
                 )
@@ -980,7 +988,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         security_groups = self.network_client.network_security_groups
         self.logger.info("Attempting to Create New Azure Security Group %s", group_name)
         nsg = NetworkSecurityGroup(location=self.region)
-        operation = security_groups.create_or_update(
+        operation = security_groups.begin_create_or_update(
             resource_group_name=resource_group or self.resource_group,
             network_security_group_name=group_name,
             parameters=nsg,
@@ -997,7 +1005,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         self.logger.info("Attempting to Remove Azure Security Group '%s'", group_name)
         security_groups = self.network_client.network_security_groups
-        operation = security_groups.delete(
+        operation = security_groups.begin_delete(
             resource_group_name=resource_group or self.resource_group,
             network_security_group_name=group_name,
         )
@@ -1031,7 +1039,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
             )
         ]
         nsg = self.network_client.network_security_groups
-        operation = nsg.create_or_update(resource_group, secgroup_name, parameters)
+        operation = nsg.begin_create_or_update(resource_group, secgroup_name, parameters)
         operation.wait()
         self.logger.info("Network Security Group Rule is created.")
         return operation.status()
@@ -1135,7 +1143,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         for disk in self.compute_client.disks.list_by_resource_group(resource_group):
             if disk.name.startswith("test") and disk.managed_by is None:
                 self.logger.info("Removing disk '%s'", disk.name)
-                self.compute_client.disks.delete(
+                self.compute_client.disks.begin_delete(
                     resource_group_name=resource_group, disk_name=disk.name
                 )
                 removed_disks.append({"resource_group": resource_group, "disk": disk.name})
@@ -1269,7 +1277,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         """
         self.logger.info("Removes a Deployment Stack resource created with Orchestration")
         deps = self.resource_client.deployments
-        operation = deps.delete(
+        operation = deps.begin_delete(
             resource_group_name=resource_group or self.resource_group,
             deployment_name=stack_name,
         )
@@ -1306,7 +1314,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         resource_group = resource_group or self.resource_group
         for image in image_list:
             self.logger.info("Deleting '%s' from '%s'", image, resource_group)
-            response = self.compute_client.images.delete(
+            response = self.compute_client.images.begin_delete(
                 resource_group_name=resource_group, image_name=image
             )
             result.append((image, response))
