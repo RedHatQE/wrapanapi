@@ -288,7 +288,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
         self.system.openstack_conn.compute.remove_floating_ip_from_server(
             instance, floating_ip.floating_ip_address
         )
-        wait_for(lambda: self.ip is None, delay=1, timeout="1m")
+        wait_for(lambda: self.ip is None, delay=1, timeout=60)
         return floating_ip
 
     def delete(self, delete_fip=False):
@@ -302,7 +302,7 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
 
         self.logger.info(" Delete in progress instance %s", self.name)
         self.raw.delete()
-        wait_for(lambda: not self.exists, timeout="3m", delay=5)
+        wait_for(lambda: not self.exists, timeout=3 * 60, delay=5)
         return True
 
     def cleanup(self):
@@ -386,9 +386,9 @@ class OpenstackInstance(_SharedMethodsMixin, Instance):
                 self.stop()
             # set image name only if template_name passed, else take original VM name
             uuid = self.raw.create_image(image_name if template_name else original_name)
-            wait_for(lambda: self._api.images.get(uuid).status == "ACTIVE", num_sec=900, delay=5)
+            wait_for(lambda: self._api.images.get(uuid).status == "ACTIVE", timeout=900, delay=5)
             self.delete()
-            wait_for(lambda: not self.exists, num_sec=180, delay=5)
+            wait_for(lambda: not self.exists, timeout=180, delay=5)
         except Exception:
             self.logger.exception("Could not mark %s as a OpenStack template!", original_name)
             try:
@@ -460,7 +460,7 @@ class OpenstackImage(_SharedMethodsMixin, Template):
 
     def delete(self):
         self.raw.delete()
-        wait_for(lambda: not self.exists, num_sec=120, delay=10)
+        wait_for(lambda: not self.exists, timeout=120, delay=10)
 
     def cleanup(self):
         return self.delete()
@@ -1040,7 +1040,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
 
     def create_volume(self, size_gb, **kwargs):
         volume = self.capi.volumes.create(size_gb, **kwargs).id
-        wait_for(lambda: self.capi.volumes.get(volume).status == "available", num_sec=60, delay=0.5)
+        wait_for(lambda: self.capi.volumes.get(volume).status == "available", timeout=60, delay=0.5)
         return volume
 
     def delete_volume(self, *ids, **kwargs):
@@ -1052,7 +1052,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
             return
         # Wait for them
         wait_for(
-            lambda: all([not self.volume_exists(id) for id in ids]), delay=0.5, num_sec=timeout
+            lambda: all([not self.volume_exists(id) for id in ids]), delay=0.5, timeout=timeout
         )
 
     def volume_exists(self, id):
@@ -1173,7 +1173,7 @@ class OpenstackSystem(System, VmMixin, TemplateMixin):
         wait_for(
             lambda: len(self._list_floating_ips(ip=floating_ip.floating_ip_address)) == 0,
             delay=1,
-            timeout="1m",
+            timeout=60,
         )
         return True
 

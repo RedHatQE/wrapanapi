@@ -165,7 +165,7 @@ def test_sanity(provider_crud, test_template, test_vm):
         pool_name = pools[0].name
         vm.assign_floating_ip(pool_name)
 
-    wait_for(lambda: vm.ip, timeout="1m", delay=1)
+    wait_for(lambda: vm.ip, timeout=60, delay=1)
 
     if isinstance(mgmt, wrapanapi.systems.OpenstackSystem):
         vm.unassign_floating_ip()

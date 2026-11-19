@@ -195,7 +195,9 @@ class VMWareVMOrTemplate(Entity):
         task = self.raw.Destroy_Task()
 
         try:
-            wait_for(lambda: self.system.get_task_status(task) == "success", delay=3, timeout="4m")
+            wait_for(
+                lambda: self.system.get_task_status(task) == "success", delay=3, timeout=4 * 60
+            )
         except TimedOutError:
             self.logger.warn("Hit TimedOutError waiting for VM '%s' delete task", self.name)
             if self.exists:
@@ -597,7 +599,7 @@ class VMWareVMOrTemplate(Entity):
             store[0] = self.system.get_updated_obj(store[0])
             return False
 
-        wait_for(_check, num_sec=provision_timeout, delay=4)
+        wait_for(_check, timeout=provision_timeout, delay=4)
 
         if task.info.state != "success":
             self.logger.error(
