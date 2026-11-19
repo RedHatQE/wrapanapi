@@ -239,7 +239,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         wait_for(
             lambda: not self.exists,
             message=f"wait for RHEV VM '{self.uuid}' deleted",
-            num_sec=300,
+            timeout=300,
         )
         return True
 
@@ -505,7 +505,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             self._is_disk_ok,
             func_args=[disk_attachment.disk.id],
             delay=5,
-            num_sec=900,
+            timeout=900,
             message="check if disk is attached",
         )
 
@@ -549,7 +549,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
             self._is_disk_ok,
             func_args=[disk_attachment.disk.id],
             delay=5,
-            num_sec=900,
+            timeout=900,
             message="check if disk is attached",
         )
         return True
@@ -564,7 +564,7 @@ class RHEVMVirtualMachine(_SharedMethodsMixin, Vm):
         wait_for(
             lambda: not self.is_disk_attached(disk_name),
             delay=5,
-            num_sec=900,
+            timeout=900,
             message="disk to no longer be attached",
         )
         return True
@@ -600,7 +600,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
         self.logger.debug(" Deleting RHEV template %s/%s", self.name, self.uuid)
         self.wait_for_ok_status()
         self.api.remove()
-        wait_for(lambda: not self.exists, num_sec=timeout, delay=5)
+        wait_for(lambda: not self.exists, timeout=timeout, delay=5)
 
     def cleanup(self):
         """
@@ -627,7 +627,7 @@ class RHEVMTemplate(_SharedMethodsMixin, Template):
     def wait_for_ok_status(self, timeout=1800):
         wait_for(
             lambda: self.api.get().status == types.TemplateStatus.OK,
-            num_sec=timeout,
+            timeout=timeout,
             message="template is OK",
             delay=10,
         )
@@ -1047,7 +1047,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
         wait_for(
             func=self.does_template_exist,
             func_args=[template_name],
-            num_sec=timeout,
+            timeout=timeout,
             message="template exists",
             delay=5,
         )
@@ -1139,7 +1139,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                 properties=properties,
             )
         )
-        wait_for(self.does_glance_server_exist, func_args=[name], delay=5, num_sec=240)
+        wait_for(self.does_glance_server_exist, func_args=[name], delay=5, timeout=240)
 
     @property
     def _storage_domains_service(self):
@@ -1183,7 +1183,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
             cluster=types.Cluster(name=target_cluster_name),
             storage_domain=types.StorageDomain(name=target_storage_domain_name),
         )
-        wait_for(self.does_template_exist, func_args=[target_template_name], delay=5, num_sec=240)
+        wait_for(self.does_template_exist, func_args=[target_template_name], delay=5, timeout=240)
 
     def _get_disk_service(self, disk_name):
         disks_service = self.api.system_service().disks_service()
@@ -1262,7 +1262,7 @@ class RHEVMSystem(System, VmMixin, TemplateMixin):
                     wait_for(
                         lambda: self.api.follow_link(domain).status == expected_state,
                         delay=5,
-                        num_sec=timeout,
+                        timeout=timeout,
                         message="waiting for {} to reach state {}".format(
                             storage_domain_name, expected_state
                         ),

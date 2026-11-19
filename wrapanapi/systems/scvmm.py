@@ -292,7 +292,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         wait_for(
             lambda: not self.exists,
             delay=5,
-            timeout="3m",
+            timeout=3 * 60,
             message=f"vm {self._log_str} to not exist",
         )
         return True
@@ -308,7 +308,7 @@ class SCVirtualMachine(Vm, _LogStrMixin):
         wait_for(
             lambda: self.refresh(read_from_hyperv=True) and self.name != old_name,
             delay=5,
-            timeout="3m",
+            timeout=3 * 60,
             message=f"vm {self._log_str} to change names",
         )
         return True

@@ -156,7 +156,7 @@ class GoogleCloudInstance(Instance):
         wait_for(
             lambda: self.system.is_zone_operation_done(operation["name"], zone=self.zone),
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f"Delete {self.name}",
         )
 
@@ -166,7 +166,7 @@ class GoogleCloudInstance(Instance):
         wait_for(
             lambda: not self.exists,
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f" instance '{self.name}' to not exist",
         )
         return True
@@ -220,7 +220,7 @@ class GoogleCloudInstance(Instance):
         wait_for(
             lambda: self.system.is_zone_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=120,
+            timeout=120,
             message=f" Attach {disk_name}",
         )
 
@@ -243,7 +243,7 @@ class GoogleCloudInstance(Instance):
         wait_for(
             lambda: self.system.is_zone_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=120,
+            timeout=120,
             message=f" Set auto-delete {disk_name}",
         )
 
@@ -303,13 +303,13 @@ class GoogleCloudImage(Template):
         wait_for(
             lambda: self.system.is_global_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f" Deleting image {self.name}",
         )
         wait_for(
             lambda: not self.exists,
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f" image '{self.name}' to not exist",
         )
         return True
@@ -416,7 +416,7 @@ class GoogleCloudImage(Template):
         wait_for(
             lambda: self.system.is_zone_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f" Create {instance_name}",
         )
         instance = GoogleCloudInstance(system=self.system, name=instance_name, zone=zone)
@@ -762,7 +762,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         wait_for(
             lambda: self.is_global_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=timeout,
+            timeout=timeout,
             message=f" Creating image {name}",
         )
         return self.get_template(name, self._project)
@@ -792,7 +792,7 @@ class GoogleCloudSystem(System, TemplateMixin, VmMixin):
         wait_for(
             lambda: self.is_zone_operation_done(operation["name"]),
             delay=0.5,
-            num_sec=120,
+            timeout=120,
             message=f" Create {disk_name}",
         )
 

@@ -1087,7 +1087,7 @@ class AzureSystem(System, VmMixin, TemplateMixin):
         dest_blob_client.start_copy_from_url(src_uri)
         wait_for(
             lambda: dest_blob_client.get_blob_properties().copy.status != "pending",
-            timeout="10m",
+            timeout=10 * 60,
             delay=15,
         )
         # copy operation obj.status->str

@@ -893,7 +893,7 @@ class Openshift(System):
 
         return self.wait_job_finished(namespace, job_name)
 
-    def wait_job_finished(self, namespace, name, wait="15m"):
+    def wait_job_finished(self, namespace, name, wait=15 * 60):
         """Waits for job to accomplish
 
         Args:
@@ -913,7 +913,7 @@ class Openshift(System):
 
         return wait_for(job_wait_accomplished, timeout=wait)[0]
 
-    def wait_persistent_volume_claim_status(self, namespace, name, status, wait="1m"):
+    def wait_persistent_volume_claim_status(self, namespace, name, status, wait=60):
         """Waits until pvc gets some particular status.
            For example: Bound.
 

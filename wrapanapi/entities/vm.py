@@ -183,7 +183,7 @@ class Vm(Entity, metaclass=ABCMeta):
         Returns creation time of VM/instance
         """
 
-    def wait_for_state(self, state, timeout="6m", delay=15):
+    def wait_for_state(self, state, timeout=6 * 60, delay=15):
         """
         Waits for a VM to be in the desired state
 
@@ -260,7 +260,7 @@ class Vm(Entity, metaclass=ABCMeta):
             message=f"ensure vm {self._log_id} reaches state '{state}'",
         )
 
-    def ensure_state(self, state, timeout="6m", delay=5):
+    def ensure_state(self, state, timeout=6 * 60, delay=5):
         """
         Perform the actions required to get the VM to the desired state.
 
@@ -365,7 +365,7 @@ class Vm(Entity, metaclass=ABCMeta):
         Waits for the system's steady_wait_time for VM to reach a steady state
 
         Args:
-            num_sec: Time to wait to override default steady_wait_time
+            timeout: Time to wait to override default steady_wait_time
         """
         try:
             return wait_for(
